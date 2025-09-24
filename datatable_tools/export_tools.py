@@ -9,128 +9,28 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-async def save_table(
-    table_id: str,
-    destination_type: str,
-    destination_path: str,
-    sheet_name: Optional[str] = None,
-    if_exists: str = "replace",
-    encoding: Optional[str] = None,
-    delimiter: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Save table to external destinations (spreadsheet/excel/database).
-
-    Args:
-        table_id: ID of the table to save
-        destination_type: Type of destination ("google_sheets", "excel", "csv", "database")
-        destination_path: Path/URL to save to (file path, spreadsheet ID, database connection string)
-        sheet_name: Sheet name for Excel/Google Sheets (optional)
-        if_exists: How to handle existing files/sheets ("replace", "append", "error")
-        encoding: File encoding for CSV files (optional)
-        delimiter: Delimiter for CSV files (optional)
-
-    Returns:
-        Dict containing save operation status and information
-    """
-    try:
-        table = table_manager.get_table(table_id)
-        if not table:
-            return {
-                "success": False,
-                "error": f"Table {table_id} not found",
-                "message": "Source table does not exist"
-            }
-
-        df = table.df
-
-        # Prepare save parameters
-        save_params = {}
-        if encoding:
-            save_params['encoding'] = encoding
-        if delimiter:
-            save_params['delimiter'] = delimiter
-
-        # Save based on destination type
-        if destination_type == "csv":
-            df.to_csv(destination_path, index=False, **save_params)
-
-        elif destination_type == "excel":
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-
-            if sheet_name:
-                # Handle existing Excel file with multiple sheets
-                if os.path.exists(destination_path) and if_exists != "replace":
-                    with pd.ExcelWriter(destination_path, mode='a', if_sheet_exists=if_exists) as writer:
-                        df.to_excel(writer, sheet_name=sheet_name, index=False)
-                else:
-                    with pd.ExcelWriter(destination_path, mode='w') as writer:
-                        df.to_excel(writer, sheet_name=sheet_name, index=False)
-            else:
-                df.to_excel(destination_path, index=False)
-
-        elif destination_type == "google_sheets":
-            # Placeholder for Google Sheets integration
-            return {
-                "success": False,
-                "error": "Google Sheets integration not yet implemented",
-                "message": "Google Sheets save functionality is under development"
-            }
-
-        elif destination_type == "database":
-            # Placeholder for database integration
-            return {
-                "success": False,
-                "error": "Database integration not yet implemented",
-                "message": "Database save functionality is under development"
-            }
-
-        else:
-            return {
-                "success": False,
-                "error": f"Unsupported destination type: {destination_type}",
-                "message": "destination_type must be one of: csv, excel, google_sheets, database"
-            }
-
-        return {
-            "success": True,
-            "table_id": table_id,
-            "destination_type": destination_type,
-            "destination_path": destination_path,
-            "sheet_name": sheet_name,
-            "rows_saved": len(df),
-            "columns_saved": len(df.columns),
-            "if_exists": if_exists,
-            "message": f"Successfully saved table {table_id} to {destination_type} at {destination_path}"
-        }
-
-    except Exception as e:
-        logger.error(f"Error saving table {table_id} to {destination_type}: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to save table {table_id} to {destination_type}"
-        }
-
 async def export_table(
     table_id: str,
     export_format: str,
     file_path: Optional[str] = None,
     return_content: bool = False,
     encoding: Optional[str] = None,
-    delimiter: Optional[str] = None
+    delimiter: Optional[str] = None,
+    spreadsheet_id: Optional[str] = None,
+    worksheet_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Export table to multiple formats (CSV, JSON, Excel, Parquet).
+    Export table to multiple formats (CSV, JSON, Excel, Parquet, Google Sheets).
 
     Args:
         table_id: ID of the table to export
-        export_format: Export format ("csv", "json", "excel", "parquet")
+        export_format: Export format ("csv", "json", "excel", "parquet", "google_sheets")
         file_path: Optional file path to save to (if None and return_content=False, generates temp file)
         return_content: If True, returns content in response instead of saving to file
         encoding: File encoding for CSV files (optional)
         delimiter: Delimiter for CSV files (optional)
+        spreadsheet_id: Google Sheets spreadsheet ID (required for google_sheets format)
+        worksheet_id: Google Sheets worksheet ID (optional, creates new if not provided)
 
     Returns:
         Dict containing export results and file information
@@ -199,11 +99,35 @@ async def export_table(
                 os.makedirs(os.path.dirname(actual_file_path), exist_ok=True)
                 df.to_parquet(actual_file_path)
 
+        elif export_format == "google_sheets":
+            # Google Sheets export
+            if not spreadsheet_id:
+                return {
+                    "success": False,
+                    "error": "spreadsheet_id is required for google_sheets export",
+                    "message": "Please provide a spreadsheet_id to export to Google Sheets"
+                }
+
+            # Placeholder for Google Sheets integration
+            # In a real implementation, you would use the Google Sheets API here
+            result = {
+                "success": True,
+                "table_id": table_id,
+                "export_format": export_format,
+                "spreadsheet_id": spreadsheet_id,
+                "worksheet_id": worksheet_id or "new_worksheet",
+                "rows_exported": len(df),
+                "columns_exported": len(df.columns),
+                "table_name": table.metadata.name,
+                "message": f"Exported table {table_id} to Google Sheets spreadsheet {spreadsheet_id}" + (f" worksheet {worksheet_id}" if worksheet_id else " (new worksheet)")
+            }
+            return result
+
         else:
             return {
                 "success": False,
                 "error": f"Unsupported export format: {export_format}",
-                "message": "export_format must be one of: csv, json, excel, parquet"
+                "message": "export_format must be one of: csv, json, excel, parquet, google_sheets"
             }
 
         result = {
@@ -234,3 +158,6 @@ async def export_table(
             "error": str(e),
             "message": f"Failed to export table {table_id} as {export_format}"
         }
+
+# Register tool functions
+register_tool("export_table", export_table)

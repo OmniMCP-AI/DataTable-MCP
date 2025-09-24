@@ -300,7 +300,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="filter_table",
-            description="Filter table rows based on column conditions",
+            description="Filter table rows using pandas query syntax (simplified)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -308,35 +308,26 @@ async def handle_list_tools() -> list[types.Tool]:
                         "type": "string",
                         "description": "Unique identifier of the table"
                     },
-                    "conditions": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "column": {"description": "Column name or index"},
-                                "operator": {
-                                    "type": "string",
-                                    "enum": ["==", "!=", "<", "<=", ">", ">=", "contains", "startswith", "endswith"]
-                                },
-                                "value": {"description": "Value to compare against"}
-                            },
-                            "required": ["column", "operator", "value"]
-                        },
-                        "description": "List of filter conditions"
-                    },
-                    "logic": {
+                    "query": {
                         "type": "string",
-                        "enum": ["AND", "OR"],
-                        "description": "Logic operator for combining conditions",
-                        "default": "AND"
+                        "description": "Pandas query string (e.g., 'Age > 25', 'Name == \"John\"', 'Age > 20 and Role == \"Engineer\"')"
+                    },
+                    "create_new_table": {
+                        "type": "boolean",
+                        "description": "If True, creates a new table with filtered results",
+                        "default": False
+                    },
+                    "new_table_name": {
+                        "type": "string",
+                        "description": "Name for the new table (if create_new_table is True)"
                     }
                 },
-                "required": ["table_id", "conditions"]
+                "required": ["table_id", "query"]
             }
         ),
         types.Tool(
             name="export_table",
-            description="Export table data to various formats",
+            description="Export table data to various formats including Google Sheets",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -344,42 +335,38 @@ async def handle_list_tools() -> list[types.Tool]:
                         "type": "string",
                         "description": "Unique identifier of the table"
                     },
-                    "format": {
+                    "export_format": {
                         "type": "string",
-                        "enum": ["csv", "json", "html", "markdown"],
+                        "enum": ["csv", "json", "excel", "parquet", "google_sheets"],
                         "description": "Export format"
                     },
-                    "include_headers": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Optional file path to save to"
+                    },
+                    "return_content": {
                         "type": "boolean",
-                        "description": "Whether to include column headers",
-                        "default": True
+                        "description": "If True, returns content in response instead of saving to file",
+                        "default": False
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "description": "File encoding for CSV files"
+                    },
+                    "delimiter": {
+                        "type": "string",
+                        "description": "Delimiter for CSV files"
+                    },
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "Google Sheets spreadsheet ID (required for google_sheets format)"
+                    },
+                    "worksheet_id": {
+                        "type": "string",
+                        "description": "Google Sheets worksheet ID (optional, creates new if not provided)"
                     }
                 },
-                "required": ["table_id", "format"]
-            }
-        ),
-        types.Tool(
-            name="save_table",
-            description="Save table to persistent storage",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "table_id": {
-                        "type": "string",
-                        "description": "Unique identifier of the table"
-                    },
-                    "filename": {
-                        "type": "string",
-                        "description": "Filename for the saved table"
-                    },
-                    "format": {
-                        "type": "string",
-                        "enum": ["csv", "json"],
-                        "description": "File format",
-                        "default": "csv"
-                    }
-                },
-                "required": ["table_id", "filename"]
+                "required": ["table_id", "export_format"]
             }
         ),
         types.Tool(

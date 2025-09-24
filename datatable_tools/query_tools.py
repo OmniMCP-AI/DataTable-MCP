@@ -276,3 +276,92 @@ async def sort_table(
             "error": str(e),
             "message": f"Failed to sort table {table_id}"
         }
+
+async def filter_table(
+    table_id: str,
+    query: str,
+    create_new_table: bool = False,
+    new_table_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Filter table rows using simple pandas query syntax (like DataFrame filter).
+
+    Args:
+        table_id: ID of the target table
+        query: Pandas query string (e.g., "Age > 25", "Name == 'John'", "Age > 20 and Role == 'Engineer'")
+        create_new_table: If True, creates a new table with filtered results
+        new_table_name: Name for the new table (if create_new_table is True)
+
+    Returns:
+        Dict containing filtered results and operation information
+
+    Examples:
+        - query="Age > 25"
+        - query="Name == 'John'"
+        - query="Age > 20 and Role == 'Engineer'"
+        - query="Age >= 25 or Department == 'IT'"
+        - query="Name.str.contains('John')"
+    """
+    try:
+        table = table_manager.get_table(table_id)
+        if not table:
+            return {
+                "success": False,
+                "error": f"Table {table_id} not found",
+                "message": "Target table does not exist"
+            }
+
+        # Apply filter using pandas query
+        try:
+            filtered_df = table.filter_by_query(query)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Invalid query: {str(e)}",
+                "message": f"Query syntax error. Example: 'Age > 25' or 'Name == \"John\"'"
+            }
+
+        result = {
+            "success": True,
+            "table_id": table_id,
+            "original_rows": len(table.df),
+            "filtered_rows": len(filtered_df),
+            "query": query,
+            "message": f"Filtered table {table_id}: {len(filtered_df)} rows match the query '{query}'"
+        }
+
+        if create_new_table:
+            # Create new table with filtered results
+            new_name = new_table_name or f"{table.metadata.name} (Filtered)"
+            new_table_id = table_manager.create_table(
+                data=filtered_df.values.tolist(),
+                headers=filtered_df.columns.tolist(),
+                name=new_name,
+                source_info={
+                    "type": "filtered_table",
+                    "source_table_id": table_id,
+                    "filter_query": query
+                }
+            )
+            result["new_table_id"] = new_table_id
+            result["new_table_name"] = new_name
+        else:
+            # Return filtered data directly
+            result["data"] = filtered_df.to_dict('records')
+            result["headers"] = filtered_df.columns.tolist()
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error filtering table {table_id}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to filter table {table_id}"
+        }
+
+# Register all tool functions
+register_tool("get_table_data", get_table_data)
+register_tool("filter_rows", filter_rows)
+register_tool("filter_table", filter_table)
+register_tool("sort_table", sort_table)

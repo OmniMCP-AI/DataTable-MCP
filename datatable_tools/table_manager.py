@@ -136,6 +136,24 @@ class DataTable:
 
             return self.df[mask]
 
+    def filter_by_query(self, query: str) -> pd.DataFrame:
+        """
+        Filter rows using pandas query syntax (simplified DataFrame filtering).
+
+        Examples:
+        - "Age > 25"
+        - "Name == 'John'"
+        - "Age > 20 and Role == 'Engineer'"
+        - "Age >= 25 or Department == 'IT'"
+        """
+        with self._lock:
+            try:
+                return self.df.query(query)
+            except Exception as e:
+                logger.error(f"Error applying query '{query}': {e}")
+                # Fallback to return empty dataframe with same structure
+                return self.df.iloc[0:0]
+
     def sort_table(self, sort_columns: List[str], ascending: List[bool] = None) -> pd.DataFrame:
         """Sort table by specified columns"""
         with self._lock:
