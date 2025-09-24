@@ -1,0 +1,22 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "DataTable MCP Server API",
+    "description": "Model Context Protocol server for in-memory tabular data manipulation",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8001",
+      "description": "HTTP mode"
+    },
+    {
+      "url": "stdio://",
+      "description": "Standard I/O transport"
+    }
+  ],
+  "paths": {},
+  "components": {
+    "schemas": {}
+  }
+}

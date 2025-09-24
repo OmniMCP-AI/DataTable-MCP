@@ -1,0 +1,1559 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "DataTable MCP Server API",
+    "description": "Model Context Protocol (MCP) server for in-memory tabular data manipulation. Provides 21 tools across 6 categories for comprehensive data operations including table lifecycle management, data manipulation, querying, export/import, advanced operations, and session management.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "DataTable MCP Server"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8001",
+      "description": "HTTP transport mode for testing and web integration"
+    },
+    {
+      "url": "stdio://mcp",
+      "description": "Standard I/O transport (default MCP mode for Claude Desktop)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Table Lifecycle",
+      "description": "Create, list, clone, and manage table lifecycle (4 tools)"
+    },
+    {
+      "name": "Data Manipulation",
+      "description": "Modify table data - append rows, add columns, set values (6 tools)"
+    },
+    {
+      "name": "Data Query",
+      "description": "Query and filter table data (3 tools)"
+    },
+    {
+      "name": "Export & Import",
+      "description": "Export tables to files and load from external sources (2 tools)"
+    },
+    {
+      "name": "Advanced Operations",
+      "description": "Advanced data operations like aggregation and mapping (3 tools)"
+    },
+    {
+      "name": "Session Management",
+      "description": "Manage server session and cleanup (3 tools)"
+    }
+  ],
+  "paths": {
+    "/mcp/tools/create_table": {
+      "post": {
+        "tags": [
+          "Table Lifecycle"
+        ],
+        "summary": "Create a new DataTable from data array with auto-detected headers.",
+        "description": "Create a new DataTable from data array with auto-detected headers.\n\nArgs:\n    data: 2D array of table data (rows x columns)\n    headers: Optional column headers. If not provided, will auto-generate (Column_1, Column_2, etc.)\n    name: Optional table name for identification\n\nReturns:\n    Dict containing table_id and basic table information",
+        "operationId": "create_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "data"
+                ],
+                "properties": {
+                  "data": {
+                    "description": "Parameter data",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "headers": {
+                    "description": "Parameter headers",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Parameter name",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "data": [
+                    [
+                      "Alice",
+                      25,
+                      "Engineer"
+                    ],
+                    [
+                      "Bob",
+                      30,
+                      "Manager"
+                    ]
+                  ],
+                  "headers": [
+                    "Name",
+                    "Age",
+                    "Role"
+                  ],
+                  "name": "Employees"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/load_table": {
+      "post": {
+        "tags": [
+          "Table Lifecycle"
+        ],
+        "summary": "Load a table from external sources (spreadsheet/excel/database).",
+        "description": "Load a table from external sources (spreadsheet/excel/database).\n\nArgs:\n    source_type: Type of source (\"google_sheets\", \"excel\", \"csv\", \"database\")\n    source_path: Path/URL to the source (file path, spreadsheet ID, database connection string)\n    name: Optional table name\n    sheet_name: Sheet name for Excel/Google Sheets (optional)\n    encoding: File encoding for CSV files (optional)\n    delimiter: Delimiter for CSV files (optional)\n\nReturns:\n    Dict containing table_id and loaded table information",
+        "operationId": "load_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source_type",
+                  "source_path"
+                ],
+                "properties": {
+                  "source_type": {
+                    "description": "Parameter source_type",
+                    "type": "string"
+                  },
+                  "source_path": {
+                    "description": "Parameter source_path",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Parameter name",
+                    "type": "string"
+                  },
+                  "sheet_name": {
+                    "description": "Parameter sheet_name",
+                    "type": "string"
+                  },
+                  "encoding": {
+                    "description": "Parameter encoding",
+                    "type": "string"
+                  },
+                  "delimiter": {
+                    "description": "Parameter delimiter",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/clone_table": {
+      "post": {
+        "tags": [
+          "Table Lifecycle"
+        ],
+        "summary": "Create a deep copy of an existing table.",
+        "description": "Create a deep copy of an existing table.\n\nArgs:\n    source_table_id: ID of the table to clone\n    new_name: Optional name for the cloned table\n\nReturns:\n    Dict containing new table_id and cloned table information",
+        "operationId": "clone_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source_table_id"
+                ],
+                "properties": {
+                  "source_table_id": {
+                    "description": "Parameter source_table_id",
+                    "type": "string"
+                  },
+                  "new_name": {
+                    "description": "Parameter new_name",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/list_tables": {
+      "post": {
+        "tags": [
+          "Table Lifecycle"
+        ],
+        "summary": "Get inventory of all tables in the current session.",
+        "description": "Get inventory of all tables in the current session.\n\nReturns:\n    Dict containing list of all active tables with their basic information",
+        "operationId": "list_tables",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {},
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/append_row": {
+      "post": {
+        "tags": [
+          "Data Manipulation"
+        ],
+        "summary": "Add a new row to the table with robust handling of dimension mismatches.",
+        "description": "Add a new row to the table with robust handling of dimension mismatches.\n\nArgs:\n    table_id: ID of the target table\n    row_data: List of values for the new row\n    fill_strategy: How to handle dimension mismatches (\"none\", \"fill_na\", \"fill_empty\", \"fill_zero\")\n\nReturns:\n    Dict containing success status and updated table information",
+        "operationId": "append_row",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "row_data"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "row_data": {
+                    "description": "Parameter row_data",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "fill_strategy": {
+                    "description": "Parameter fill_strategy",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/add_column": {
+      "post": {
+        "tags": [
+          "Data Manipulation"
+        ],
+        "summary": "Add a new column to the table with optional default values.",
+        "description": "Add a new column to the table with optional default values.\n\nArgs:\n    table_id: ID of the target table\n    column_name: Name of the new column\n    default_value: Default value for all rows in the new column\n    position: Optional position to insert column (if not specified, adds at end)\n\nReturns:\n    Dict containing success status and updated table information",
+        "operationId": "add_column",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "column_name"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "column_name": {
+                    "description": "Parameter column_name",
+                    "type": "string"
+                  },
+                  "default_value": {
+                    "description": "Parameter default_value",
+                    "type": "string"
+                  },
+                  "position": {
+                    "description": "Parameter position",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/set_range_values": {
+      "post": {
+        "tags": [
+          "Data Manipulation"
+        ],
+        "summary": "Update values in specified ranges using pandas .loc style updates with fill strategies.",
+        "description": "Update values in specified ranges using pandas .loc style updates with fill strategies.\n\nArgs:\n    table_id: ID of the target table\n    row_indices: List of row indices to update\n    column_names: List of column names to update\n    values: 2D array of new values [rows x columns]\n    fill_strategy: How to handle dimension mismatches (\"none\", \"fill_na\", \"fill_empty\", \"fill_zero\")\n\nReturns:\n    Dict containing success status and update information",
+        "operationId": "set_range_values",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "row_indices",
+                  "column_names",
+                  "values"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "row_indices": {
+                    "description": "Parameter row_indices",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "column_names": {
+                    "description": "Parameter column_names",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "values": {
+                    "description": "Parameter values",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "fill_strategy": {
+                    "description": "Parameter fill_strategy",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/delete_from_table": {
+      "post": {
+        "tags": [
+          "Data Manipulation"
+        ],
+        "summary": "Unified deletion of rows or columns from the table.",
+        "description": "Unified deletion of rows or columns from the table.\n\nArgs:\n    table_id: ID of the target table\n    target_type: Type of deletion (\"rows\" or \"columns\")\n    target_names: List of row indices (for rows) or column names (for columns)\n\nReturns:\n    Dict containing success status and deletion information",
+        "operationId": "delete_from_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "target_type",
+                  "target_names"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "target_type": {
+                    "description": "Parameter target_type",
+                    "type": "string"
+                  },
+                  "target_names": {
+                    "description": "Parameter target_names",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/rename_columns": {
+      "post": {
+        "tags": [
+          "Data Manipulation"
+        ],
+        "summary": "Rename multiple columns in bulk.",
+        "description": "Rename multiple columns in bulk.\n\nArgs:\n    table_id: ID of the target table\n    column_mapping: Dictionary mapping old column names to new column names\n\nReturns:\n    Dict containing success status and rename information",
+        "operationId": "rename_columns",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "column_mapping"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "column_mapping": {
+                    "description": "Parameter column_mapping",
+                    "type": "object"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/clear_range": {
+      "post": {
+        "tags": [
+          "Data Manipulation"
+        ],
+        "summary": "Clear values in specified range while preserving table structure.",
+        "description": "Clear values in specified range while preserving table structure.\n\nArgs:\n    table_id: ID of the target table\n    row_indices: Optional list of row indices to clear (if None, clears all rows)\n    column_names: Optional list of column names to clear (if None, clears all columns)\n    clear_value: Value to set cleared cells to (default: None/NaN)\n\nReturns:\n    Dict containing success status and clear operation information",
+        "operationId": "clear_range",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "row_indices": {
+                    "description": "Parameter row_indices",
+                    "type": "string"
+                  },
+                  "column_names": {
+                    "description": "Parameter column_names",
+                    "type": "string"
+                  },
+                  "clear_value": {
+                    "description": "Parameter clear_value",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/get_table_data": {
+      "post": {
+        "tags": [
+          "Data Query"
+        ],
+        "summary": "Get table data with flexible slicing and multiple output formats.",
+        "description": "Get table data with flexible slicing and multiple output formats.\n\nArgs:\n    table_id: ID of the target table\n    output_format: Output format (\"dict\", \"records\", \"values\", \"json\")\n    start_row: Starting row index (inclusive)\n    end_row: Ending row index (exclusive)\n    columns: Optional list of specific columns to return\n    max_rows: Maximum number of rows to return (safety limit)\n\nReturns:\n    Dict containing table data in requested format",
+        "operationId": "get_table_data",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "output_format": {
+                    "description": "Parameter output_format",
+                    "type": "string"
+                  },
+                  "start_row": {
+                    "description": "Parameter start_row",
+                    "type": "string"
+                  },
+                  "end_row": {
+                    "description": "Parameter end_row",
+                    "type": "string"
+                  },
+                  "columns": {
+                    "description": "Parameter columns",
+                    "type": "string"
+                  },
+                  "max_rows": {
+                    "description": "Parameter max_rows",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345",
+                  "format": "json"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/filter_rows": {
+      "post": {
+        "tags": [
+          "Data Query"
+        ],
+        "summary": "Filter table rows based on multiple conditions with AND/OR logic.",
+        "description": "Filter table rows based on multiple conditions with AND/OR logic.\n\nArgs:\n    table_id: ID of the target table\n    conditions: List of filter conditions. Each condition should have:\n               {\"column\": \"col_name\", \"operator\": \"eq|ne|gt|gte|lt|lte|contains|startswith|endswith|isnull|notnull\", \"value\": filter_value}\n    logic: Logic operator for combining conditions (\"AND\" or \"OR\")\n    create_new_table: If True, creates a new table with filtered results\n    new_table_name: Name for the new table (if create_new_table is True)\n\nReturns:\n    Dict containing filtered results and operation information",
+        "operationId": "filter_rows",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "conditions"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "conditions": {
+                    "description": "Parameter conditions",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "logic": {
+                    "description": "Parameter logic",
+                    "type": "string"
+                  },
+                  "create_new_table": {
+                    "description": "Parameter create_new_table",
+                    "type": "boolean"
+                  },
+                  "new_table_name": {
+                    "description": "Parameter new_table_name",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345",
+                  "conditions": [
+                    {
+                      "column": "Age",
+                      "operator": "gt",
+                      "value": 27
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/sort_table": {
+      "post": {
+        "tags": [
+          "Data Query"
+        ],
+        "summary": "Sort table by multiple columns with option to create new table or modify in-place.",
+        "description": "Sort table by multiple columns with option to create new table or modify in-place.\n\nArgs:\n    table_id: ID of the target table\n    sort_columns: List of column names to sort by (in order of priority)\n    ascending: List of boolean values indicating sort direction for each column (True = ascending)\n    in_place: If True, modifies the original table; if False, creates a new table\n    new_table_name: Name for the new table (if in_place is False)\n\nReturns:\n    Dict containing sort operation information",
+        "operationId": "sort_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "sort_columns"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "sort_columns": {
+                    "description": "Parameter sort_columns",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "ascending": {
+                    "description": "Parameter ascending",
+                    "type": "string"
+                  },
+                  "in_place": {
+                    "description": "Parameter in_place",
+                    "type": "boolean"
+                  },
+                  "new_table_name": {
+                    "description": "Parameter new_table_name",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/save_table": {
+      "post": {
+        "tags": [
+          "Export & Import"
+        ],
+        "summary": "Save table to external destinations (spreadsheet/excel/database).",
+        "description": "Save table to external destinations (spreadsheet/excel/database).\n\nArgs:\n    table_id: ID of the table to save\n    destination_type: Type of destination (\"google_sheets\", \"excel\", \"csv\", \"database\")\n    destination_path: Path/URL to save to (file path, spreadsheet ID, database connection string)\n    sheet_name: Sheet name for Excel/Google Sheets (optional)\n    if_exists: How to handle existing files/sheets (\"replace\", \"append\", \"error\")\n    encoding: File encoding for CSV files (optional)\n    delimiter: Delimiter for CSV files (optional)\n\nReturns:\n    Dict containing save operation status and information",
+        "operationId": "save_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "destination_type",
+                  "destination_path"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Parameter destination_type",
+                    "type": "string"
+                  },
+                  "destination_path": {
+                    "description": "Parameter destination_path",
+                    "type": "string"
+                  },
+                  "sheet_name": {
+                    "description": "Parameter sheet_name",
+                    "type": "string"
+                  },
+                  "if_exists": {
+                    "description": "Parameter if_exists",
+                    "type": "string"
+                  },
+                  "encoding": {
+                    "description": "Parameter encoding",
+                    "type": "string"
+                  },
+                  "delimiter": {
+                    "description": "Parameter delimiter",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/export_table": {
+      "post": {
+        "tags": [
+          "Export & Import"
+        ],
+        "summary": "Export table to multiple formats (CSV, JSON, Excel, Parquet).",
+        "description": "Export table to multiple formats (CSV, JSON, Excel, Parquet).\n\nArgs:\n    table_id: ID of the table to export\n    export_format: Export format (\"csv\", \"json\", \"excel\", \"parquet\")\n    file_path: Optional file path to save to (if None and return_content=False, generates temp file)\n    return_content: If True, returns content in response instead of saving to file\n    encoding: File encoding for CSV files (optional)\n    delimiter: Delimiter for CSV files (optional)\n\nReturns:\n    Dict containing export results and file information",
+        "operationId": "export_table",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "export_format"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "export_format": {
+                    "description": "Parameter export_format",
+                    "type": "string"
+                  },
+                  "file_path": {
+                    "description": "Parameter file_path",
+                    "type": "string"
+                  },
+                  "return_content": {
+                    "description": "Parameter return_content",
+                    "type": "boolean"
+                  },
+                  "encoding": {
+                    "description": "Parameter encoding",
+                    "type": "string"
+                  },
+                  "delimiter": {
+                    "description": "Parameter delimiter",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345",
+                  "export_format": "csv",
+                  "return_content": true
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/merge_tables": {
+      "post": {
+        "tags": [
+          "Advanced Operations"
+        ],
+        "summary": "Merge two tables using pandas-style joins (inner/left/right/outer).",
+        "description": "Merge two tables using pandas-style joins (inner/left/right/outer).\n\nArgs:\n    left_table_id: ID of the left table\n    right_table_id: ID of the right table\n    join_type: Type of join (\"inner\", \"left\", \"right\", \"outer\")\n    left_on: Column(s) to join on in left table\n    right_on: Column(s) to join on in right table\n    on: Column(s) to join on (if same in both tables)\n    suffixes: Suffixes for overlapping column names\n    new_table_name: Name for the merged table\n\nReturns:\n    Dict containing merged table information",
+        "operationId": "merge_tables",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "left_table_id",
+                  "right_table_id"
+                ],
+                "properties": {
+                  "left_table_id": {
+                    "description": "Parameter left_table_id",
+                    "type": "string"
+                  },
+                  "right_table_id": {
+                    "description": "Parameter right_table_id",
+                    "type": "string"
+                  },
+                  "join_type": {
+                    "description": "Parameter join_type",
+                    "type": "string"
+                  },
+                  "left_on": {
+                    "description": "Parameter left_on",
+                    "type": "string"
+                  },
+                  "right_on": {
+                    "description": "Parameter right_on",
+                    "type": "string"
+                  },
+                  "on": {
+                    "description": "Parameter on",
+                    "type": "string"
+                  },
+                  "suffixes": {
+                    "description": "Parameter suffixes",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "new_table_name": {
+                    "description": "Parameter new_table_name",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/aggregate_data": {
+      "post": {
+        "tags": [
+          "Advanced Operations"
+        ],
+        "summary": "Group by specified columns and apply multiple aggregation functions.",
+        "description": "Group by specified columns and apply multiple aggregation functions.\n\nArgs:\n    table_id: ID of the table to aggregate\n    group_by: List of columns to group by\n    aggregations: Dict mapping column names to aggregation functions\n                 {\"column\": \"function\"} or {\"column\": [\"func1\", \"func2\"]}\n                 Valid functions: count, sum, mean, median, min, max, std, var, first, last\n    new_table_name: Name for the aggregated table\n\nReturns:\n    Dict containing aggregated table information",
+        "operationId": "aggregate_data",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "group_by",
+                  "aggregations"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "group_by": {
+                    "description": "Parameter group_by",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "aggregations": {
+                    "description": "Parameter aggregations",
+                    "type": "object"
+                  },
+                  "new_table_name": {
+                    "description": "Parameter new_table_name",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/map_values": {
+      "post": {
+        "tags": [
+          "Advanced Operations"
+        ],
+        "summary": "Apply value transformations and mapping to specified columns.",
+        "description": "Apply value transformations and mapping to specified columns.\n\nArgs:\n    table_id: ID of the table to transform\n    column_mappings: Dict mapping column names to value mappings\n                    {\"column_name\": {\"old_value\": \"new_value\", ...}}\n    default_value: Default value for unmapped values (if None, keeps original)\n    create_new_columns: If True, creates new columns instead of modifying existing ones\n    new_column_suffix: Suffix for new columns when create_new_columns=True\n\nReturns:\n    Dict containing value mapping operation information",
+        "operationId": "map_values",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id",
+                  "column_mappings"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "column_mappings": {
+                    "description": "Parameter column_mappings",
+                    "type": "object"
+                  },
+                  "default_value": {
+                    "description": "Parameter default_value",
+                    "type": "string"
+                  },
+                  "create_new_columns": {
+                    "description": "Parameter create_new_columns",
+                    "type": "boolean"
+                  },
+                  "new_column_suffix": {
+                    "description": "Parameter new_column_suffix",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/cleanup_tables": {
+      "post": {
+        "tags": [
+          "Session Management"
+        ],
+        "summary": "Clean up expired tables or specific tables from memory.",
+        "description": "Clean up expired tables or specific tables from memory.\n\nArgs:\n    force_cleanup: If True, removes all tables regardless of TTL\n    table_ids: Optional list of specific table IDs to remove\n\nReturns:\n    Dict containing cleanup operation results",
+        "operationId": "cleanup_tables",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "force_cleanup": {
+                    "description": "Parameter force_cleanup",
+                    "type": "boolean"
+                  },
+                  "table_ids": {
+                    "description": "Parameter table_ids",
+                    "type": "string"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/get_table_info": {
+      "post": {
+        "tags": [
+          "Session Management"
+        ],
+        "summary": "Get detailed information about a specific table.",
+        "description": "Get detailed information about a specific table.\n\nArgs:\n    table_id: ID of the table to inspect\n    include_sample: If True, includes sample data\n    sample_rows: Number of sample rows to include\n\nReturns:\n    Dict containing detailed table information",
+        "operationId": "get_table_info",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "table_id"
+                ],
+                "properties": {
+                  "table_id": {
+                    "description": "Parameter table_id",
+                    "type": "string"
+                  },
+                  "include_sample": {
+                    "description": "Parameter include_sample",
+                    "type": "boolean"
+                  },
+                  "sample_rows": {
+                    "description": "Parameter sample_rows",
+                    "type": "integer"
+                  }
+                },
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/get_session_stats": {
+      "post": {
+        "tags": [
+          "Session Management"
+        ],
+        "summary": "Get statistics about the current session and all active tables.",
+        "description": "Get statistics about the current session and all active tables.\n\nReturns:\n    Dict containing session statistics",
+        "operationId": "get_session_stats",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {},
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/mcp/tools/periodic_cleanup": {
+      "post": {
+        "tags": [
+          "MCP Tools"
+        ],
+        "summary": "Background task to periodically clean up expired tables",
+        "description": "Background task to periodically clean up expired tables",
+        "operationId": "periodic_cleanup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {},
+                "example": {
+                  "table_id": "dt_abc12345"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful tool execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "MCPToolRequest": {
+        "type": "object",
+        "description": "MCP tool execution request",
+        "required": [
+          "name",
+          "arguments"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name to execute"
+          },
+          "arguments": {
+            "type": "object",
+            "description": "Tool-specific arguments"
+          }
+        }
+      },
+      "MCPToolResponse": {
+        "type": "object",
+        "description": "MCP tool execution response",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success status"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error details if success=false"
+          },
+          "data": {
+            "type": "object",
+            "description": "Tool-specific response data"
+          }
+        }
+      },
+      "TableInfo": {
+        "type": "object",
+        "description": "DataTable information structure",
+        "properties": {
+          "table_id": {
+            "type": "string",
+            "pattern": "^dt_[a-z0-9]{8}$",
+            "description": "Unique table identifier",
+            "example": "dt_abc12345"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Column headers"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {}
+            },
+            "description": "Table data as 2D array [rows][columns]"
+          },
+          "shape": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "Table dimensions [rows, columns]"
+          },
+          "dtypes": {
+            "type": "object",
+            "description": "Column data types mapping"
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "source_info": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

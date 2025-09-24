@@ -1,0 +1,55 @@
+# Git and version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation and development files
+README.md
+requirement.md
+reference.md
+docs_server.py
+
+# Test files (optional - remove if you want tests in the container)
+tests/
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+# Lock files (we're using pyproject.toml)
+requirements*.lock
+uv.lock
+
+# Temporary files
+*.tmp
+.justfile

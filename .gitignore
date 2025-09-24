@@ -1,0 +1,21 @@
+.gitignore# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# venv
+.venv
+
+.env
+.envrc
+.pre-commit-config.yaml
+.idea
+*.log
+.DS_Store
+benches/data/
+.cursor
+ig/
+.cursorrules
