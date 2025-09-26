@@ -48,10 +48,6 @@ USER app
 # Expose port 8321
 EXPOSE 8321
 
-# Health check - for streamable-http mode
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8321/health || exit 1
-
 
 # Command to run the application
 CMD ["python", "main.py", "--transport", "streamable-http", "--port", "8321"]
