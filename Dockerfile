@@ -22,14 +22,17 @@ RUN uv pip install --system --no-cache -r requirements.lock --no-deps || \
     numpy>=1.24.0 \
     openpyxl>=3.1.0 \
     xlrd>=2.0.1 \
-    python-dotenv>=1.1.1 \
+    httpx>=0.28.1 \
     sqlalchemy>=2.0.0 \
     pyarrow>=12.0.0 \
-    uvicorn>=0.34.2 \
+    google-auth>=2.0.0 \
+    google-auth-oauthlib>=1.0.0 \
     google-api-python-client>=2.0.0 \
-    google-auth-httplib2>=0.1.0 \
-    google-auth-oauthlib>=0.4.0 \
-    gspread-asyncio>=1.9.0
+    aiohttp>=3.12.15 \
+    python-dotenv>=1.1.1 \
+    gspread-asyncio>=2.0.0 \
+    motor>=3.7.1 \
+    uvicorn>=0.34.2
 
 # Copy application code
 COPY . .
