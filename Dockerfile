@@ -30,8 +30,6 @@ RUN uv pip install --system --no-cache \
 COPY . .
 
 # Set default environment variables (removed SPREADSHEET_API as it's no longer needed)
-ENV TEST_USER_ID=68501372a3569b6897673a48
-ENV EXAMPLE_SPREADSHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
 
 # Debug: Check PORT environment variable
 RUN echo "=== Debug: Environment Variables ===" && \
@@ -56,8 +54,6 @@ USER app
 # Expose port (use default of 8321 if PORT not set)
 EXPOSE 8321
 # Expose additional port if PORT environment variable is set to a different value
-ARG PORT
-EXPOSE ${PORT:-8321}
 
 # Health check - for streamable-http mode
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
