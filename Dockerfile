@@ -50,7 +50,7 @@ EXPOSE 8321
 
 # Health check - for streamable-http mode
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://0.0.0.0:8321/health || exit 1
+    CMD curl -f http://localhost:8321/health || exit 1
 
 
 # Command to run the application
