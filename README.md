@@ -165,9 +165,6 @@ result = await aggregate_data(
 
 ## Configuration
 
-### Environment Variables
-- `PORT` or `DATATABLE_MCP_PORT`: Server port (default: 8321)
-- `DATATABLE_MCP_BASE_URI`: Base URI (default: http://localhost)
 
 ### Table TTL
 Default TTL is 60 minutes. Tables are automatically cleaned up when expired.
