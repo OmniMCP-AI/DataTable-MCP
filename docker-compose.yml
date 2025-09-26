@@ -4,38 +4,6 @@ services:
   datatable-mcp:
     build: .
     ports:
-      - "${PORT:-8321}:8321"
-    environment:
-      # DataTable MCP Configuration
-      - PORT=${PORT:-8321}
-      - DATATABLE_MCP_PORT=${DATATABLE_MCP_PORT:-8321}
-
-      # Spreadsheet API Integration
-      - SPREADSHEET_API=${SPREADSHEET_API:-http://host.docker.internal:9394}
-
-      # Test Configuration
-      - TEST_USER_ID=${TEST_USER_ID:-68501372a3569b6897673a48}
-      - EXAMPLE_SPREADSHEET_ID=${EXAMPLE_SPREADSHEET_ID:-1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms}
-
+      - "8321:8321"
     volumes:
-      # Optional: Mount .env file for local development
       - ./.env:/app/.env:ro
-
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8321/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-    restart: unless-stopped
-
-    # Optional: Add labels for better organization
-    labels:
-      - "com.datatable-mcp.version=1.0.0"
-      - "com.datatable-mcp.description=DataTable MCP with Spreadsheet Integration"
-
-# Optional: Network configuration for service communication
-networks:
-  default:
-    driver: bridge
