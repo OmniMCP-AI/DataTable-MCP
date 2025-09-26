@@ -6,7 +6,9 @@ from datatable_tools.spreadsheet_models import (
     ReadSheetRequest,
     ReadSheetResponse,
     WriteSheetRequest,
-    WriteSheetResponse
+    WriteSheetResponse,
+    UpdateRangeRequest,
+    UpdateRangeResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -96,6 +98,46 @@ class SpreadsheetClient:
             raise Exception(f"Failed to connect to spreadsheet API at {self.api_endpoint}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error writing to spreadsheet: {e}")
+            raise
+
+    async def update_range(self, request: UpdateRangeRequest, user_id: str) -> UpdateRangeResponse:
+        """
+        Update a specific range in spreadsheet using the SPREADSHEET_API endpoint
+        Recommended for detailed cell/row/column operations
+
+        Args:
+            request: UpdateRangeRequest containing range and data to update
+            user_id: User ID for authentication
+
+        Returns:
+            UpdateRangeResponse with update operation results
+        """
+        url = f"{self.api_endpoint}/v1/tool/sheet/range/update"
+        headers = {
+            "user-id": user_id,
+            "content-type": "application/json"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json=request.model_dump(),
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return UpdateRangeResponse(**data)
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Range update API error {response.status}: {error_text}")
+                        raise Exception(f"Range update API error {response.status}: {error_text}")
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Connection error to spreadsheet API: {e}")
+            raise Exception(f"Failed to connect to spreadsheet API at {self.api_endpoint}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error updating range: {e}")
             raise
 
 

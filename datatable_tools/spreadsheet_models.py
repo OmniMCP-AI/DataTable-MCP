@@ -97,6 +97,29 @@ class LoadDataTableRequest(BaseModel):
     name: Optional[str] = Field(None, description="Optional name for the created table")
 
 
+class UpdateRangeRequest(BaseModel):
+    """Request model for updating specific range in spreadsheet"""
+    spreadsheet_id: str = Field(..., description="Google Spreadsheet ID")
+    worksheet: Union[str, int, WorkSheetInfo] = Field(..., description="Worksheet to update")
+    range: str = Field(..., description="Cell range in A1 notation (e.g., 'A1:C10', 'B5')")
+    values: List[List[str]] = Field(..., description="2D array of values to write")
+    create_new_on_permission_error: Optional[bool] = Field(
+        default=True,
+        description="Create new spreadsheet if permission denied"
+    )
+
+
+class UpdateRangeResponse(BaseModel):
+    """Response model for range update operation"""
+    success: bool
+    message: str
+    spreadsheet_id: str
+    worksheet: WorkSheetInfo
+    updated_range: str = Field(..., description="The actual range that was updated")
+    updated_cells: int
+    worksheet_url: str
+
+
 class ExportDataTableRequest(BaseModel):
     """Request model for exporting DataTable to spreadsheet"""
     user_id: str = Field(..., description="User ID for authentication")

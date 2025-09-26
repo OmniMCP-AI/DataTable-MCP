@@ -1,3 +1,10 @@
 # DataTable MCP Server
 
-# This is an empty init file for the datatable_tools package.
+# Import all tool modules to register them
+from . import lifecycle_tools
+from . import manipulation_tools
+from . import query_tools
+from . import export_tools
+from . import advanced_tools
+from . import session_tools
+from . import detailed_tools  # New detailed spreadsheet operations
