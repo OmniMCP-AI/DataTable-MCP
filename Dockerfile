@@ -39,10 +39,10 @@ COPY . .
 
 # Set default environment variables (removed SPREADSHEET_API as it's no longer needed)
 
-# Debug: Check PORT environment variable
-RUN echo "=== Debug: Environment Variables ===" && \
-    echo "PORT=${PORT:-8321}" && \
-    echo "DATATABLE_MCP_PORT=${DATATABLE_MCP_PORT:-8321}"
+# Debug: Check configuration
+RUN echo "=== Debug: Configuration ===" && \
+    echo "Using port: 8321" && \
+    echo "Using DataTable MCP port: 8321"
 
 # Debug: List files to verify structure
 RUN echo "=== Debug: Listing app directory contents ===" && \
@@ -59,13 +59,12 @@ RUN useradd --create-home --shell /bin/bash app \
     && chown -R app:app /app
 USER app
 
-# Expose port (use default of 8321 if PORT not set)
+# Expose port 8321
 EXPOSE 8321
-# Expose additional port if PORT environment variable is set to a different value
 
 # Health check - for streamable-http mode
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD sh -c 'curl -f http://localhost:${PORT:-8321}/health || exit 1'
+    CMD curl -f http://localhost:8321/health || exit 1
 
 # Debug startup
 RUN echo "=== Debug: Final startup test ===" && \
