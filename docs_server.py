@@ -83,7 +83,7 @@ async def root():
             <li><strong>Session Management</strong> (3 tools): cleanup_tables, get_table_info, get_session_stats</li>
         </ul>
 
-        <p><strong>MCP Server:</strong> Running on port 8001 (streamable-http mode)</p>
+        <p><strong>MCP Server:</strong> Running on port 8321 (streamable-http mode)</p>
     </body>
     </html>
     """
@@ -176,8 +176,8 @@ if __name__ == "__main__":
     print("📄 OpenAPI JSON:  http://localhost:8002/openapi.json")
     print("🏠 Home:          http://localhost:8002/")
     print("=" * 50)
-    print("\n💡 Tip: Keep the MCP server running on port 8001")
-    print("    MCP Server: python main.py --transport streamable-http --port 8001")
+    print("\n💡 Tip: Keep the MCP server running on port 8321")
+    print("    MCP Server: python main.py --transport streamable-http --port 8321")
     print("\nPress CTRL+C to stop the documentation server\n")
 
     uvicorn.run(app, host="0.0.0.0", port=8002, log_level="info")

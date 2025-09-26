@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Any
 import logging
-from datatable_tools.spreadsheet_client import spreadsheet_client
-from datatable_tools.spreadsheet_models import UpdateRangeRequest, WorkSheetInfo
+from datatable_tools.third_party.spreadsheet import spreadsheet_client
+from datatable_tools.third_party.spreadsheet import UpdateRangeRequest, WorkSheetInfo
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)

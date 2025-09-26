@@ -48,6 +48,7 @@ cyclopts==3.24.0
     # via fastmcp
 dnspython==2.8.0
     # via email-validator
+    # via pymongo
 docstring-parser==0.17.0
     # via cyclopts
 docutils==0.22.2
@@ -75,12 +76,18 @@ google-auth==2.40.3
     # via google-api-python-client
     # via google-auth-httplib2
     # via google-auth-oauthlib
+    # via gspread
 google-auth-httplib2==0.2.0
     # via google-api-python-client
 google-auth-oauthlib==1.2.2
     # via datatable-mcp
+    # via gspread
 googleapis-common-protos==1.70.0
     # via google-api-core
+gspread==6.0.2
+    # via gspread-asyncio
+gspread-asyncio==2.0.0
+    # via datatable-mcp
 h11==0.16.0
     # via httpcore
     # via uvicorn
@@ -126,6 +133,8 @@ mdurl==0.1.2
     # via markdown-it-py
 more-itertools==10.8.0
     # via openapi-core
+motor==3.7.1
+    # via datatable-mcp
 multidict==6.6.4
     # via aiohttp
     # via yarl
@@ -181,6 +190,8 @@ pydantic-settings==2.10.1
     # via mcp
 pygments==2.19.2
     # via rich
+pymongo==4.15.1
+    # via motor
 pyparsing==3.2.5
     # via httplib2
 pyperclip==1.10.0
@@ -203,6 +214,7 @@ referencing==0.36.2
     # via jsonschema-specifications
 requests==2.32.5
     # via google-api-core
+    # via gspread-asyncio
     # via jsonschema-path
     # via requests-oauthlib
 requests-oauthlib==2.0.0
@@ -232,6 +244,8 @@ sse-starlette==3.0.2
 starlette==0.48.0
     # via fastapi
     # via mcp
+strenum==0.4.15
+    # via gspread
 typing-extensions==4.15.0
     # via aiosignal
     # via anyio

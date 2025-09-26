@@ -13,7 +13,7 @@ import httpx
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DOCKER_BASE_URL = "http://localhost:8001"
+DOCKER_BASE_URL = "http://localhost:8321"
 
 async def test_docker_health():
     """Test if Docker container is healthy"""

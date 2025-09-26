@@ -3,8 +3,8 @@ from typing import List, Dict, Any, Optional
 import logging
 import os
 import io
-from datatable_tools.spreadsheet_client import spreadsheet_client
-from datatable_tools.spreadsheet_models import WriteSheetRequest
+from datatable_tools.third_party.spreadsheet import spreadsheet_client
+from datatable_tools.third_party.spreadsheet import WriteSheetRequest
 from datatable_tools.table_manager import DataTable
 
 logger = logging.getLogger(__name__)

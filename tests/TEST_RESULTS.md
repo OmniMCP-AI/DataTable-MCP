@@ -17,7 +17,7 @@
 
 ### 3. MCP Server Tests
 - ✅ MCP server starts successfully in stdio mode
-- ✅ MCP server starts successfully in HTTP mode (port 8001)
+- ✅ MCP server starts successfully in HTTP mode (port 8321)
 - ✅ All 21 tools loaded successfully:
   - 📊 Table Lifecycle Management (4 tools)
   - ✏️ Data Manipulation (6 tools)

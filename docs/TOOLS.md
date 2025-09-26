@@ -689,19 +689,19 @@ All tools follow consistent error handling patterns:
 ### Basic Workflow:
 ```bash
 # 1. Create a table
-curl -X POST http://localhost:8001/tools/create_table \
+curl -X POST http://localhost:8321/tools/create_table \
   -d '{"data": [["John", 25], ["Jane", 30]], "headers": ["Name", "Age"]}'
 
 # 2. Add more data
-curl -X POST http://localhost:8001/tools/add_row \
+curl -X POST http://localhost:8321/tools/add_row \
   -d '{"table_id": "table_abc123", "row_data": ["Bob", 28]}'
 
 # 3. Query the data
-curl -X POST http://localhost:8001/tools/get_table_data \
+curl -X POST http://localhost:8321/tools/get_table_data \
   -d '{"table_id": "table_abc123"}'
 
 # 4. Export results
-curl -X POST http://localhost:8001/tools/export_table \
+curl -X POST http://localhost:8321/tools/export_table \
   -d '{"table_id": "table_abc123", "format": "csv"}'
 ```
 

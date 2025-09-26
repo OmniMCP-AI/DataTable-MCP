@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
 import logging
 import pandas as pd
-from datatable_tools.spreadsheet_client import spreadsheet_client
-from datatable_tools.spreadsheet_models import ReadSheetRequest, WorkSheetInfo
+from datatable_tools.third_party.spreadsheet import spreadsheet_client, ReadSheetRequest, WorkSheetInfo
 
 logger = logging.getLogger(__name__)
 

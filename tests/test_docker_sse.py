@@ -15,7 +15,7 @@ from typing import AsyncGenerator
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DOCKER_BASE_URL = "http://localhost:8001"
+DOCKER_BASE_URL = "http://localhost:8321"
 
 class SSEMCPClient:
     """Simple SSE-based MCP client for testing"""

@@ -4,11 +4,11 @@ services:
   datatable-mcp:
     build: .
     ports:
-      - "${PORT:-8001}:8001"
+      - "${PORT:-8321}:8321"
     environment:
       # DataTable MCP Configuration
-      - PORT=${PORT:-8001}
-      - DATATABLE_MCP_PORT=${DATATABLE_MCP_PORT:-8001}
+      - PORT=${PORT:-8321}
+      - DATATABLE_MCP_PORT=${DATATABLE_MCP_PORT:-8321}
 
       # Spreadsheet API Integration
       - SPREADSHEET_API=${SPREADSHEET_API:-http://host.docker.internal:9394}
@@ -22,7 +22,7 @@ services:
       - ./.env:/app/.env:ro
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8321/health"]
       interval: 30s
       timeout: 10s
       retries: 3

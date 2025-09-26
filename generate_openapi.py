@@ -47,7 +47,7 @@ def generate_mcp_openapi():
     # Add server information
     openapi_schema["servers"] = [
         {
-            "url": "http://localhost:8001",
+            "url": "http://localhost:8321",
             "description": "Local development server (HTTP mode)"
         },
         {
@@ -186,7 +186,7 @@ def generate_mcp_tools_docs():
             {
                 "name": "streamable-http",
                 "description": "HTTP transport for testing and web integration",
-                "usage": "python main.py --transport streamable-http --port 8001"
+                "usage": "python main.py --transport streamable-http --port 8321"
             }
         ]
     }
@@ -218,8 +218,8 @@ def main():
         print(f"   🛠️  MCP Tools Info: {tools_file}")
         print(f"   📝 Markdown Docs: API_DOCS.md")
         print("\n🌐 View OpenAPI docs by:")
-        print("   1. Start server: python main.py --transport streamable-http --port 8001")
-        print("   2. Visit: http://localhost:8001/docs (if FastMCP supports it)")
+        print("   1. Start server: python main.py --transport streamable-http --port 8321")
+        print("   2. Visit: http://localhost:8321/docs (if FastMCP supports it)")
         print("   3. Or use online viewer: https://editor.swagger.io/ (paste openapi.json)")
 
     except Exception as e:
@@ -249,9 +249,9 @@ For use with MCP clients like Claude Desktop.
 
 ### HTTP Mode (Testing)
 ```bash
-python main.py --transport streamable-http --port 8001
+python main.py --transport streamable-http --port 8321
 ```
-For testing and web integration. Server will be available at http://localhost:8001
+For testing and web integration. Server will be available at http://localhost:8321
 
 ## Tool Categories
 

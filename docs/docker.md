@@ -12,7 +12,7 @@
 2. **Build and run with Docker directly:**
    ```bash
    docker build -t datatable-mcp .
-   docker run -p 8001:8001 -e SPREADSHEET_API=http://host.docker.internal:9394 datatable-mcp
+   docker run -p 8321:8321 -e SPREADSHEET_API=http://host.docker.internal:9394 datatable-mcp
    ```
 
 ### Environment Configuration
@@ -28,8 +28,8 @@
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8001` | Port for the DataTable MCP service |
-| `DATATABLE_MCP_PORT` | `8001` | Alternative port configuration |
+| `PORT` | `8321` | Port for the DataTable MCP service |
+| `DATATABLE_MCP_PORT` | `8321` | Alternative port configuration |
 | `EXAMPLE_SPREADSHEET_ID` | `1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms` | Test spreadsheet ID |
 
 ### Configuration Files
@@ -59,7 +59,7 @@
 
 ### Docker Networking
 
-- **Default**: Service runs on port 8001
+- **Default**: Service runs on port 8321
 - **Host Access**: Use `host.docker.internal:9394` to access services running on the Docker host
 - **Production**: Replace with actual service URLs
 
@@ -67,7 +67,7 @@
 
 The container includes a health check that verifies the service is responding:
 ```bash
-curl -f http://localhost:8001/health
+curl -f http://localhost:8321/health
 ```
 
 ### Logs and Monitoring

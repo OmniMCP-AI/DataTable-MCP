@@ -1,5 +1,5 @@
 api:
-    rye run python main.py --transport streamable-http --port 8001
+    rye run python main.py --transport streamable-http --port 8321
 
 
 dev:
@@ -13,7 +13,7 @@ dev:
             --exts py \
             --on-busy-update=restart \
             --stop-signal SIGKILL \
-            -- rye run python main.py --transport streamable-http --port 8001 --app-dir datatable_tools/
+            -- rye run python main.py --transport streamable-http --port 8321 --app-dir datatable_tools/
     else
-        rye run python main.py --transport streamable-http --port 8001 --reload --reload-dir datatable_tools/ 
+        rye run python main.py --transport streamable-http --port 8321 --reload --reload-dir datatable_tools/ 
     fi

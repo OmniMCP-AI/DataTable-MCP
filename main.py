@@ -21,10 +21,10 @@ def main():
     """
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='DataTable MCP Server')
-    parser.add_argument('--transport', choices=['stdio', 'streamable-http'], default='stdio',
+    parser.add_argument('--transport', choices=['stdio', 'streamable-http'], default='streamable-http',
                         help='Transport mode: stdio (default) or streamable-http')
-    parser.add_argument('--port', type=int, default=8001,
-                        help='Port for streamable-http transport (default: 8001)')
+    parser.add_argument('--port', type=int, default=8321,
+                        help='Port for streamable-http transport (default: 8321)')
     args = parser.parse_args()
 
     print("🗃️  DataTable MCP Server")

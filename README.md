@@ -70,7 +70,7 @@ python main.py
 
 #### HTTP mode
 ```bash
-python main.py --transport streamable-http --port 8001
+python main.py --transport streamable-http --port 8321
 ```
 
 ### Core Data Structure
@@ -166,7 +166,7 @@ result = await aggregate_data(
 ## Configuration
 
 ### Environment Variables
-- `PORT` or `DATATABLE_MCP_PORT`: Server port (default: 8001)
+- `PORT` or `DATATABLE_MCP_PORT`: Server port (default: 8321)
 - `DATATABLE_MCP_BASE_URI`: Base URI (default: http://localhost)
 
 ### Table TTL

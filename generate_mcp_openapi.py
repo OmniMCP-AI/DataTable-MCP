@@ -152,7 +152,7 @@ def generate_openapi_schema() -> Dict[str, Any]:
         },
         "servers": [
             {
-                "url": "http://localhost:8001",
+                "url": "http://localhost:8321",
                 "description": "HTTP transport mode for testing and web integration"
             },
             {
@@ -384,8 +384,8 @@ def main():
         print(f"\n🌐 View Documentation:")
         print("   📖 Online Swagger Editor: https://editor.swagger.io/")
         print("      👆 Copy & paste the openapi.json content")
-        print("   🚀 Local Server: python main.py --transport streamable-http --port 8001")
-        print("      📍 Then visit: http://localhost:8001/docs")
+        print("   🚀 Local Server: python main.py --transport streamable-http --port 8321")
+        print("      📍 Then visit: http://localhost:8321/docs")
 
         # Generate quick reference
         print(f"\n📋 Quick Reference:")
