@@ -49,7 +49,6 @@ build/
 .env.example
 
 # Lock files (we're using pyproject.toml)
-requirements*.lock
 uv.lock
 
 # Temporary files

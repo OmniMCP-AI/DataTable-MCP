@@ -13,8 +13,23 @@ RUN pip install --no-cache-dir uv
 # Copy dependency files
 COPY pyproject.toml requirements.lock ./
 
-# Install Python dependencies from requirements.lock
-RUN uv pip install --system --no-cache -r requirements.lock
+# Install Python dependencies from requirements.lock (excluding local package)
+RUN uv pip install --system --no-cache -r requirements.lock --no-deps || \
+    uv pip install --system --no-cache \
+    fastapi>=0.115.12 \
+    fastmcp>=2.3.3 \
+    pandas>=2.0.0 \
+    numpy>=1.24.0 \
+    openpyxl>=3.1.0 \
+    xlrd>=2.0.1 \
+    python-dotenv>=1.1.1 \
+    sqlalchemy>=2.0.0 \
+    pyarrow>=12.0.0 \
+    uvicorn>=0.34.2 \
+    google-api-python-client>=2.0.0 \
+    google-auth-httplib2>=0.1.0 \
+    google-auth-oauthlib>=0.4.0 \
+    gspread-asyncio>=1.9.0
 
 # Copy application code
 COPY . .
