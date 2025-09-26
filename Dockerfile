@@ -39,20 +39,6 @@ COPY . .
 
 # Set default environment variables (removed SPREADSHEET_API as it's no longer needed)
 
-# Debug: Check configuration
-RUN echo "=== Debug: Configuration ===" && \
-    echo "Using port: 8321" && \
-    echo "Using DataTable MCP port: 8321"
-
-# Debug: List files to verify structure
-RUN echo "=== Debug: Listing app directory contents ===" && \
-    ls -la /app && \
-    echo "=== Debug: Checking if main.py exists ===" && \
-    ls -la /app/main.py && \
-    echo "=== Debug: Checking Python path and imports ===" && \
-    python -c "import sys; print('Python path:', sys.path)" && \
-    python -c "import core.server; print('Server import successful')" && \
-    python -c "import datatable_tools.table_manager; print('Table manager import successful')"
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
@@ -66,9 +52,6 @@ EXPOSE 8321
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://0.0.0.0:8321/health || exit 1
 
-# Debug startup
-RUN echo "=== Debug: Final startup test ===" && \
-    python -c "print('Testing main.py import...'); import main; print('Main.py import successful')"
 
 # Command to run the application
 CMD ["python", "main.py", "--transport", "streamable-http", "--port", "8321"]

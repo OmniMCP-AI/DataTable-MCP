@@ -6,4 +6,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create FastMCP server instance
-mcp = FastMCP("DataTable MCP Server")
+mcp = FastMCP(
+    name="DataTableMCP",
+    host="0.0.0.0"
+)

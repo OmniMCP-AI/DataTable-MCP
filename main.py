@@ -37,7 +37,7 @@ def main():
     print(f"   📦 Version: {version}")
     print(f"   🌐 Transport: {args.transport}")
     if args.transport == 'streamable-http':
-        print(f"   🔗 URL: http://localhost:{args.port}")
+        print(f"   🔗 URL: http://0.0.0.0:{args.port}")
     print(f"   🐍 Python: {sys.version.split()[0]}")
     print("")
 
@@ -66,7 +66,7 @@ def main():
 
     try:
         if args.transport == 'streamable-http':
-            print(f"🚀 Starting server on http://localhost:{args.port}")
+            print(f"🚀 Starting server on http://0.0.0.0:{args.port}")
             mcp.run(transport="streamable-http", port=args.port)
         else:
             print("🚀 Starting server in stdio mode")
