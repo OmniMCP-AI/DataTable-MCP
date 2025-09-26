@@ -11,20 +11,10 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files
-COPY pyproject.toml ./
+COPY pyproject.toml requirements.lock ./
 
-# Install Python dependencies from pyproject.toml (removed external API dependencies)
-RUN uv pip install --system --no-cache \
-    fastapi>=0.115.12 \
-    fastmcp>=2.3.3 \
-    pandas>=2.0.0 \
-    numpy>=1.24.0 \
-    openpyxl>=3.1.0 \
-    xlrd>=2.0.1 \
-    python-dotenv>=1.1.1 \
-    sqlalchemy>=2.0.0 \
-    pyarrow>=12.0.0 \
-    uvicorn>=0.34.2
+# Install Python dependencies from requirements.lock
+RUN uv pip install --system --no-cache -r requirements.lock
 
 # Copy application code
 COPY . .
