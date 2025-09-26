@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "language": "python",
+    "style": "pep8",
+    "env": ".env",
+    "venv": ".venv",
+    "packageManager": "rye"
+  },
+  "knowledge": [
+    "We use `.venv` for virtual environments.",
+    "Package management is handled by Rye, not pip/poetry.",
+    "Environment variables are always stored in `.env`.",
+    "All code must follow PEP8 style."
+  ]
+}
+

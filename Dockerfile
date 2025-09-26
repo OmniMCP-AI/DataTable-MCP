@@ -22,6 +22,8 @@ RUN uv pip install --system --no-cache \
     openpyxl>=3.1.0 \
     xlrd>=2.0.1 \
     httpx>=0.28.1 \
+    aiohttp>=3.12.15 \
+    python-dotenv>=1.1.1 \
     sqlalchemy>=2.0.0 \
     pyarrow>=12.0.0 \
     google-auth>=2.0.0 \
@@ -32,10 +34,16 @@ RUN uv pip install --system --no-cache \
 # Copy application code
 COPY . .
 
-# Debug: Check PORT environment variable first
+# Set default environment variables
+ENV SPREADSHEET_API=http://localhost:9394
+ENV TEST_USER_ID=68501372a3569b6897673a48
+ENV EXAMPLE_SPREADSHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
+
+# Debug: Check PORT and SPREADSHEET_API environment variables
 RUN echo "=== Debug: Environment Variables ===" && \
     echo "PORT=${PORT:-8001}" && \
-    echo "DATATABLE_MCP_PORT=${DATATABLE_MCP_PORT:-8001}"
+    echo "DATATABLE_MCP_PORT=${DATATABLE_MCP_PORT:-8001}" && \
+    echo "SPREADSHEET_API=${SPREADSHEET_API:-http://localhost:9394}"
 
 # Debug: List files to verify structure
 RUN echo "=== Debug: Listing app directory contents ===" && \

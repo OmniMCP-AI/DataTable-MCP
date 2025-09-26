@@ -42,9 +42,11 @@ build/
 # Logs
 *.log
 
-# Environment files
-.env
+# Environment files (allow .env but exclude examples)
+# .env - Allow for configuration
 .env.local
+.env.docker
+.env.example
 
 # Lock files (we're using pyproject.toml)
 requirements*.lock

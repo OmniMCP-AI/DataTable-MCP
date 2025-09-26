@@ -17,7 +17,10 @@ async def export_table(
     encoding: Optional[str] = None,
     delimiter: Optional[str] = None,
     spreadsheet_id: Optional[str] = None,
-    worksheet_id: Optional[str] = None
+    spreadsheet_name: Optional[str] = None,
+    worksheet_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    columns_name: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Export table to multiple formats (CSV, JSON, Excel, Parquet, Google Sheets).
@@ -29,8 +32,11 @@ async def export_table(
         return_content: If True, returns content in response instead of saving to file
         encoding: File encoding for CSV files (optional)
         delimiter: Delimiter for CSV files (optional)
-        spreadsheet_id: Google Sheets spreadsheet ID (required for google_sheets format)
-        worksheet_id: Google Sheets worksheet ID (optional, creates new if not provided)
+        spreadsheet_id: Google Sheets spreadsheet ID (optional for google_sheets format)
+        spreadsheet_name: Name for new spreadsheet (optional for google_sheets format)
+        worksheet_id: Google Sheets worksheet ID (optional)
+        user_id: User ID for Google Sheets authentication (required for google_sheets)
+        columns_name: Column headers to match against for Google Sheets (optional)
 
     Returns:
         Dict containing export results and file information
@@ -44,50 +50,46 @@ async def export_table(
                 "message": "Source table does not exist"
             }
 
-        df = table.df
-        content = None
-        actual_file_path = file_path
+        # Validate required parameters for Google Sheets
+        if export_format == "google_sheets" and not user_id:
+            return {
+                "success": False,
+                "error": "user_id is required for google_sheets export",
+                "message": "Please provide a user_id for Google Sheets authentication"
+            }
 
-        # Generate file path if not provided and not returning content
-        if not file_path and not return_content:
-            import tempfile
-            temp_dir = tempfile.gettempdir()
-            safe_name = table.metadata.name.replace(" ", "_").replace("/", "_")
-            actual_file_path = os.path.join(temp_dir, f"{safe_name}_{table_id}.{export_format}")
+        # Use new exporter system for supported formats
+        if export_format in ["google_sheets", "excel", "csv", "json"]:
+            from datatable_tools.data_exporters import create_exporter
 
-        # Prepare export parameters
-        export_params = {}
-        if encoding:
-            export_params['encoding'] = encoding
-        if delimiter:
-            export_params['delimiter'] = delimiter
+            export_params = {
+                "user_id": user_id,
+                "file_path": file_path,
+                "return_content": return_content,
+                "encoding": encoding,
+                "delimiter": delimiter,
+                "spreadsheet_id": spreadsheet_id,
+                "spreadsheet_name": spreadsheet_name,
+                "worksheet": worksheet_id,
+                "columns_name": columns_name
+            }
 
-        # Export based on format
-        if export_format == "csv":
-            if return_content:
-                content = df.to_csv(index=False, **export_params)
-            else:
-                df.to_csv(actual_file_path, index=False, **export_params)
+            exporter = create_exporter(export_format, **export_params)
+            return await exporter.export_data(table, **export_params)
 
-        elif export_format == "json":
-            if return_content:
-                content = df.to_json(orient='records')
-            else:
-                df.to_json(actual_file_path, orient='records')
-
-        elif export_format == "excel":
-            if return_content:
-                # Return Excel content as base64 for binary data
-                import base64
-                buffer = io.BytesIO()
-                df.to_excel(buffer, index=False)
-                content = base64.b64encode(buffer.getvalue()).decode()
-            else:
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(actual_file_path), exist_ok=True)
-                df.to_excel(actual_file_path, index=False)
-
+        # Legacy code for parquet format
         elif export_format == "parquet":
+            df = table.df
+            content = None
+            actual_file_path = file_path
+
+            # Generate file path if not provided and not returning content
+            if not file_path and not return_content:
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                safe_name = table.metadata.name.replace(" ", "_").replace("/", "_")
+                actual_file_path = os.path.join(temp_dir, f"{safe_name}_{table_id}.{export_format}")
+
             if return_content:
                 # Return Parquet content as base64 for binary data
                 import base64
@@ -99,28 +101,25 @@ async def export_table(
                 os.makedirs(os.path.dirname(actual_file_path), exist_ok=True)
                 df.to_parquet(actual_file_path)
 
-        elif export_format == "google_sheets":
-            # Google Sheets export
-            if not spreadsheet_id:
-                return {
-                    "success": False,
-                    "error": "spreadsheet_id is required for google_sheets export",
-                    "message": "Please provide a spreadsheet_id to export to Google Sheets"
-                }
-
-            # Placeholder for Google Sheets integration
-            # In a real implementation, you would use the Google Sheets API here
             result = {
                 "success": True,
                 "table_id": table_id,
                 "export_format": export_format,
-                "spreadsheet_id": spreadsheet_id,
-                "worksheet_id": worksheet_id or "new_worksheet",
+                "return_content": return_content,
                 "rows_exported": len(df),
                 "columns_exported": len(df.columns),
                 "table_name": table.metadata.name,
-                "message": f"Exported table {table_id} to Google Sheets spreadsheet {spreadsheet_id}" + (f" worksheet {worksheet_id}" if worksheet_id else " (new worksheet)")
             }
+
+            if return_content:
+                result["content"] = content
+                result["content_type"] = "base64"
+                result["message"] = f"Exported table {table_id} as {export_format} content"
+            else:
+                result["file_path"] = actual_file_path
+                result["file_size"] = os.path.getsize(actual_file_path) if os.path.exists(actual_file_path) else 0
+                result["message"] = f"Exported table {table_id} to {export_format} file: {actual_file_path}"
+
             return result
 
         else:
@@ -129,27 +128,6 @@ async def export_table(
                 "error": f"Unsupported export format: {export_format}",
                 "message": "export_format must be one of: csv, json, excel, parquet, google_sheets"
             }
-
-        result = {
-            "success": True,
-            "table_id": table_id,
-            "export_format": export_format,
-            "return_content": return_content,
-            "rows_exported": len(df),
-            "columns_exported": len(df.columns),
-            "table_name": table.metadata.name,
-        }
-
-        if return_content:
-            result["content"] = content
-            result["content_type"] = "text" if export_format in ["csv", "json"] else "base64"
-            result["message"] = f"Exported table {table_id} as {export_format} content"
-        else:
-            result["file_path"] = actual_file_path
-            result["file_size"] = os.path.getsize(actual_file_path) if os.path.exists(actual_file_path) else 0
-            result["message"] = f"Exported table {table_id} to {export_format} file: {actual_file_path}"
-
-        return result
 
     except Exception as e:
         logger.error(f"Error exporting table {table_id} as {export_format}: {e}")

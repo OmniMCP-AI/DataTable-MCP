@@ -57,7 +57,9 @@ async def load_table(
     name: Optional[str] = None,
     sheet_name: Optional[str] = None,
     encoding: Optional[str] = None,
-    delimiter: Optional[str] = None
+    delimiter: Optional[str] = None,
+    user_id: Optional[str] = None,
+    query: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Load a table from external sources (spreadsheet/excel/database).
@@ -69,45 +71,54 @@ async def load_table(
         sheet_name: Sheet name for Excel/Google Sheets (optional)
         encoding: File encoding for CSV files (optional)
         delimiter: Delimiter for CSV files (optional)
+        user_id: User ID for Google Sheets authentication (required for google_sheets)
+        query: SQL query for database sources (required for database)
 
     Returns:
         Dict containing table_id and loaded table information
     """
     try:
-        import pandas as pd
+        from datatable_tools.data_sources import create_data_source
 
-        # Prepare load parameters
-        load_params = {}
-        if encoding:
-            load_params['encoding'] = encoding
-        if delimiter:
-            load_params['delimiter'] = delimiter
+        # Validate required parameters
+        if source_type == "google_sheets" and not user_id:
+            return {
+                "success": False,
+                "error": "user_id is required for google_sheets source",
+                "message": "Please provide a user_id for Google Sheets authentication"
+            }
 
-        # Load data based on source type
-        if source_type == "csv":
-            df = pd.read_csv(source_path, **load_params)
-        elif source_type == "excel":
-            df = pd.read_excel(source_path, sheet_name=sheet_name or 0)
-        elif source_type == "google_sheets":
-            # Placeholder for Google Sheets integration
-            raise NotImplementedError("Google Sheets integration not yet implemented")
-        elif source_type == "database":
-            # Placeholder for database integration
-            raise NotImplementedError("Database integration not yet implemented")
-        else:
-            raise ValueError(f"Unsupported source type: {source_type}")
+        if source_type == "database" and not query:
+            return {
+                "success": False,
+                "error": "query is required for database source",
+                "message": "Please provide a SQL query for database sources"
+            }
+
+        # Create appropriate data source
+        source_params = {
+            "user_id": user_id,
+            "spreadsheet_id": source_path if source_type == "google_sheets" else None,
+            "worksheet": sheet_name,
+            "file_path": source_path if source_type in ["excel", "csv"] else None,
+            "sheet_name": sheet_name,
+            "encoding": encoding,
+            "delimiter": delimiter,
+            "connection_string": source_path if source_type == "database" else None,
+            "query": query
+        }
+
+        data_source = create_data_source(source_type, **source_params)
+
+        # Load data from source
+        data, headers, source_info = await data_source.load_data()
 
         # Create table
         table_id = table_manager.create_table(
-            data=df.values.tolist(),
-            headers=df.columns.tolist(),
+            data=data,
+            headers=headers,
             name=name or f"Loaded from {source_type}",
-            source_info={
-                "type": source_type,
-                "source_path": source_path,
-                "sheet_name": sheet_name,
-                "load_params": load_params
-            }
+            source_info=source_info
         )
 
         table = table_manager.get_table(table_id)
@@ -117,6 +128,7 @@ async def load_table(
             "name": table.metadata.name,
             "shape": table.shape,
             "headers": table.headers,
+            "source_info": source_info,
             "message": f"Loaded table from {source_type} with {table.shape[0]} rows and {table.shape[1]} columns"
         }
 
