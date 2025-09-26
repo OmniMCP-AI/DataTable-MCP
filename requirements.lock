@@ -237,6 +237,8 @@ six==1.17.0
     # via rfc3339-validator
 sniffio==1.3.1
     # via anyio
+socksio==1.0.0
+    # via httpx
 sqlalchemy==2.0.43
     # via datatable-mcp
 sse-starlette==3.0.2
