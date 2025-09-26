@@ -65,9 +65,13 @@ def main():
     print("")
 
     try:
+        # Set the transport mode for health check
+        import core.server
+        core.server._current_transport_mode = args.transport
+
         if args.transport == 'streamable-http':
             print(f"🚀 Starting server on http://0.0.0.0:{args.port}")
-            mcp.run(transport="streamable-http", port=args.port)
+            mcp.run(transport="streamable-http", port=args.port, host="0.0.0.0")
         else:
             print("🚀 Starting server in stdio mode")
             mcp.run()
