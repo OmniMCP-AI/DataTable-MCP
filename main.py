@@ -2,16 +2,11 @@ import argparse
 import logging
 import os
 import sys
-import asyncio
 from importlib import metadata
 
 # Local imports
-from core.server import server
+from core.server import mcp
 from datatable_tools.table_manager import cleanup_expired_tables
-from mcp.server.sse import SseServerTransport
-from mcp.server.stdio import stdio_server
-from mcp.server.models import InitializationOptions
-import mcp.types as types
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,46 +67,10 @@ def main():
     try:
         if args.transport == 'streamable-http':
             print(f"🚀 Starting server on http://localhost:{args.port}")
-
-            async def run_sse():
-                async with SseServerTransport("/messages") as (read_stream, write_stream):
-                    await server.run(read_stream, write_stream, InitializationOptions())
-
-            # Use uvicorn to serve the SSE transport on HTTP
-            import uvicorn
-            from fastapi import FastAPI
-            from mcp.server.sse import SseServerTransport
-
-            app = FastAPI()
-            transport = SseServerTransport("/messages")
-
-            @app.get("/sse")
-            async def sse_endpoint():
-                return transport.handle_sse_request()
-
-            @app.get("/health")
-            async def health_check():
-                return {"status": "healthy", "service": "datatable-mcp"}
-
-            uvicorn.run(app, host="0.0.0.0", port=args.port)
-
+            mcp.run(transport="streamable-http", port=args.port)
         else:
             print("🚀 Starting server in stdio mode")
-            async def run_stdio():
-                async with stdio_server() as (read_stream, write_stream):
-                    await server.run(
-                        read_stream,
-                        write_stream,
-                        InitializationOptions(
-                            server_name="datatable",
-                            server_version="1.0.0",
-                            capabilities=types.ServerCapabilities(
-                                tools={}
-                            )
-                        )
-                    )
-
-            asyncio.run(run_stdio())
+            mcp.run()
 
     except KeyboardInterrupt:
         print("\n👋 Server shutdown requested")

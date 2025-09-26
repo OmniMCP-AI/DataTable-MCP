@@ -1,11 +1,12 @@
 from typing import Dict, List, Optional, Any, Union, Callable
 import logging
 import pandas as pd
-from core.server import register_tool
+from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
+@mcp.tool()
 async def merge_tables(
     left_table_id: str,
     right_table_id: str,
@@ -169,6 +170,7 @@ async def merge_tables(
             "message": f"Failed to merge tables {left_table_id} and {right_table_id}"
         }
 
+@mcp.tool()
 async def aggregate_data(
     table_id: str,
     group_by: List[str],
@@ -284,6 +286,7 @@ async def aggregate_data(
             "message": f"Failed to aggregate table {table_id}"
         }
 
+@mcp.tool()
 async def map_values(
     table_id: str,
     column_mappings: Dict[str, Dict[str, Any]],

@@ -2,12 +2,13 @@ from typing import Dict, List, Optional, Any
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from core.server import register_tool
+from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-async def cleanup_tables(
+@mcp.tool()
+async def cleanup_expired_tables(
     force_cleanup: bool = False,
     table_ids: Optional[List[str]] = None
 ) -> Dict[str, Any]:
@@ -61,6 +62,7 @@ async def cleanup_tables(
             "message": "Failed to clean up tables"
         }
 
+@mcp.tool()
 async def get_table_info(
     table_id: str,
     include_sample: bool = False,
@@ -130,7 +132,8 @@ async def get_table_info(
             "message": f"Failed to get information for table {table_id}"
         }
 
-async def get_session_stats() -> Dict[str, Any]:
+@mcp.tool()
+async def get_session_info() -> Dict[str, Any]:
     """
     Get statistics about the current session and all active tables.
 
@@ -221,7 +224,3 @@ async def periodic_cleanup():
             logger.error(f"Error in periodic cleanup: {e}")
             await asyncio.sleep(60)  # Wait 1 minute before retrying
 
-# Register all tool functions
-register_tool("cleanup_expired_tables", cleanup_tables)
-register_tool("get_table_info", get_table_info) 
-register_tool("get_session_info", get_session_stats)

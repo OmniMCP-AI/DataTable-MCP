@@ -1,10 +1,11 @@
 from typing import Dict, List, Optional, Any
 import logging
-from core.server import register_tool
+from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
+@mcp.tool()
 async def create_table(
     data: List[List[Any]],
     headers: Optional[List[str]] = None,
@@ -51,6 +52,7 @@ async def create_table(
             "message": "Failed to create table"
         }
 
+@mcp.tool()
 async def load_table(
     source_type: str,
     source_path: str,
@@ -140,6 +142,7 @@ async def load_table(
             "message": f"Failed to load table from {source_type}"
         }
 
+@mcp.tool()
 async def clone_table(
     source_table_id: str,
     new_name: Optional[str] = None
@@ -185,6 +188,7 @@ async def clone_table(
             "message": f"Failed to clone table {source_table_id}"
         }
 
+@mcp.tool()
 async def list_tables() -> Dict[str, Any]:
     """
     Get inventory of all tables in the current session.
@@ -209,9 +213,3 @@ async def list_tables() -> Dict[str, Any]:
             "error": str(e),
             "message": "Failed to list tables"
         }
-
-# Register all tool functions
-register_tool("create_table", create_table)
-register_tool("load_table", load_table)
-register_tool("clone_table", clone_table)
-register_tool("list_tables", list_tables)

@@ -1,11 +1,12 @@
 from typing import Dict, List, Optional, Any, Union
 import logging
 import json
-from core.server import register_tool
+from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
+@mcp.tool()
 async def get_table_data(
     table_id: str,
     output_format: str = "dict",
@@ -87,6 +88,7 @@ async def get_table_data(
             "message": f"Failed to get data from table {table_id}"
         }
 
+@mcp.tool()
 async def filter_rows(
     table_id: str,
     conditions: List[Dict[str, Any]],
@@ -183,6 +185,7 @@ async def filter_rows(
             "message": f"Failed to filter table {table_id}"
         }
 
+@mcp.tool()
 async def sort_table(
     table_id: str,
     sort_columns: List[str],
@@ -277,6 +280,7 @@ async def sort_table(
             "message": f"Failed to sort table {table_id}"
         }
 
+@mcp.tool()
 async def filter_table(
     table_id: str,
     query: str,
@@ -360,8 +364,3 @@ async def filter_table(
             "message": f"Failed to filter table {table_id}"
         }
 
-# Register all tool functions
-register_tool("get_table_data", get_table_data)
-register_tool("filter_rows", filter_rows)
-register_tool("filter_table", filter_table)
-register_tool("sort_table", sort_table)

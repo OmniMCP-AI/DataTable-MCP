@@ -4,11 +4,12 @@ import io
 import os
 import pandas as pd
 from pathlib import Path
-from core.server import register_tool
+from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
+@mcp.tool()
 async def export_table(
     table_id: str,
     export_format: str,
@@ -137,5 +138,3 @@ async def export_table(
             "message": f"Failed to export table {table_id} as {export_format}"
         }
 
-# Register tool functions
-register_tool("export_table", export_table)
