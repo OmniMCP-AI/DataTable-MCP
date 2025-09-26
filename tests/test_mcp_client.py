@@ -10,6 +10,7 @@ import logging
 import os
 import subprocess
 import httpx
+import argparse
 
 sys.path.insert(0, '..')
 
@@ -58,32 +59,37 @@ async def test_mcp_stdio_client():
         traceback.print_exc()
         return False
 
-async def test_mcp_http_client():
+async def test_mcp_http_client(external_server=False, port=8002):
     """Test MCP server using Streamable-HTTP client"""
     print("\n🧪 Testing MCP Server with Streamable-HTTP Client...")
 
-    # Start server in background
+    if external_server:
+        print(f"📡 Using external server at http://127.0.0.1:{port}")
+
+    # Start server in background (only if not using external server)
     server_process = None
     try:
         from mcp.client.sse import sse_client
         from mcp.client.session import ClientSession
 
-        # Start the server
-        print("Starting HTTP server...")
-        server_process = subprocess.Popen([
-            "python", "main.py",
-            "--transport", "streamable-http",
-            "--port", "8002"
-        ], cwd=os.path.dirname(os.path.dirname(__file__)))
+        if not external_server:
+            # Start the server
+            print("Starting HTTP server...")
+            server_process = subprocess.Popen([
+                "python", "main.py",
+                "--transport", "streamable-http",
+                "--port", str(port)
+            ], cwd=os.path.dirname(os.path.dirname(__file__)))
 
-        # Wait for server to start
-        await asyncio.sleep(3)
+            # Wait for server to start
+            print("⏳ Waiting for server to start...")
+            await asyncio.sleep(3)
 
         # Test if server is responding
         async with httpx.AsyncClient() as http_client:
             try:
                 # Try to access the MCP endpoint instead of health
-                response = await http_client.get("http://127.0.0.1:8002/mcp", timeout=5.0)
+                response = await http_client.get(f"http://127.0.0.1:{port}/mcp", timeout=5.0)
                 # MCP endpoint returns 405/406 for GET requests, which is expected
                 if response.status_code not in [200, 405, 406]:
                     print(f"❌ Server MCP endpoint unexpected response: {response.status_code}")
@@ -94,7 +100,7 @@ async def test_mcp_http_client():
                 return False
 
         # Connect to the server via SSE
-        async with sse_client("http://127.0.0.1:8002/mcp") as (read, write):
+        async with sse_client(f"http://127.0.0.1:{port}/mcp") as (read, write):
             async with ClientSession(read, write) as client:
                 try:
                     # Initialize the connection
@@ -118,8 +124,8 @@ async def test_mcp_http_client():
         traceback.print_exc()
         return False
     finally:
-        # Clean up server process
-        if server_process:
+        # Clean up server process (only if we started it)
+        if server_process and not external_server:
             try:
                 server_process.terminate()
                 server_process.wait(timeout=5)
@@ -200,20 +206,52 @@ async def run_client_tests(client, protocol_name):
 
 async def main():
     """Run MCP client tests for both protocols"""
-    print("🚀 Starting MCP Client Tests (Both Protocols)")
+    parser = argparse.ArgumentParser(description='Test MCP server with client protocols')
+    parser.add_argument('--external-server', action='store_true',
+                        help='Use external running server instead of starting a new one')
+    parser.add_argument('--port', type=int, default=8321,
+                        help='Port for HTTP server (default: 8321)')
+    parser.add_argument('--skip-stdio', action='store_true',
+                        help='Skip STDIO protocol tests')
+    parser.add_argument('--skip-http', action='store_true',
+                        help='Skip HTTP protocol tests')
+
+    args = parser.parse_args()
+
+    print("🚀 Starting MCP Client Tests")
     print("=" * 60)
+    print(f"📊 Configuration:")
+    print(f"   External Server: {'Yes' if args.external_server else 'No'}")
+    print(f"   HTTP Port: {args.port}")
+    print(f"   Test STDIO: {'No' if args.skip_stdio else 'Yes'}")
+    print(f"   Test HTTP: {'No' if args.skip_http else 'Yes'}")
+    print()
 
-    # Test STDIO protocol
-    stdio_success = await test_mcp_stdio_client()
+    stdio_success = True
+    http_success = True
 
-    # Test HTTP protocol
-    http_success = await test_mcp_http_client()
+    # Test STDIO protocol (unless skipped)
+    if not args.skip_stdio:
+        stdio_success = await test_mcp_stdio_client()
+    else:
+        print("⏭️  Skipping STDIO protocol tests")
+
+    # Test HTTP protocol (unless skipped)
+    if not args.skip_http:
+        http_success = await test_mcp_http_client(
+            external_server=args.external_server,
+            port=args.port
+        )
+    else:
+        print("⏭️  Skipping HTTP protocol tests")
 
     # Summary
     print("\n" + "=" * 60)
     print("📊 Test Results Summary:")
-    print(f"   STDIO Protocol: {'✅ PASSED' if stdio_success else '❌ FAILED'}")
-    print(f"   HTTP Protocol:  {'✅ PASSED' if http_success else '❌ FAILED'}")
+    if not args.skip_stdio:
+        print(f"   STDIO Protocol: {'✅ PASSED' if stdio_success else '❌ FAILED'}")
+    if not args.skip_http:
+        print(f"   HTTP Protocol:  {'✅ PASSED' if http_success else '❌ FAILED'}")
 
     overall_success = stdio_success and http_success
 
