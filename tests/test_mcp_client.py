@@ -69,7 +69,7 @@ async def test_mcp_http_client(external_server=False, port=8002):
     # Start server in background (only if not using external server)
     server_process = None
     try:
-        from mcp.client.sse import sse_client
+        from mcp.client.streamable_http import streamablehttp_client
         from mcp.client.session import ClientSession
 
         if not external_server:
@@ -85,22 +85,19 @@ async def test_mcp_http_client(external_server=False, port=8002):
             print("⏳ Waiting for server to start...")
             await asyncio.sleep(3)
 
-        # Test if server is responding
-        async with httpx.AsyncClient() as http_client:
-            try:
-                # Try to access the MCP endpoint instead of health
-                response = await http_client.get(f"http://127.0.0.1:{port}/mcp", timeout=5.0)
-                # MCP endpoint returns 405/406 for GET requests, which is expected
-                if response.status_code not in [200, 405, 406]:
-                    print(f"❌ Server MCP endpoint unexpected response: {response.status_code}")
-                    return False
-                print("✅ HTTP Server is responding")
-            except Exception as e:
-                print(f"❌ Failed to connect to HTTP server: {e}")
-                return False
+        # Test server connectivity with a simple health check if available
+        try:
+            async with httpx.AsyncClient() as http_client:
+                response = await http_client.get(f"http://127.0.0.1:{port}/health", timeout=5.0)
+                if response.status_code == 200:
+                    print("✅ HTTP Server health check passed")
+                else:
+                    print(f"⚠️  Health check returned {response.status_code}, proceeding with MCP test...")
+        except Exception as e:
+            print(f"⚠️  Health check failed: {e}, proceeding with MCP test...")
 
-        # Connect to the server via SSE
-        async with sse_client(f"http://127.0.0.1:{port}/mcp") as (read, write):
+        # Connect to the server via streamable-http
+        async with streamablehttp_client(url=f"http://127.0.0.1:{port}/mcp", headers={}) as (read, write, _):
             async with ClientSession(read, write) as client:
                 try:
                     # Initialize the connection
