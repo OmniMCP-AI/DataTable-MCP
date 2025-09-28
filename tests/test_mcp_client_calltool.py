@@ -30,6 +30,14 @@ async def test_google_sheets_mcp(url, headers):
             print(f"📋 User ID: {TEST_USER_ID}")
             print("=" * 60)
 
+            # Test 0: List available tools
+            print(f"\n🛠️  Test 0: Listing available MCP tools")
+            tools = await session.list_tools()
+            print(f"✅ Found {len(tools.tools)} available tools:")
+            for i, tool in enumerate(tools.tools, 1):
+                print(f"   {i:2d}. {tool.name}: {tool.description[:80]}...")
+            print()
+
             # Test 1: Load table from Google Sheets (READ)
             print(f"\n📘 Test 1: Loading data from Google Sheets")
             print(f"   URL: https://docs.google.com/spreadsheets/d/{read_only_id}/edit")
