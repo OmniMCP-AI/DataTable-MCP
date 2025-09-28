@@ -32,6 +32,7 @@ RUN uv pip install --system --no-cache -r requirements.lock --no-deps || \
     python-dotenv>=1.1.1 \
     gspread-asyncio>=2.0.0 \
     motor>=3.7.1 \
+    pyjwt>=2.10.1 \
     uvicorn>=0.34.2
 
 # Copy application code
