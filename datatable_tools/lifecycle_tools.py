@@ -54,41 +54,6 @@ async def create_table(
             "message": "Failed to create table"
         }
 
-@mcp.tool()
-@require_google_service("sheets", "sheets_read")
-async def test_google_sheets_connection(
-    service,
-    ctx: Context,
-    spreadsheet_id: str
-) -> Dict[str, Any]:
-    """
-    Test Google Sheets connection by getting basic spreadsheet info.
-
-    Args:
-        spreadsheet_id: Spreadsheet ID to test
-
-    Returns:
-        Dict containing spreadsheet metadata
-    """
-    try:
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-
-        # Simple spreadsheet info call - should be fast
-        info = await GoogleSheetsService.get_spreadsheet_info(service, ctx, spreadsheet_id)
-
-        return {
-            "success": True,
-            "spreadsheet_info": info,
-            "message": f"Successfully connected to spreadsheet: {info.get('title', 'Unknown')}"
-        }
-
-    except Exception as e:
-        logger.error(f"Error testing Google Sheets connection: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to connect to Google Sheets"
-        }
 
 @mcp.tool()
 @require_google_service("sheets", "sheets_read")
