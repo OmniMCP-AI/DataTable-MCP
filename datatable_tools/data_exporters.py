@@ -34,13 +34,15 @@ class DataExporter(ABC):
 class SpreadsheetExporter(DataExporter):
     """Exporter for Google Spreadsheets using GoogleSheetsService"""
 
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, ctx: Optional[Any] = None):
         self.user_id = user_id
+        self.ctx = ctx
         self.google_sheets_service = GoogleSheetsService()
 
     async def export_data(
         self,
         table: DataTable,
+        ctx: Optional[Any] = None,
         spreadsheet_id: Optional[str] = None,
         spreadsheet_name: Optional[str] = None,
         worksheet: Optional[str] = None,
@@ -49,6 +51,9 @@ class SpreadsheetExporter(DataExporter):
     ) -> Dict[str, Any]:
         """Export data to Google Spreadsheet using GoogleSheetsService"""
         try:
+            # Use ctx parameter if provided, otherwise use instance ctx
+            context = ctx or self.ctx
+
             # Prepare data for export (just the table data, headers handled separately)
             export_data = []
             for row in table.data:
@@ -56,7 +61,7 @@ class SpreadsheetExporter(DataExporter):
 
             # Use the consolidated GoogleSheetsService
             response = await self.google_sheets_service.write_sheet_structured(
-                user_id=self.user_id,
+                ctx=context,
                 spreadsheet_id=spreadsheet_id,
                 data=export_data,
                 headers=table.headers,
@@ -287,7 +292,7 @@ def create_exporter(export_format: str, **kwargs) -> DataExporter:
     """Factory function to create appropriate exporter"""
 
     if export_format == "google_sheets":
-        return SpreadsheetExporter(user_id=kwargs.get("user_id"))
+        return SpreadsheetExporter(user_id=kwargs.get("user_id"), ctx=kwargs.get("ctx"))
     elif export_format == "excel":
         return ExcelExporter()
     elif export_format == "csv":

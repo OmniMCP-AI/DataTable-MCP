@@ -4,6 +4,7 @@ import io
 import os
 import pandas as pd
 from pathlib import Path
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def export_table(
+    ctx: Context,
     table_id: str,
     export_format: str,
     file_path: Optional[str] = None,
@@ -64,6 +66,7 @@ async def export_table(
             from datatable_tools.data_exporters import create_exporter
 
             export_params = {
+                "ctx": ctx,
                 "user_id": user_id,
                 "file_path": file_path,
                 "return_content": return_content,
