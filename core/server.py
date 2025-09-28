@@ -4,6 +4,9 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from importlib import metadata
 
+from fastmcp.server.auth import AuthProvider
+from mcp.server.auth.provider import TokenVerifier, AccessToken
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -11,10 +14,25 @@ logger = logging.getLogger(__name__)
 # Global variable to track current transport mode
 _current_transport_mode = "stdio"
 
+class UserIdBearerAuth(AuthProvider):
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not token:
+            raise ValueError("Token cannot be empty")
+        return AccessToken(
+            token=token,
+            client_id='xxx',
+            scopes=[],
+        )
+
+user_id_auth = UserIdBearerAuth()
+
+
+
 # Create FastMCP server instance
 mcp = FastMCP(
     name="DataTableMCP",
-    host="0.0.0.0"
+    host="0.0.0.0",
+    auth=user_id_auth
 )
 
 @mcp.custom_route("/health", methods=["GET"])
