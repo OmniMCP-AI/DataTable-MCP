@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any
 import logging
 import asyncio
 from datetime import datetime, timedelta
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
@@ -9,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def cleanup_expired_tables(
+    ctx: Context,
     force_cleanup: bool = False,
     table_ids: Optional[List[str]] = None
 ) -> Dict[str, Any]:
@@ -64,6 +66,7 @@ async def cleanup_expired_tables(
 
 @mcp.tool()
 async def get_table_info(
+    ctx: Context,
     table_id: str,
     include_sample: bool = False,
     sample_rows: int = 5
@@ -133,7 +136,7 @@ async def get_table_info(
         }
 
 @mcp.tool()
-async def get_session_info() -> Dict[str, Any]:
+async def get_session_info(ctx: Context) -> Dict[str, Any]:
     """
     Get statistics about the current session and all active tables.
 

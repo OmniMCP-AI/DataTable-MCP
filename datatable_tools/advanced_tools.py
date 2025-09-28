@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any, Union, Callable
 import logging
 import pandas as pd
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
@@ -8,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def merge_tables(
+    ctx: Context,
     left_table_id: str,
     right_table_id: str,
     join_type: str = "inner",
@@ -172,6 +174,7 @@ async def merge_tables(
 
 @mcp.tool()
 async def aggregate_data(
+    ctx: Context,
     table_id: str,
     group_by: List[str],
     aggregations: Dict[str, Union[str, List[str]]],
@@ -288,6 +291,7 @@ async def aggregate_data(
 
 @mcp.tool()
 async def map_values(
+    ctx: Context,
     table_id: str,
     column_mappings: Dict[str, Dict[str, Any]],
     default_value: Optional[Any] = None,

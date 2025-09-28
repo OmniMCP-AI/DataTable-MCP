@@ -39,15 +39,15 @@ async def test_google_sheets_mcp(url, headers):
             # print()
 
             # Test 1: Load table from Google Sheets (READ)
-            print(f"\n📘 Test 1: Loading data from Google Sheets")
-            print(f"   URL: https://docs.google.com/spreadsheets/d/{read_only_id}/edit")
+            # print(f"\n📘 Test 1: Loading data from Google Sheets")
+            # print(f"   URL: https://docs.google.com/spreadsheets/d/{read_only_id}/edit")
 
-            load_res = await session.call_tool("load_table_google_sheets", {
-                "source_path": read_only_id,
-                "name": "Class Data Demo",
-                "sheet_name": "Class Data"
-            })
-            print(f"✅ Load result: {load_res}")
+            # load_res = await session.call_tool("load_table_google_sheets", {
+            #     "source_path": read_only_id,
+            #     "name": "Class Data Demo",
+            #     "sheet_name": "Class Data"
+            # })
+            # print(f"✅ Load result: {load_res}")
 
             # # Extract table ID for further operations
             # if load_res.content and load_res.content[0].text:
@@ -66,46 +66,46 @@ async def test_google_sheets_mcp(url, headers):
             # })
             # print(f"✅ Sample data: {data_res}")
 
-            # # Test 3: Create a new table with test data
-            # print(f"\n📝 Test 3: Creating new table for export")
+            # Test 3: Create a new table with test data
+            print(f"\n📝 Test 3: Creating new table for export")
 
-            # from datetime import datetime
+            from datetime import datetime
             
-            # # Generate dynamic timestamps for each run
-            # now = datetime.now()
-            # test_data = [
-            #     ["Product", "Price", "Category", "Stock", "Updated"],
-            #     ["Laptop", 999.99, "Electronics", 25, now.strftime("%Y-%m-%d %H:%M:%S")],
-            #     ["Mouse", 29.99, "Electronics", 150, now.strftime("%Y-%m-%d %H:%M:%S")],
-            #     ["Book", 19.99, "Education", 75, now.strftime("%Y-%m-%d %H:%M:%S")]
-            # ]
+            # Generate dynamic timestamps for each run
+            now = datetime.now()
+            test_data = [
+                ["Product", "Price", "Category", "Stock", "Updated"],
+                ["Laptop", 999.99, "Electronics", 25, now.strftime("%Y-%m-%d %H:%M:%S")],
+                ["Mouse", 29.99, "Electronics", 150, now.strftime("%Y-%m-%d %H:%M:%S")],
+                ["Book", 19.99, "Education", 75, now.strftime("%Y-%m-%d %H:%M:%S")]
+            ]
 
-            # create_res = await session.call_tool("create_table", {
-            #     "data": test_data[1:],  # Data without headers
-            #     "headers": test_data[0],  # Headers
-            #     "name": "MCP Test Products"
-            # })
-            # print(f"✅ Create table result: {create_res}")
+            create_res = await session.call_tool("create_table", {
+                "data": test_data[1:],  # Data without headers
+                "headers": test_data[0],  # Headers
+                "name": "MCP Test Products"
+            })
+            print(f"✅ Create table result: {create_res}")
 
-            # # Extract new table ID
-            # if create_res.content and create_res.content[0].text:
-            #     content = json.loads(create_res.content[0].text)
-            #     if content.get('success'):
-            #         new_table_id = content.get('table_id')
-            #         print(f"✅ New table created: {new_table_id}")
+            # Extract new table ID
+            if create_res.content and create_res.content[0].text:
+                content = json.loads(create_res.content[0].text)
+                if content.get('success'):
+                    new_table_id = content.get('table_id')
+                    print(f"✅ New table created: {new_table_id}")
 
-            # # Test 4: Export table to Google Sheets (WRITE)
-            # print(f"\n📗 Test 4: Writing table to Google Sheets")
-            # print(f"   URL: https://docs.google.com/spreadsheets/d/{read_write_id}/edit")
+            # Test 4: Export table to Google Sheets (WRITE)
+            print(f"\n📗 Test 4: Writing table to Google Sheets")
+            print(f"   URL: https://docs.google.com/spreadsheets/d/{read_write_id}/edit")
 
-            # export_res = await session.call_tool("export_table", {
-            #     "table_id": new_table_id,
-            #     "export_format": "google_sheets",
-            #     "spreadsheet_id": read_write_id,
-            #     "spreadsheet_name": "test-worksheet",  # Use spreadsheet_name instead
-            #     "user_id": TEST_USER_ID
-            # })
-            # print(f"✅ Export result: {export_res}")
+            export_res = await session.call_tool("export_table", {
+                "table_id": new_table_id,
+                "export_format": "google_sheets",
+                "spreadsheet_id": read_write_id,
+                "spreadsheet_name":  "test-worksheet",  # Use  "Sheet1"
+                "user_id": TEST_USER_ID
+            })
+            print(f"✅ Export result: {export_res}")
 
             # # Test 5: Update a specific cell (use proper worksheet name)
             # print(f"\n📝 Test 5: Updating individual cell")
@@ -136,8 +136,23 @@ async def test_google_sheets_mcp(url, headers):
             print("🎉 All Google Sheets MCP tests completed!")
 
 if __name__ == "__main__":
-    print("🔗 Make sure MCP server is running on http://127.0.0.1:8321")
     import os
+    import argparse
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
+    parser.add_argument("--env", choices=["local", "prod"], default="prod",
+                       help="Environment to use: local (127.0.0.1:8321) or prod (datatable-mcp.maybe.ai)")
+    args = parser.parse_args()
+
+    # Set endpoint based on environment argument
+    if args.env == "local":
+        endpoint = "http://127.0.0.1:8321"
+    else:
+        endpoint = "https://datatable-mcp.maybe.ai"
+
+    print(f"🔗 Using {args.env} environment: {endpoint}")
+    print(f"💡 Use --env=local for local development or --env=prod for production")
     # Mock OAuth headers for testing (you need to provide real ones)
     test_headers = {
         "GOOGLE_OAUTH_REFRESH_TOKEN" : os.getenv("TEST_GOOGLE_OAUTH_REFRESH_TOKEN"),
@@ -145,4 +160,4 @@ if __name__ == "__main__":
 		"GOOGLE_OAUTH_CLIENT_SECRET" : os.getenv("TEST_GOOGLE_OAUTH_CLIENT_SECRET")
     }
 
-    asyncio.run(test_google_sheets_mcp(url="http://localhost:8321/mcp", headers=test_headers))
+    asyncio.run(test_google_sheets_mcp(url=f"{endpoint}/mcp", headers=test_headers))

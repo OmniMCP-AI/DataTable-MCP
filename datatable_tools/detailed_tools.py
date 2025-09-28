@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Any
 import logging
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.range_operations import range_operations
 
@@ -7,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def update_spreadsheet_cell(
+    ctx: Context,
     spreadsheet_id: str,
     worksheet: str,
     cell_address: str,
@@ -38,6 +40,7 @@ async def update_spreadsheet_cell(
 
 @mcp.tool()
 async def update_spreadsheet_row(
+    ctx: Context,
     spreadsheet_id: str,
     worksheet: str,
     row_number: int,
@@ -72,6 +75,7 @@ async def update_spreadsheet_row(
 
 @mcp.tool()
 async def update_spreadsheet_column(
+    ctx: Context,
     spreadsheet_id: str,
     worksheet: str,
     column: str,
@@ -106,6 +110,7 @@ async def update_spreadsheet_column(
 
 @mcp.tool()
 async def update_table_to_spreadsheet_range(
+    ctx: Context,
     table_id: str,
     spreadsheet_id: str,
     worksheet: str,

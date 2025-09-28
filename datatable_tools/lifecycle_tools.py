@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def create_table(
+    ctx: Context,
     data: List[List[Any]],
     headers: Optional[List[str]] = None,
     name: str = "Untitled Table"
@@ -142,6 +143,7 @@ async def load_table_google_sheets(
 
 @mcp.tool()
 async def load_table(
+    ctx: Context,
     source_type: str,
     source_path: str,
     name: Optional[str] = None,
@@ -230,6 +232,7 @@ async def load_table(
 
 @mcp.tool()
 async def clone_table(
+    ctx: Context,
     source_table_id: str,
     new_name: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -275,7 +278,7 @@ async def clone_table(
         }
 
 @mcp.tool()
-async def list_tables() -> Dict[str, Any]:
+async def list_tables(ctx: Context) -> Dict[str, Any]:
     """
     Get inventory of all tables in the current session.
 

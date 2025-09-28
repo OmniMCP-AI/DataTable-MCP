@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any, Union
 import logging
 import json
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
@@ -8,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def get_table_data(
+    ctx: Context,
     table_id: str,
     output_format: str = "dict",
     start_row: Optional[int] = None,
@@ -90,6 +92,7 @@ async def get_table_data(
 
 @mcp.tool()
 async def filter_rows(
+    ctx: Context,
     table_id: str,
     conditions: List[Dict[str, Any]],
     logic: str = "AND",
@@ -187,6 +190,7 @@ async def filter_rows(
 
 @mcp.tool()
 async def sort_table(
+    ctx: Context,
     table_id: str,
     sort_columns: List[str],
     ascending: Optional[List[bool]] = None,
@@ -282,6 +286,7 @@ async def sort_table(
 
 @mcp.tool()
 async def filter_table(
+    ctx: Context,
     table_id: str,
     query: str,
     create_new_table: bool = False,

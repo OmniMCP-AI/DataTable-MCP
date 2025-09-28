@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any, Union
 import logging
 import numpy as np
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
 
@@ -8,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 @mcp.tool()
 async def add_row(
+    ctx: Context,
     table_id: str,
     row_data: List[Any],
     fill_strategy: str = "none"
@@ -54,6 +56,7 @@ async def add_row(
 
 @mcp.tool()
 async def add_column(
+    ctx: Context,
     table_id: str,
     column_name: str,
     default_value: Optional[Any] = None,
@@ -110,6 +113,7 @@ async def add_column(
 
 @mcp.tool()
 async def update_cell(
+    ctx: Context,
     table_id: str,
     row_index: int,
     column: Union[str, int],
@@ -190,6 +194,7 @@ async def update_cell(
 
 @mcp.tool()
 async def delete_row(
+    ctx: Context,
     table_id: str,
     row_indices: List[int]
 ) -> Dict[str, Any]:
@@ -244,6 +249,7 @@ async def delete_row(
 
 @mcp.tool()
 async def delete_column(
+    ctx: Context,
     table_id: str,
     columns: List[str]
 ) -> Dict[str, Any]:
