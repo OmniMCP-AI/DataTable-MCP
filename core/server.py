@@ -32,3 +32,4 @@ async def health_check(request: Request):
         "version": version,
         "transport": _current_transport_mode
     })
+    

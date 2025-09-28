@@ -2,7 +2,9 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
 import logging
 import pandas as pd
+from fastmcp import Context
 from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+from datatable_tools.auth.service_decorator import require_google_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +26,21 @@ class DataSource(ABC):
 class SpreadsheetDataSource(DataSource):
     """Data source for Google Spreadsheets using GoogleSheetsService"""
 
-    def __init__(self, user_id: str, spreadsheet_id: str, worksheet: str = None):
-        self.user_id = user_id
+    def __init__(self, spreadsheet_id: str, worksheet: str = None):
         self.spreadsheet_id = spreadsheet_id
         self.worksheet = worksheet or "Sheet1"
-        self.google_sheets_service = GoogleSheetsService()
 
-    async def load_data(self) -> Tuple[List[List[Any]], List[str], Dict[str, Any]]:
+    @staticmethod
+    @require_google_service("sheets", "sheets_read")
+    async def load_data(service, ctx: Context, spreadsheet_id: str, worksheet: str = None) -> Tuple[List[List[Any]], List[str], Dict[str, Any]]:
         """Load data from Google Spreadsheet using GoogleSheetsService"""
         try:
             # Use the consolidated GoogleSheetsService
-            response = await self.google_sheets_service.read_sheet_structured(
-                user_id=self.user_id,
-                spreadsheet_id=self.spreadsheet_id,
-                sheet_name=self.worksheet
+            response = await GoogleSheetsService.read_sheet_structured(
+                service,
+                ctx,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=worksheet or "Sheet1"
             )
 
             if not response.get("success"):
@@ -50,7 +53,7 @@ class SpreadsheetDataSource(DataSource):
             # Create source_info from the response
             source_info = {
                 "type": "google_sheets",
-                "spreadsheet_id": self.spreadsheet_id,
+                "spreadsheet_id": spreadsheet_id,
                 "worksheet": response["worksheet"]["title"],
                 "used_range": response.get("used_range"),
                 "worksheet_url": response.get("worksheet_url"),
@@ -58,11 +61,11 @@ class SpreadsheetDataSource(DataSource):
                 "column_count": response.get("column_count", len(headers))
             }
 
-            logger.info(f"Loaded {len(data)} rows, {len(headers)} columns from spreadsheet {self.spreadsheet_id}")
+            logger.info(f"Loaded {len(data)} rows, {len(headers)} columns from spreadsheet {spreadsheet_id}")
             return data, headers, source_info
 
         except Exception as e:
-            logger.error(f"Error loading from spreadsheet {self.spreadsheet_id}: {e}")
+            logger.error(f"Error loading from spreadsheet {spreadsheet_id}: {e}")
             raise
 
 
@@ -188,7 +191,6 @@ def create_data_source(source_type: str, **kwargs) -> DataSource:
 
     if source_type == "google_sheets":
         return SpreadsheetDataSource(
-            user_id=kwargs.get("user_id"),
             spreadsheet_id=kwargs.get("spreadsheet_id"),
             worksheet=kwargs.get("worksheet")
         )

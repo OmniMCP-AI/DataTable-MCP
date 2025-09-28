@@ -1,7 +1,9 @@
 from typing import Dict, List, Optional, Any
 import logging
+from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
+from datatable_tools.auth.service_decorator import require_google_service
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,127 @@ async def create_table(
         }
 
 @mcp.tool()
+@require_google_service("sheets", "sheets_read")
+async def test_google_sheets_connection(
+    service,
+    ctx: Context,
+    spreadsheet_id: str
+) -> Dict[str, Any]:
+    """
+    Test Google Sheets connection by getting basic spreadsheet info.
+
+    Args:
+        spreadsheet_id: Spreadsheet ID to test
+
+    Returns:
+        Dict containing spreadsheet metadata
+    """
+    try:
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+        # Simple spreadsheet info call - should be fast
+        info = await GoogleSheetsService.get_spreadsheet_info(service, ctx, spreadsheet_id)
+
+        return {
+            "success": True,
+            "spreadsheet_info": info,
+            "message": f"Successfully connected to spreadsheet: {info.get('title', 'Unknown')}"
+        }
+
+    except Exception as e:
+        logger.error(f"Error testing Google Sheets connection: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to connect to Google Sheets"
+        }
+
+@mcp.tool()
+@require_google_service("sheets", "sheets_read")
+async def load_table_google_sheets(
+    service,
+    ctx: Context,
+    source_path: str,
+    name: Optional[str] = None,
+    sheet_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Load a table from Google Sheets.
+
+    Args:
+        source_path: Spreadsheet ID
+        name: Optional table name
+        sheet_name: Sheet name (optional)
+
+    Returns:
+        Dict containing table_id and loaded table information
+    """
+    try:
+        from datatable_tools.data_sources import create_data_source, SpreadsheetDataSource
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+        # Create Google Sheets data source
+        source_params = {
+            "spreadsheet_id": source_path,
+            "worksheet": sheet_name
+        }
+
+        data_source = create_data_source("google_sheets", **source_params)
+
+        # Load data from source - call GoogleSheetsService directly with injected service and ctx
+        response = await GoogleSheetsService.read_sheet_structured(
+            service,  # Use the authenticated service from the decorator
+            ctx,      # Use the context from the decorator
+            source_path,  # spreadsheet_id
+            sheet_name    # sheet_name
+        )
+
+        if not response.get("success"):
+            raise Exception(f"Failed to read spreadsheet: {response.get('message', 'Unknown error')}")
+
+        # Extract data and headers
+        headers = response.get("headers", [])
+        data = response.get("data", [])
+
+        # Create source_info from the response
+        source_info = {
+            "type": "google_sheets",
+            "spreadsheet_id": source_path,
+            "worksheet": response["worksheet"]["title"],
+            "used_range": response.get("used_range"),
+            "worksheet_url": response.get("worksheet_url"),
+            "row_count": response.get("row_count", len(data)),
+            "column_count": response.get("column_count", len(headers))
+        }
+
+        # Create table
+        table_id = table_manager.create_table(
+            data=data,
+            headers=headers,
+            name=name or f"Loaded from Google Sheets",
+            source_info=source_info
+        )
+
+        table = table_manager.get_table(table_id)
+        return {
+            "success": True,
+            "table_id": table_id,
+            "name": table.metadata.name,
+            "shape": table.shape,
+            "headers": table.headers,
+            "source_info": source_info,
+            "message": f"Loaded table from Google Sheets with {table.shape[0]} rows and {table.shape[1]} columns"
+        }
+
+    except Exception as e:
+        logger.error(f"Error loading table from Google Sheets: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to load table from Google Sheets"
+        }
+
+@mcp.tool()
 async def load_table(
     source_type: str,
     source_path: str,
@@ -64,16 +187,16 @@ async def load_table(
     query: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Load a table from external sources (spreadsheet/excel/database).
+    Load a table from external sources (excel/csv/database). For Google Sheets, use load_table_google_sheets.
 
     Args:
-        source_type: Type of source ("google_sheets", "excel", "csv", "database")
-        source_path: Path/URL to the source (file path, spreadsheet ID, database connection string)
+        source_type: Type of source ("excel", "csv", "database") - NOT "google_sheets"
+        source_path: Path/URL to the source (file path, database connection string)
         name: Optional table name
-        sheet_name: Sheet name for Excel/Google Sheets (optional)
+        sheet_name: Sheet name for Excel (optional)
         encoding: File encoding for CSV files (optional)
         delimiter: Delimiter for CSV files (optional)
-        user_id: User ID for Google Sheets authentication (required for google_sheets)
+        user_id: Deprecated - not used
         query: SQL query for database sources (required for database)
 
     Returns:
@@ -82,14 +205,15 @@ async def load_table(
     try:
         from datatable_tools.data_sources import create_data_source
 
-        # Validate required parameters
-        if source_type == "google_sheets" and not user_id:
+        # Redirect Google Sheets to the dedicated function
+        if source_type == "google_sheets":
             return {
                 "success": False,
-                "error": "user_id is required for google_sheets source",
-                "message": "Please provide a user_id for Google Sheets authentication"
+                "error": "Use load_table_google_sheets for Google Sheets sources",
+                "message": "Please use the load_table_google_sheets function for loading Google Sheets data"
             }
 
+        # Validate required parameters
         if source_type == "database" and not query:
             return {
                 "success": False,
@@ -99,9 +223,6 @@ async def load_table(
 
         # Create appropriate data source
         source_params = {
-            "user_id": user_id,
-            "spreadsheet_id": source_path if source_type == "google_sheets" else None,
-            "worksheet": sheet_name,
             "file_path": source_path if source_type in ["excel", "csv"] else None,
             "sheet_name": sheet_name,
             "encoding": encoding,

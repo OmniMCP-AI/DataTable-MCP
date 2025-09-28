@@ -16,7 +16,7 @@ from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from auth.scopes import OAUTH_STATE_TO_SESSION_ID_MAP, SCOPES
+from datatable_tools.auth.scopes import OAUTH_STATE_TO_SESSION_ID_MAP, SCOPES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -464,7 +464,7 @@ def load_credentials_from_env() -> Optional[Credentials]:
         scopes = [scope.strip() for scope in scopes_str.split(",") if scope.strip()]
     else:
         # Use default MCP required scopes if not specified in environment
-        from auth.scopes import SCOPES
+        from datatable_tools.auth.scopes import SCOPES
         scopes = SCOPES
     
     try:
@@ -1393,10 +1393,13 @@ async def get_authenticated_google_service(
         )
 
         # Import here to avoid circular import
-        from core.server import get_oauth_redirect_uri_for_current_mode
-
-        # Ensure OAuth callback is available
-        redirect_uri = get_oauth_redirect_uri_for_current_mode()
+        try:
+            from core.server import get_oauth_redirect_uri_for_current_mode
+            redirect_uri = get_oauth_redirect_uri_for_current_mode()
+        except ImportError:
+            # Default redirect URI for testing/development
+            redirect_uri = "http://localhost:8080/oauth/callback"
+            logger.warning("get_oauth_redirect_uri_for_current_mode not found, using default redirect URI")
         # Note: We don't know the transport mode here, but the server should have set it
 
         # Generate auth URL and raise exception with it

@@ -190,6 +190,8 @@ pydantic-settings==2.10.1
     # via mcp
 pygments==2.19.2
     # via rich
+pyjwt==2.10.1
+    # via datatable-mcp
 pymongo==4.15.1
     # via motor
 pyparsing==3.2.5

@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 
 from fastmcp import Context
 from google.auth.exceptions import RefreshError
-from auth.google_auth import get_authenticated_google_service, GoogleAuthenticationError
+from datatable_tools.auth.google_auth import get_authenticated_google_service, GoogleAuthenticationError
 
 logger = logging.getLogger(__name__)
 
 # Import scope constants
-from auth.scopes import (
+from datatable_tools.auth.scopes import (
     GMAIL_READONLY_SCOPE, GMAIL_SEND_SCOPE, GMAIL_COMPOSE_SCOPE, GMAIL_MODIFY_SCOPE, GMAIL_LABELS_SCOPE,
     DRIVE_READONLY_SCOPE, DRIVE_FILE_SCOPE,
     DOCS_READONLY_SCOPE, DOCS_WRITE_SCOPE,
@@ -234,6 +234,7 @@ def require_google_service(
 
             if ctx and hasattr(ctx, 'request_context') and ctx.request_context:
                 headers_raw = ctx.request_context.request.get("headers", {})
+                logger.debug("headers_raw: %s", headers_raw)
                 
                 # Convert headers from list of tuples to dictionary
                 if isinstance(headers_raw, list):

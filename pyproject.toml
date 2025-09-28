@@ -26,6 +26,7 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "gspread-asyncio>=2.0.0",
     "motor>=3.7.1",
+    "pyjwt>=2.10.1",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
