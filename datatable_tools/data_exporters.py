@@ -62,7 +62,7 @@ class SpreadsheetExporter(DataExporter):
             # Use the consolidated GoogleSheetsService
             response = await self.google_sheets_service.write_sheet_structured(
                 ctx=context,
-                spreadsheet_id=spreadsheet_id,
+                spreadsheet_identifier=spreadsheet_id,
                 data=export_data,
                 headers=table.headers,
                 sheet_name=worksheet,
