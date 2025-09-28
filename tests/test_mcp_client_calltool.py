@@ -71,11 +71,15 @@ async def test_google_sheets_mcp(url, headers):
             # Test 3: Create a new table with test data
             print(f"\n📝 Test 3: Creating new table for export")
 
+            from datetime import datetime
+            
+            # Generate dynamic timestamps for each run
+            now = datetime.now()
             test_data = [
                 ["Product", "Price", "Category", "Stock", "Updated"],
-                ["Laptop", 999.99, "Electronics", 25, "2024-09-26"],
-                ["Mouse", 29.99, "Electronics", 150, "2024-09-26"],
-                ["Book", 19.99, "Education", 75, "2024-09-26"]
+                ["Laptop", 999.99, "Electronics", 25, now.strftime("%Y-%m-%d %H:%M:%S")],
+                ["Mouse", 29.99, "Electronics", 150, now.strftime("%Y-%m-%d %H:%M:%S")],
+                ["Book", 19.99, "Education", 75, now.strftime("%Y-%m-%d %H:%M:%S")]
             ]
 
             create_res = await session.call_tool("create_table", {
