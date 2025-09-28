@@ -1,14 +1,16 @@
 from typing import Dict, List, Optional, Any
 import logging
-from datatable_tools.third_party.spreadsheet import spreadsheet_client
-from datatable_tools.third_party.spreadsheet import UpdateRangeRequest, WorkSheetInfo
+from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
 from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
 
 class DataTableRangeOperations:
-    """Detailed spreadsheet operations using /range/update endpoint"""
+    """Detailed spreadsheet operations using GoogleSheetsService"""
+
+    def __init__(self):
+        self.google_sheets_service = GoogleSheetsService()
 
     @staticmethod
     def _column_index_to_letter(index: int) -> str:
@@ -18,20 +20,6 @@ class DataTableRangeOperations:
             result = chr(index % 26 + ord('A')) + result
             index = index // 26 - 1
         return result
-
-    @staticmethod
-    def _parse_worksheet_info(worksheet: Any) -> WorkSheetInfo:
-        """Convert worksheet parameter to WorkSheetInfo"""
-        if isinstance(worksheet, str):
-            return WorkSheetInfo(name=worksheet)
-        elif isinstance(worksheet, int):
-            return WorkSheetInfo(id=worksheet)
-        elif isinstance(worksheet, dict):
-            return WorkSheetInfo(**worksheet)
-        elif hasattr(worksheet, 'name') or hasattr(worksheet, 'id'):
-            return worksheet
-        else:
-            return WorkSheetInfo(name="Sheet1")
 
     async def update_cell(
         self,
@@ -52,34 +40,48 @@ class DataTableRangeOperations:
             user_id: User ID for authentication
 
         Returns:
-            Dict with operation results
+            Dict with update results
         """
         try:
-            request = UpdateRangeRequest(
+            # Convert worksheet to name
+            worksheet_name = worksheet if isinstance(worksheet, str) else str(worksheet)
+
+            # Create range notation with worksheet
+            range_notation = f"{worksheet_name}!{cell_address}"
+
+            # Prepare values as 2D array
+            values = [[str(value)]]
+
+            # Update the range using GoogleSheetsService
+            success = await self.google_sheets_service.update_range(
+                user_id=user_id,
                 spreadsheet_id=spreadsheet_id,
-                worksheet=self._parse_worksheet_info(worksheet),
-                range=cell_address,
-                values=[[str(value)]]
+                range_notation=range_notation,
+                values=values
             )
 
-            response = await spreadsheet_client.update_range(request, user_id)
-
-            return {
-                "success": response.success,
-                "message": response.message,
-                "spreadsheet_id": response.spreadsheet_id,
-                "worksheet": response.worksheet.name,
-                "updated_range": response.updated_range,
-                "updated_cells": response.updated_cells,
-                "worksheet_url": response.worksheet_url
-            }
+            if success:
+                return {
+                    "success": True,
+                    "spreadsheet_id": spreadsheet_id,
+                    "worksheet": worksheet_name,
+                    "updated_range": cell_address,
+                    "updated_cells": 1,
+                    "message": f"Successfully updated cell {cell_address} in worksheet '{worksheet_name}'"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to update cell",
+                    "message": f"Failed to update cell {cell_address} in worksheet '{worksheet_name}'"
+                }
 
         except Exception as e:
             logger.error(f"Error updating cell {cell_address}: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Failed to update cell {cell_address}"
+                "message": f"Error updating cell {cell_address}: {e}"
             }
 
     async def update_row(
@@ -106,33 +108,45 @@ class DataTableRangeOperations:
             Dict with operation results
         """
         try:
+            # Convert worksheet to name
+            worksheet_name = worksheet if isinstance(worksheet, str) else str(worksheet)
+
             # Calculate end column based on data length
             start_col_index = ord(start_column.upper()) - ord('A')
             end_col_index = start_col_index + len(row_data) - 1
             end_column = self._column_index_to_letter(end_col_index)
 
             range_str = f"{start_column}{row_number}:{end_column}{row_number}"
+            range_notation = f"{worksheet_name}!{range_str}"
 
-            request = UpdateRangeRequest(
+            # Prepare values as 2D array
+            values = [[str(val) for val in row_data]]
+
+            # Update the range using GoogleSheetsService
+            success = await self.google_sheets_service.update_range(
+                user_id=user_id,
                 spreadsheet_id=spreadsheet_id,
-                worksheet=self._parse_worksheet_info(worksheet),
-                range=range_str,
-                values=[[str(val) for val in row_data]]
+                range_notation=range_notation,
+                values=values
             )
 
-            response = await spreadsheet_client.update_range(request, user_id)
-
-            return {
-                "success": response.success,
-                "message": response.message,
-                "spreadsheet_id": response.spreadsheet_id,
-                "worksheet": response.worksheet.name,
-                "updated_range": response.updated_range,
-                "updated_cells": response.updated_cells,
-                "row_number": row_number,
-                "columns_updated": len(row_data),
-                "worksheet_url": response.worksheet_url
-            }
+            if success:
+                return {
+                    "success": True,
+                    "spreadsheet_id": spreadsheet_id,
+                    "worksheet": worksheet_name,
+                    "updated_range": range_str,
+                    "updated_cells": len(row_data),
+                    "row_number": row_number,
+                    "columns_updated": len(row_data),
+                    "message": f"Successfully updated row {row_number} in worksheet '{worksheet_name}'"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to update row",
+                    "message": f"Failed to update row {row_number} in worksheet '{worksheet_name}'"
+                }
 
         except Exception as e:
             logger.error(f"Error updating row {row_number}: {e}")
@@ -166,32 +180,41 @@ class DataTableRangeOperations:
             Dict with operation results
         """
         try:
+            # Convert worksheet to name
+            worksheet_name = worksheet if isinstance(worksheet, str) else str(worksheet)
+
             end_row = start_row + len(column_data) - 1
             range_str = f"{column.upper()}{start_row}:{column.upper()}{end_row}"
+            range_notation = f"{worksheet_name}!{range_str}"
 
             # Convert column data to 2D array (each value in its own row)
             values = [[str(val)] for val in column_data]
 
-            request = UpdateRangeRequest(
+            # Update the range using GoogleSheetsService
+            success = await self.google_sheets_service.update_range(
+                user_id=user_id,
                 spreadsheet_id=spreadsheet_id,
-                worksheet=self._parse_worksheet_info(worksheet),
-                range=range_str,
+                range_notation=range_notation,
                 values=values
             )
 
-            response = await spreadsheet_client.update_range(request, user_id)
-
-            return {
-                "success": response.success,
-                "message": response.message,
-                "spreadsheet_id": response.spreadsheet_id,
-                "worksheet": response.worksheet.name,
-                "updated_range": response.updated_range,
-                "updated_cells": response.updated_cells,
-                "column": column.upper(),
-                "rows_updated": len(column_data),
-                "worksheet_url": response.worksheet_url
-            }
+            if success:
+                return {
+                    "success": True,
+                    "spreadsheet_id": spreadsheet_id,
+                    "worksheet": worksheet_name,
+                    "updated_range": range_str,
+                    "updated_cells": len(column_data),
+                    "column": column.upper(),
+                    "rows_updated": len(column_data),
+                    "message": f"Successfully updated column {column} in worksheet '{worksheet_name}'"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to update column",
+                    "message": f"Failed to update column {column} in worksheet '{worksheet_name}'"
+                }
 
         except Exception as e:
             logger.error(f"Error updating column {column}: {e}")
@@ -233,6 +256,9 @@ class DataTableRangeOperations:
                     "message": "Source table does not exist"
                 }
 
+            # Convert worksheet to name
+            worksheet_name = worksheet if isinstance(worksheet, str) else str(worksheet)
+
             # Prepare data
             export_data = []
             if include_headers and table.headers:
@@ -269,30 +295,36 @@ class DataTableRangeOperations:
             end_row = start_row + num_rows - 1
 
             range_str = f"{start_cell.upper()}:{end_col}{end_row}"
+            range_notation = f"{worksheet_name}!{range_str}"
 
-            request = UpdateRangeRequest(
+            # Update the range using GoogleSheetsService
+            success = await self.google_sheets_service.update_range(
+                user_id=user_id,
                 spreadsheet_id=spreadsheet_id,
-                worksheet=self._parse_worksheet_info(worksheet),
-                range=range_str,
+                range_notation=range_notation,
                 values=export_data
             )
 
-            response = await spreadsheet_client.update_range(request, user_id)
-
-            return {
-                "success": response.success,
-                "message": response.message,
-                "table_id": table_id,
-                "spreadsheet_id": response.spreadsheet_id,
-                "worksheet": response.worksheet.name,
-                "updated_range": response.updated_range,
-                "updated_cells": response.updated_cells,
-                "rows_exported": len(table.data),
-                "columns_exported": len(table.headers) if table.headers else 0,
-                "included_headers": include_headers,
-                "table_name": table.metadata.name,
-                "worksheet_url": response.worksheet_url
-            }
+            if success:
+                return {
+                    "success": True,
+                    "table_id": table_id,
+                    "spreadsheet_id": spreadsheet_id,
+                    "worksheet": worksheet_name,
+                    "updated_range": range_str,
+                    "updated_cells": num_rows * num_cols,
+                    "rows_exported": len(table.data),
+                    "columns_exported": len(table.headers) if table.headers else 0,
+                    "included_headers": include_headers,
+                    "table_name": table.metadata.name,
+                    "message": f"Successfully updated table range for table {table_id} in worksheet '{worksheet_name}'"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to update table range",
+                    "message": f"Failed to update table range for table {table_id} in worksheet '{worksheet_name}'"
+                }
 
         except Exception as e:
             logger.error(f"Error updating table range for table {table_id}: {e}")

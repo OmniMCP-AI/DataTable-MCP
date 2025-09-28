@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
 import logging
 import pandas as pd
-from datatable_tools.third_party.spreadsheet import spreadsheet_client, ReadSheetRequest, WorkSheetInfo
+from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
 
 logger = logging.getLogger(__name__)
 
@@ -22,64 +22,40 @@ class DataSource(ABC):
 
 
 class SpreadsheetDataSource(DataSource):
-    """Data source for Google Spreadsheets via SPREADSHEET_API"""
+    """Data source for Google Spreadsheets using GoogleSheetsService"""
 
     def __init__(self, user_id: str, spreadsheet_id: str, worksheet: str = None):
         self.user_id = user_id
         self.spreadsheet_id = spreadsheet_id
         self.worksheet = worksheet or "Sheet1"
+        self.google_sheets_service = GoogleSheetsService()
 
     async def load_data(self) -> Tuple[List[List[Any]], List[str], Dict[str, Any]]:
-        """Load data from Google Spreadsheet"""
+        """Load data from Google Spreadsheet using GoogleSheetsService"""
         try:
-            # Create request
-            request = ReadSheetRequest(
+            # Use the consolidated GoogleSheetsService
+            response = await self.google_sheets_service.read_sheet_structured(
+                user_id=self.user_id,
                 spreadsheet_id=self.spreadsheet_id,
-                worksheet=self.worksheet
+                sheet_name=self.worksheet
             )
 
-            # Call spreadsheet API
-            response = await spreadsheet_client.read_sheet(request, self.user_id)
+            if not response.get("success"):
+                raise Exception(f"Failed to read spreadsheet: {response.get('message', 'Unknown error')}")
 
-            if not response.success:
-                raise Exception(f"Failed to read spreadsheet: {response.message}")
+            # Extract data and headers
+            headers = response.get("headers", [])
+            data = response.get("data", [])
 
-            # Process data
-            data = []
-            headers = []
-
-            if response.values:
-                if response.headers:
-                    # Use detected headers
-                    headers = response.headers
-                    # Skip header row in data
-                    data = response.values[1:] if len(response.values) > 1 else []
-                else:
-                    # No headers detected, use first row as headers
-                    if response.values:
-                        headers = response.values[0]
-                        data = response.values[1:] if len(response.values) > 1 else []
-                    else:
-                        headers = []
-                        data = []
-
-            # Ensure consistent column count
-            if headers and data:
-                max_cols = len(headers)
-                for row in data:
-                    while len(row) < max_cols:
-                        row.append("")
-                    if len(row) > max_cols:
-                        row = row[:max_cols]
-
+            # Create source_info from the response
             source_info = {
                 "type": "google_sheets",
                 "spreadsheet_id": self.spreadsheet_id,
-                "worksheet": response.worksheet.name,
-                "used_range": response.used_range,
-                "worksheet_url": response.worksheet_url,
-                "row_count": response.row_count,
-                "column_count": response.column_count
+                "worksheet": response["worksheet"]["title"],
+                "used_range": response.get("used_range"),
+                "worksheet_url": response.get("worksheet_url"),
+                "row_count": response.get("row_count", len(data)),
+                "column_count": response.get("column_count", len(headers))
             }
 
             logger.info(f"Loaded {len(data)} rows, {len(headers)} columns from spreadsheet {self.spreadsheet_id}")

@@ -3,8 +3,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import os
 import io
-from datatable_tools.third_party.spreadsheet import spreadsheet_client
-from datatable_tools.third_party.spreadsheet import WriteSheetRequest
+from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
 from datatable_tools.table_manager import DataTable
 
 logger = logging.getLogger(__name__)
@@ -33,10 +32,11 @@ class DataExporter(ABC):
 
 
 class SpreadsheetExporter(DataExporter):
-    """Exporter for Google Spreadsheets via SPREADSHEET_API"""
+    """Exporter for Google Spreadsheets using GoogleSheetsService"""
 
     def __init__(self, user_id: str):
         self.user_id = user_id
+        self.google_sheets_service = GoogleSheetsService()
 
     async def export_data(
         self,
@@ -47,46 +47,40 @@ class SpreadsheetExporter(DataExporter):
         columns_name: Optional[List[str]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Export data to Google Spreadsheet"""
+        """Export data to Google Spreadsheet using GoogleSheetsService"""
         try:
-            # Prepare data for export - include headers as first row
+            # Prepare data for export (just the table data, headers handled separately)
             export_data = []
-            if table.headers:
-                export_data.append(table.headers)
-
-            # Add table data
             for row in table.data:
                 export_data.append([str(cell) for cell in row])
 
-            # Create request
-            request = WriteSheetRequest(
+            # Use the consolidated GoogleSheetsService
+            response = await self.google_sheets_service.write_sheet_structured(
+                user_id=self.user_id,
                 spreadsheet_id=spreadsheet_id,
-                spreadsheet_name=spreadsheet_name or f"Export_{table.metadata.name}",
-                worksheet=worksheet,
-                columns_name=columns_name,
-                values=export_data
+                data=export_data,
+                headers=table.headers,
+                sheet_name=worksheet,
+                title=spreadsheet_name or f"Export_{table.metadata.name}"
             )
 
-            # Call spreadsheet API
-            response = await spreadsheet_client.write_sheet(request, self.user_id)
-
-            if not response.success:
-                raise Exception(f"Failed to write to spreadsheet: {response.message}")
+            if not response.get("success"):
+                raise Exception(f"Failed to write to spreadsheet: {response.get('message', 'Unknown error')}")
 
             return {
                 "success": True,
                 "export_format": "google_sheets",
                 "table_id": table.table_id,
-                "spreadsheet_id": response.spreadsheet_id,
-                "worksheet": response.worksheet.name,
-                "updated_range": response.updated_range,
-                "updated_cells": response.updated_cells,
-                "matched_columns": response.matched_columns,
-                "worksheet_url": response.worksheet_url,
+                "spreadsheet_id": response.get("spreadsheet_id"),
+                "worksheet": response["worksheet"]["title"],
+                "updated_range": response.get("updated_range"),
+                "updated_cells": response.get("updated_cells"),
+                "matched_columns": response.get("matched_columns", table.headers),
+                "worksheet_url": response.get("worksheet_url"),
                 "rows_exported": len(table.data),
                 "columns_exported": len(table.headers),
                 "table_name": table.metadata.name,
-                "message": f"Exported table {table.table_id} to Google Sheets: {response.message}"
+                "message": f"Exported table {table.table_id} to Google Sheets: {response.get('message')}"
             }
 
         except Exception as e:
