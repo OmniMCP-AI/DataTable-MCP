@@ -4,6 +4,7 @@ from fastmcp import Context
 from core.server import mcp
 from datatable_tools.range_operations import range_operations
 from datatable_tools.utils import parse_google_sheets_url
+from datatable_tools.lifecycle_tools import _process_data_input
 
 logger = logging.getLogger(__name__)
 
@@ -74,59 +75,32 @@ async def update_range(
     final_worksheet = worksheet or sheet_name or "Sheet1"
 
     try:
-        # Determine the type of range update needed
-        import re
+        # Process data input using the same logic as create_table
+        processed_data, processed_headers = _process_data_input(data, headers)
 
-        # Check if it's a single cell (e.g., "B5")
+        # Convert processed data to Google Sheets format
+        if not processed_data:
+            values = [[""]]  # Empty cell
+        else:
+            # Convert all values to strings for Google Sheets API
+            values = [[str(cell) for cell in row] for row in processed_data]
+
+        # Determine if it's a single cell update
+        import re
         single_cell_pattern = r'^[A-Z]+\d+$'
-        if re.match(single_cell_pattern, range_address):
+
+        if re.match(single_cell_pattern, range_address) and len(values) == 1 and len(values[0]) == 1:
+            # Single cell update
             return await range_operations.update_cell(
                 spreadsheet_id=spreadsheet_id,
                 worksheet=final_worksheet,
                 cell_address=range_address,
-                value=data,
+                value=values[0][0],
                 user_id=""
             )
 
-        # For ranges, we'll use the GoogleSheetsService directly through range_operations
-        # Create the full range notation
+        # For ranges, use the GoogleSheetsService directly
         full_range = f"{final_worksheet}!{range_address}"
-
-        # Format data as 2D array for Google Sheets API
-        if isinstance(data, list):
-            if data and isinstance(data[0], list):
-                # Already 2D
-                values = [[str(cell) for cell in row] for row in data]
-            else:
-                # 1D list - need to determine if it's row or column
-                if ':' in range_address:
-                    # Parse range to determine orientation
-                    if range_address.count(':') == 1:
-                        start, end = range_address.split(':')
-                        # Check if it's a row range (same row number) or column range (same column)
-                        start_match = re.match(r'([A-Z]+)(\d+)', start)
-                        end_match = re.match(r'([A-Z]+)(\d+)', end)
-
-                        if start_match and end_match:
-                            start_col, start_row = start_match.groups()
-                            end_col, end_row = end_match.groups()
-
-                            if start_row == end_row:
-                                # Row range - data goes horizontally
-                                values = [[str(val) for val in data]]
-                            else:
-                                # Column range - data goes vertically
-                                values = [[str(val)] for val in data]
-                        else:
-                            # Default to row format
-                            values = [[str(val) for val in data]]
-                    else:
-                        values = [[str(val) for val in data]]
-                else:
-                    values = [[str(val) for val in data]]
-        else:
-            # Single value
-            values = [[str(data)]]
 
         # Use the GoogleSheetsService directly
         success = await range_operations.google_sheets_service.update_range(
@@ -143,6 +117,7 @@ async def update_range(
                 "worksheet": final_worksheet,
                 "range": range_address,
                 "updated_cells": sum(len(row) for row in values),
+                "data_shape": (len(values), len(values[0]) if values else 0),
                 "message": f"Successfully updated range {range_address} in worksheet '{final_worksheet}'"
             }
         else:
