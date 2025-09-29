@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Real Google Sheets integration test - writes to actual Google Sheets
+Updated to use environment variables for OAuth authentication
 """
 
 import asyncio
 import os
 import sys
 import logging
-from pathlib import Path
 
 # Add the project directory to the Python path
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,7 +16,6 @@ sys.path.insert(0, project_dir)
 # Google Sheets API imports
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -31,61 +30,54 @@ logger = logging.getLogger(__name__)
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 class RealGoogleSheetsClient:
-    """Real Google Sheets API client for actual spreadsheet operations"""
+    """Real Google Sheets API client for actual spreadsheet operations using env vars"""
 
     def __init__(self):
         self.service = None
         self.creds = None
 
     def authenticate(self):
-        """Authenticate with Google Sheets API"""
-        creds = None
+        """Authenticate with Google Sheets API using environment variables"""
+        # Get OAuth credentials from environment variables
+        refresh_token = os.getenv("TEST_GOOGLE_OAUTH_REFRESH_TOKEN")
+        client_id = os.getenv("TEST_GOOGLE_OAUTH_CLIENT_ID")
+        client_secret = os.getenv("TEST_GOOGLE_OAUTH_CLIENT_SECRET")
 
-        # Load existing credentials
-        token_path = 'token.json'
-        if os.path.exists(token_path):
-            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-
-        # If there are no (valid) credentials available, let the user log in
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception as e:
-                    print(f"⚠️  Token refresh failed: {e}")
-                    creds = None
-
-            if not creds:
-                credentials_path = 'credentials.json'
-                if not os.path.exists(credentials_path):
-                    print("❌ ERROR: credentials.json not found!")
-                    print("📋 Please follow these steps to set up Google Sheets API:")
-                    print("   1. Go to https://console.cloud.google.com/")
-                    print("   2. Create a new project or select existing one")
-                    print("   3. Enable Google Sheets API")
-                    print("   4. Create credentials (OAuth 2.0 client ID)")
-                    print("   5. Download the credentials.json file")
-                    print("   6. Place it in the project root directory")
-                    return False
-
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-                    creds = flow.run_local_server(port=0)
-                except Exception as e:
-                    print(f"❌ Authentication failed: {e}")
-                    return False
-
-            # Save the credentials for the next run
-            with open(token_path, 'w') as token:
-                token.write(creds.to_json())
+        if not all([refresh_token, client_id, client_secret]):
+            print("❌ ERROR: Missing required environment variables!")
+            print("📋 Please set the following environment variables:")
+            print("   - TEST_GOOGLE_OAUTH_REFRESH_TOKEN")
+            print("   - TEST_GOOGLE_OAUTH_CLIENT_ID")
+            print("   - TEST_GOOGLE_OAUTH_CLIENT_SECRET")
+            print("\n💡 You can set these in your .env file or export them:")
+            print("   export TEST_GOOGLE_OAUTH_REFRESH_TOKEN='your_refresh_token'")
+            print("   export TEST_GOOGLE_OAUTH_CLIENT_ID='your_client_id'")
+            print("   export TEST_GOOGLE_OAUTH_CLIENT_SECRET='your_client_secret'")
+            return False
 
         try:
+            # Create credentials from environment variables
+            creds = Credentials(
+                token=None,  # Will be refreshed
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=SCOPES
+            )
+
+            # Refresh the token
+            creds.refresh(Request())
+
+            # Build the service
             self.service = build('sheets', 'v4', credentials=creds)
             self.creds = creds
-            print("✅ Successfully authenticated with Google Sheets API")
+            print("✅ Successfully authenticated with Google Sheets API using environment variables")
             return True
+
         except Exception as e:
-            print(f"❌ Failed to build Google Sheets service: {e}")
+            print(f"❌ Authentication failed: {e}")
+            print("💡 Check that your environment variables are correct and the refresh token is valid")
             return False
 
     async def create_spreadsheet(self, title="DataTable MCP Test"):
@@ -306,12 +298,33 @@ async def test_write_additional_worksheet(spreadsheet_id, client):
 
 
 async def run_real_google_sheets_test():
-    """Run real Google Sheets integration test"""
-    print("🚀 REAL Google Sheets Integration Test")
+    """Run real Google Sheets integration test with modern auth"""
+    print("🚀 REAL Google Sheets Integration Test (Environment Variables)")
     print("=" * 70)
     print("⚠️  This will create and write to an ACTUAL Google Sheets spreadsheet!")
-    print("🔑 Make sure you have credentials.json file in the project root")
+    print("🔑 Using environment variables for OAuth authentication")
     print("=" * 70)
+
+    # Load environment variables from .env file if it exists
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        print("✅ Loaded environment variables from .env file")
+    except ImportError:
+        print("ℹ️  dotenv not available, using system environment variables")
+
+    # Check if environment variables are set
+    env_vars = [
+        "TEST_GOOGLE_OAUTH_REFRESH_TOKEN",
+        "TEST_GOOGLE_OAUTH_CLIENT_ID",
+        "TEST_GOOGLE_OAUTH_CLIENT_SECRET"
+    ]
+
+    missing_vars = [var for var in env_vars if not os.getenv(var)]
+    if missing_vars:
+        print(f"❌ Missing environment variables: {', '.join(missing_vars)}")
+        print("💡 Please set these in your .env file or environment")
+        return False
 
     # Test 1: Create real spreadsheet
     result = await test_create_real_spreadsheet()
@@ -359,9 +372,43 @@ async def run_real_google_sheets_test():
 
 
 if __name__ == "__main__":
+    import argparse
+
+    # Parse command line arguments for consistency with other tests
+    parser = argparse.ArgumentParser(description="Test Real Google Sheets Integration with Environment Variables")
+    parser.add_argument("--check-env", action="store_true",
+                       help="Only check environment variables without running tests")
+    args = parser.parse_args()
+
+    if args.check_env:
+        # Just check environment variables
+        print("🔍 Checking environment variables...")
+        env_vars = [
+            "TEST_GOOGLE_OAUTH_REFRESH_TOKEN",
+            "TEST_GOOGLE_OAUTH_CLIENT_ID",
+            "TEST_GOOGLE_OAUTH_CLIENT_SECRET"
+        ]
+
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
+
+        for var in env_vars:
+            value = os.getenv(var)
+            if value:
+                # Show first/last few characters for security
+                masked = f"{value[:4]}...{value[-4:]}" if len(value) > 8 else "***"
+                print(f"✅ {var}: {masked}")
+            else:
+                print(f"❌ {var}: Not set")
+        sys.exit(0)
+
+    # Run the full test suite
     success = asyncio.run(run_real_google_sheets_test())
     if success:
-        print("\n🎉 All tests passed! Real Google Sheets integration working.")
+        print("\n🎉 All tests passed! Real Google Sheets integration working with env vars.")
     else:
         print("\n⚠️  Some tests failed. Check authentication and permissions.")
     sys.exit(0 if success else 1)
