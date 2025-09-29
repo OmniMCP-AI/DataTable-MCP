@@ -7,7 +7,7 @@ from datatable_tools.auth.service_decorator import require_google_service
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool()
+@mcp.tool
 async def create_table(
     ctx: Context,
     data: Any,
@@ -82,7 +82,7 @@ async def create_table(
         }
 
 
-@mcp.tool()
+@mcp.tool
 async def load_table(
     ctx: Context,
     uri: str,
@@ -120,6 +120,8 @@ async def load_table(
         uri = "postgresql://user:pass@localhost:5432/mydb"
         query = "SELECT * FROM users"
     """
+    # todo :
+    # future need to use load_table to pass a df id to load from memory to sync to frontend
     try:
         from datatable_tools.utils import parse_source_uri, detect_source_type
         from datatable_tools.data_sources import create_data_source
@@ -278,7 +280,7 @@ def _build_source_params(source_info: dict, encoding: Optional[str], delimiter: 
     else:
         return {}
 
-# @mcp.tool()
+# @mcp.tool
 async def clone_table(
     ctx: Context,
     source_table_id: str,
@@ -325,7 +327,7 @@ async def clone_table(
             "message": f"Failed to clone table {source_table_id}"
         }
 
-@mcp.tool()
+@mcp.tool
 async def list_tables(ctx: Context) -> Dict[str, Any]:
     """
     Get inventory of all tables in the current session.

@@ -8,7 +8,7 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-# @mcp.tool()
+# @mcp.tool
 async def cleanup_expired_tables(
     ctx: Context,
     force_cleanup: bool = False,
@@ -64,7 +64,7 @@ async def cleanup_expired_tables(
             "message": "Failed to clean up tables"
         }
 
-# @mcp.tool()
+# @mcp.tool
 async def get_table_info(
     ctx: Context,
     table_id: str,
@@ -135,7 +135,7 @@ async def get_table_info(
             "message": f"Failed to get information for table {table_id}"
         }
 
-# @mcp.tool()
+# @mcp.tool
 async def get_session_info(ctx: Context) -> Dict[str, Any]:
     """
     Get statistics about the current session and all active tables.

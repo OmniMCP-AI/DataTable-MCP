@@ -7,7 +7,7 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool()
+@mcp.tool
 async def add_row(
     ctx: Context,
     table_id: str,
@@ -54,7 +54,7 @@ async def add_row(
             "message": f"Failed to append row to table {table_id}"
         }
 
-@mcp.tool()
+@mcp.tool
 async def add_column(
     ctx: Context,
     table_id: str,
@@ -111,7 +111,7 @@ async def add_column(
             "message": f"Failed to add column to table {table_id}"
         }
 
-# @mcp.tool()
+# @mcp.tool
 async def update_cell(
     ctx: Context,
     table_id: str,
@@ -192,7 +192,7 @@ async def update_cell(
             "message": f"Failed to update cell in table {table_id}"
         }
 
-# @mcp.tool()
+# @mcp.tool
 async def delete_row(
     ctx: Context,
     table_id: str,
@@ -247,7 +247,7 @@ async def delete_row(
             "message": f"Failed to delete rows from table {table_id}"
         }
 
-# @mcp.tool()
+# @mcp.tool
 async def delete_column(
     ctx: Context,
     table_id: str,

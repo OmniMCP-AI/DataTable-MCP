@@ -48,21 +48,9 @@ def main():
     import datatable_tools.export_tools
     import datatable_tools.advanced_tools
     import datatable_tools.session_tools
+    import datatable_tools.detailed_tools
 
-    print("🛠️  DataTable Tools Loaded:")
-    print("   📊 Table Lifecycle Management (4 tools)")
-    print("   ✏️  Data Manipulation (6 tools)")
-    print("   🔍 Data Query & Access (3 tools)")
-    print("   💾 Export & Persistence (2 tools)")
-    print("   🔧 Advanced Operations (3 tools)")
-    print("   🧹 Session Management (3 tools)")
-    print("")
-
-    print("📊 Configuration Summary:")
-    print("   🔧 Tools Enabled: 21/21")
-    print("   💾 Storage: In-memory with session management")
-    print("   📝 Log Level: INFO")
-    print("")
+   
 
     try:
         # Set the transport mode for health check

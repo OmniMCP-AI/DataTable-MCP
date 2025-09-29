@@ -7,7 +7,7 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool()
+@mcp.tool
 async def merge_tables(
     ctx: Context,
     left_table_id: str,
@@ -172,7 +172,7 @@ async def merge_tables(
             "message": f"Failed to merge tables {left_table_id} and {right_table_id}"
         }
 
-@mcp.tool()
+@mcp.tool
 async def aggregate_data(
     ctx: Context,
     table_id: str,
@@ -289,7 +289,7 @@ async def aggregate_data(
             "message": f"Failed to aggregate table {table_id}"
         }
 
-@mcp.tool()
+@mcp.tool
 async def map_values(
     ctx: Context,
     table_id: str,

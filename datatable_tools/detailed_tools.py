@@ -8,7 +8,7 @@ from datatable_tools.lifecycle_tools import _process_data_input
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool()
+@mcp.tool
 async def update_range(
     ctx: Context,
     uri: str,
@@ -135,7 +135,7 @@ async def update_range(
             "message": f"Error updating range {range_address}: {e}"
         }
 
-@mcp.tool()
+@mcp.tool
 async def export_table_to_range(
     ctx: Context,
     table_id: str,
