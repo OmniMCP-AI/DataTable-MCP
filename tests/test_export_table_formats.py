@@ -20,9 +20,10 @@ sys.path.insert(0, '..')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from datatable_tools.export_tools import _export_file
+from datatable_tools.export_tools import _export_file, _export_data_file, _export_data_google_sheets
 from datatable_tools.utils import detect_export_type, parse_export_uri
 from datatable_tools.table_manager import table_manager
+from datatable_tools.lifecycle_tools import _process_data_input
 
 class TestExportTableFormats(unittest.TestCase):
     """Test export_table with various URI formats"""
@@ -423,6 +424,312 @@ class TestExportTableFormats(unittest.TestCase):
         print(f"   ✅ Exported 1000 rows in {duration:.3f}s ({file_size_mb:.2f} MB)")
 
 
+class TestExportDataFormats(unittest.TestCase):
+    """Test export_data with various data input formats like create_table"""
+
+    def setUp(self):
+        """Set up test environment"""
+        # Create temporary directory for test files
+        self.temp_dir = tempfile.mkdtemp()
+        print(f"\n   📁 Using temp directory: {self.temp_dir}")
+
+    def tearDown(self):
+        """Clean up test files"""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    async def export_data_helper(self, data, uri, headers=None, encoding=None, delimiter=None):
+        """Helper to export data using the new export_data logic"""
+        try:
+            # Process data into standardized format
+            processed_data, processed_headers = _process_data_input(data, headers)
+
+            # Parse the URI to determine export type
+            export_info = parse_export_uri(uri)
+            export_type = export_info["export_type"]
+
+            if export_type == "google_sheets":
+                return {
+                    "success": False,
+                    "error": "Google Sheets export not yet implemented in tests",
+                    "message": "Google Sheets testing requires authentication setup"
+                }
+
+            # Use the data export logic directly
+            return await _export_data_file(processed_data, processed_headers, export_info, encoding, delimiter)
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to export data to {uri}"
+            }
+
+    def test_dataframe_export(self):
+        """Test exporting pandas DataFrame"""
+        print("\n🐼 Testing DataFrame Export")
+
+        try:
+            import pandas as pd
+            import asyncio
+
+            # Create test DataFrame
+            df = pd.DataFrame({
+                "Name": ["Alice", "Bob", "Carol"],
+                "Age": [25, 30, 28],
+                "City": ["NYC", "LA", "Chicago"]
+            })
+
+            csv_path = os.path.join(self.temp_dir, "dataframe_export.csv")
+            result = asyncio.run(self.export_data_helper(df, csv_path))
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["rows_exported"], 3)
+            self.assertEqual(result["columns_exported"], 3)
+
+            # Verify content
+            with open(csv_path, 'r') as f:
+                content = f.read()
+                self.assertIn("Name,Age,City", content)
+                self.assertIn("Alice,25,NYC", content)
+
+            print(f"   ✅ DataFrame exported successfully: {result['file_size']} bytes")
+
+        except ImportError:
+            print("   ⚠️  Pandas not available, skipping DataFrame test")
+
+    def test_dictionary_export(self):
+        """Test exporting dictionary data (column-oriented)"""
+        print("\n📚 Testing Dictionary Export")
+
+        import asyncio
+
+        # Test column-oriented dictionary
+        data = {
+            "Product": ["Apple", "Banana", "Orange"],
+            "Price": [1.20, 0.80, 1.50],
+            "Stock": [100, 80, 60]
+        }
+
+        json_path = os.path.join(self.temp_dir, "dict_export.json")
+        result = asyncio.run(self.export_data_helper(data, json_path))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 3)
+        self.assertEqual(result["columns_exported"], 3)
+
+        # Verify JSON content
+        with open(json_path, 'r') as f:
+            import json
+            json_data = json.load(f)
+            self.assertEqual(len(json_data), 3)
+            self.assertEqual(json_data[0]["Product"], "Apple")
+            self.assertEqual(json_data[0]["Price"], 1.2)
+
+        print(f"   ✅ Dictionary exported successfully: {result['file_size']} bytes")
+
+    def test_records_format_export(self):
+        """Test exporting list of dictionaries (records format)"""
+        print("\n📋 Testing Records Format Export")
+
+        import asyncio
+
+        # Test records format
+        data = [
+            {"Name": "Alice", "Score": 95, "Grade": "A"},
+            {"Name": "Bob", "Score": 87, "Grade": "B"},
+            {"Name": "Carol", "Score": 92, "Grade": "A"}
+        ]
+
+        excel_path = os.path.join(self.temp_dir, "records_export.xlsx")
+        result = asyncio.run(self.export_data_helper(data, excel_path))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 3)
+        self.assertEqual(result["columns_exported"], 3)
+
+        print(f"   ✅ Records format exported successfully: {result['file_size']} bytes")
+
+    def test_single_column_export(self):
+        """Test exporting single column data (list)"""
+        print("\n📊 Testing Single Column Export")
+
+        import asyncio
+
+        # Test 1D list
+        data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        headers = ["Numbers"]
+
+        csv_path = os.path.join(self.temp_dir, "single_column.csv")
+        result = asyncio.run(self.export_data_helper(data, csv_path, headers))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 10)
+        self.assertEqual(result["columns_exported"], 1)
+
+        # Verify content
+        with open(csv_path, 'r') as f:
+            content = f.read()
+            self.assertIn("Numbers", content)
+            self.assertIn("1\n2\n3", content)
+
+        print(f"   ✅ Single column exported successfully: {result['file_size']} bytes")
+
+    def test_scalar_value_export(self):
+        """Test exporting scalar values"""
+        print("\n🔢 Testing Scalar Value Export")
+
+        import asyncio
+
+        # Test scalar value
+        data = 42
+        headers = ["Answer"]
+
+        json_path = os.path.join(self.temp_dir, "scalar_export.json")
+        result = asyncio.run(self.export_data_helper(data, json_path, headers))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 1)
+        self.assertEqual(result["columns_exported"], 1)
+
+        # Verify JSON content
+        with open(json_path, 'r') as f:
+            import json
+            json_data = json.load(f)
+            self.assertEqual(len(json_data), 1)
+            self.assertEqual(json_data[0]["Answer"], 42)
+
+        print(f"   ✅ Scalar value exported successfully: {result['file_size']} bytes")
+
+    def test_2d_list_export(self):
+        """Test exporting 2D list (traditional format)"""
+        print("\n📋 Testing 2D List Export")
+
+        import asyncio
+
+        # Test 2D list
+        data = [
+            ["Alice", 25, "Engineer"],
+            ["Bob", 30, "Manager"],
+            ["Carol", 28, "Designer"]
+        ]
+        headers = ["Name", "Age", "Role"]
+
+        parquet_path = os.path.join(self.temp_dir, "2d_list_export.parquet")
+        result = asyncio.run(self.export_data_helper(data, parquet_path, headers))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 3)
+        self.assertEqual(result["columns_exported"], 3)
+
+        print(f"   ✅ 2D list exported successfully: {result['file_size']} bytes")
+
+    def test_series_export(self):
+        """Test exporting pandas Series"""
+        print("\n📈 Testing Series Export")
+
+        try:
+            import pandas as pd
+            import asyncio
+
+            # Create test Series
+            series = pd.Series([10, 20, 30, 40, 50], name="Values")
+
+            csv_path = os.path.join(self.temp_dir, "series_export.csv")
+            result = asyncio.run(self.export_data_helper(series, csv_path))
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["rows_exported"], 5)
+            self.assertEqual(result["columns_exported"], 1)
+
+            # Verify content
+            with open(csv_path, 'r') as f:
+                content = f.read()
+                self.assertIn("Values", content)
+
+            print(f"   ✅ Series exported successfully: {result['file_size']} bytes")
+
+        except ImportError:
+            print("   ⚠️  Pandas not available, skipping Series test")
+
+    def test_mixed_data_types_export(self):
+        """Test exporting data with mixed types"""
+        print("\n🔀 Testing Mixed Data Types Export")
+
+        import asyncio
+
+        # Test mixed data types
+        data = {
+            "String": ["Hello", "World", "Test"],
+            "Integer": [1, 2, 3],
+            "Float": [1.1, 2.2, 3.3],
+            "Boolean": [True, False, True]
+        }
+
+        csv_path = os.path.join(self.temp_dir, "mixed_types.csv")
+        result = asyncio.run(self.export_data_helper(data, csv_path))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 3)
+        self.assertEqual(result["columns_exported"], 4)
+
+        # Verify content handles mixed types
+        with open(csv_path, 'r') as f:
+            content = f.read()
+            self.assertIn("String,Integer,Float,Boolean", content)
+            self.assertIn("Hello,1,1.1,True", content)
+
+        print(f"   ✅ Mixed data types exported successfully: {result['file_size']} bytes")
+
+    def test_empty_data_export(self):
+        """Test exporting empty data"""
+        print("\n🕳️ Testing Empty Data Export")
+
+        import asyncio
+
+        # Test empty list
+        data = []
+        headers = ["Empty"]
+
+        csv_path = os.path.join(self.temp_dir, "empty_export.csv")
+        result = asyncio.run(self.export_data_helper(data, csv_path, headers))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows_exported"], 0)
+
+        print(f"   ✅ Empty data exported successfully: {result['file_size']} bytes")
+
+    def test_comprehensive_data_formats(self):
+        """Test comprehensive data format scenarios"""
+        print("\n🎭 Testing Comprehensive Data Format Scenarios")
+
+        import asyncio
+
+        test_scenarios = [
+            # (data, description, expected_rows, expected_cols)
+            ({"A": [1, 2], "B": [3, 4]}, "Column dict", 2, 2),
+            ([{"x": 1, "y": 2}, {"x": 3, "y": 4}], "Records list", 2, 2),
+            ([[1, 2], [3, 4]], "2D list", 2, 2),
+            ([1, 2, 3], "1D list", 3, 1),
+            ("single_value", "String scalar", 1, 1),
+            (123, "Numeric scalar", 1, 1),
+        ]
+
+        for i, (data, description, expected_rows, expected_cols) in enumerate(test_scenarios):
+            with self.subTest(scenario=description):
+                file_path = os.path.join(self.temp_dir, f"scenario_{i}.csv")
+                result = asyncio.run(self.export_data_helper(data, file_path))
+
+                self.assertTrue(result["success"], f"Failed for {description}")
+                self.assertEqual(result["rows_exported"], expected_rows)
+                self.assertEqual(result["columns_exported"], expected_cols)
+
+                print(f"   ✅ {description}: {result['rows_exported']}×{result['columns_exported']} → {result['file_size']} bytes")
+
+        print(f"   🎉 All data format scenarios completed successfully")
+
+
 class TestExportUtilities(unittest.TestCase):
     """Test the export utility functions directly"""
 
@@ -459,6 +766,7 @@ def run_export_tests():
     # Add test cases
     loader = unittest.TestLoader()
     suite.addTests(loader.loadTestsFromTestCase(TestExportTableFormats))
+    suite.addTests(loader.loadTestsFromTestCase(TestExportDataFormats))
     suite.addTests(loader.loadTestsFromTestCase(TestExportUtilities))
 
     # Run tests
