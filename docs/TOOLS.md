@@ -4,10 +4,10 @@ This document provides a comprehensive reference for all available tools in the 
 
 ## Overview
 
-The DataTable MCP server provides 21 tools organized into 6 categories:
+The DataTable MCP server provides 22 tools organized into 6 categories:
 - **Table Lifecycle Management** (4 tools)
 - **Data Manipulation** (6 tools)
-- **Data Query & Access** (3 tools)
+- **Data Query & Access** (4 tools)
 - **Export & Persistence** (2 tools)
 - **Advanced Operations** (3 tools)
 - **Session Management** (3 tools)
@@ -284,16 +284,9 @@ Sort table by one or more columns.
 ```json
 {
   "table_id": "table_abc123",           // Required
-  "sort_columns": [                    // Required: list of sort specifications
-    {
-      "column": "Age",
-      "ascending": true
-    },
-    {
-      "column": "Name",
-      "ascending": false
-    }
-  ]
+  "sort_columns": ["Age", "Name"],      // Required: list of column names to sort by
+  "ascending": [true, false],           // Optional: list of boolean values for sort direction
+  "in_place": true                      // Optional: if True (default), modifies original table; if False, creates new table
 }
 ```
 
@@ -377,9 +370,9 @@ Search for rows matching specific criteria.
 }
 ```
 
-### 13. filter_table
+### 13. filter_rows
 
-Filter table rows based on column conditions.
+Filter table rows based on multiple conditions with AND/OR logic.
 
 **Input Parameters:**
 ```json
@@ -388,7 +381,7 @@ Filter table rows based on column conditions.
   "conditions": [                   // Required: list of filter conditions
     {
       "column": "Age",
-      "operator": ">=",             // "==", "!=", "<", "<=", ">", ">=", "contains", "startswith", "endswith"
+      "operator": "gte",           // "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "endswith", "isnull", "notnull"
       "value": 25
     },
     {
@@ -397,7 +390,8 @@ Filter table rows based on column conditions.
       "value": "Engineer"
     }
   ],
-  "logic": "AND"                   // Optional: "AND" or "OR"
+  "logic": "AND",                   // Optional: "AND" or "OR"
+  "in_place": true                  // Optional: if True (default), modifies original table; if False, creates new table
 }
 ```
 
@@ -414,7 +408,36 @@ Filter table rows based on column conditions.
     {"Name": "John", "Age": 26, "Role": "Senior Engineer"}
   ],
   "headers": ["Name", "Age", "Role"],
-  "message": "Filtered table table_abc123: 1 rows match the criteria"
+  "message": "Filtered table table_abc123: 1 rows match the criteria (in-place)"
+}
+```
+
+### 14. filter_table
+
+Filter table rows using pandas query syntax.
+
+**Input Parameters:**
+```json
+{
+  "table_id": "table_abc123",       // Required
+  "query": "Age > 25 and Role.str.contains('Engineer')",  // Required: pandas query string
+  "in_place": true                  // Optional: if True (default), modifies original table; if False, creates new table
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "table_id": "table_abc123",
+  "original_rows": 3,
+  "filtered_rows": 1,
+  "query": "Age > 25 and Role.str.contains('Engineer')",
+  "data": [
+    {"Name": "John", "Age": 26, "Role": "Senior Engineer"}
+  ],
+  "headers": ["Name", "Age", "Role"],
+  "message": "Filtered table table_abc123: 1 rows match the query 'Age > 25 and Role.str.contains('Engineer')' (in-place)"
 }
 ```
 
@@ -422,7 +445,7 @@ Filter table rows based on column conditions.
 
 ## Export & Persistence
 
-### 14. export_table
+### 15. export_table
 
 Export table data to various formats.
 
@@ -451,7 +474,7 @@ Export table data to various formats.
 }
 ```
 
-### 15. save_table
+### 16. save_table
 
 Save table to persistent storage.
 
@@ -482,7 +505,7 @@ Save table to persistent storage.
 
 ## Advanced Operations
 
-### 16. calculate_statistics
+### 17. calculate_statistics
 
 Calculate basic statistics for numeric columns.
 
@@ -514,7 +537,7 @@ Calculate basic statistics for numeric columns.
 }
 ```
 
-### 17. group_by
+### 18. group_by
 
 Group table data by one or more columns with aggregation.
 
@@ -549,7 +572,7 @@ Group table data by one or more columns with aggregation.
 }
 ```
 
-### 18. pivot_table
+### 19. pivot_table
 
 Create a pivot table from the data.
 
@@ -585,7 +608,7 @@ Create a pivot table from the data.
 
 ## Session Management
 
-### 19. get_session_info
+### 20. get_session_info
 
 Get information about the current session.
 
@@ -616,7 +639,7 @@ Get information about the current session.
 }
 ```
 
-### 20. clear_session
+### 21. clear_session
 
 Clear all tables and data from the current session.
 
@@ -638,7 +661,7 @@ Clear all tables and data from the current session.
 }
 ```
 
-### 21. cleanup_expired_tables
+### 22. cleanup_expired_tables
 
 Clean up expired tables based on TTL settings.
 

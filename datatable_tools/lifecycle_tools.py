@@ -58,31 +58,50 @@ async def create_table(
 
 @mcp.tool()
 @require_google_service("sheets", "sheets_read")
-async def load_table_google_sheets(
+async def load_table_from_google_sheets(
     service,
     ctx: Context,
-    source_path: str,
+    uri: str,
     name: Optional[str] = None,
-    sheet_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Load a table from Google Sheets.
+    Load a table from Google Sheets using a URL or spreadsheet ID.
 
     Args:
-        source_path: Spreadsheet ID
+        uri: Google Sheets URL or spreadsheet ID
+             Examples:
+             - https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
+             - https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0
+             - 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
         name: Optional table name
-        sheet_name: Sheet name (optional)
 
     Returns:
         Dict containing table_id and loaded table information
     """
     try:
+        from datatable_tools.utils import parse_google_sheets_url, is_google_sheets_url
         from datatable_tools.data_sources import create_data_source, SpreadsheetDataSource
         from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
 
+        # Validate and parse the URI
+        if not is_google_sheets_url(uri):
+            return {
+                "success": False,
+                "error": "Invalid Google Sheets URL or ID",
+                "message": "Please provide a valid Google Sheets URL or spreadsheet ID"
+            }
+
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        if not spreadsheet_id:
+            return {
+                "success": False,
+                "error": "Could not extract spreadsheet ID from URI",
+                "message": "Please check the Google Sheets URL format"
+            }
+
         # Create Google Sheets data source
         source_params = {
-            "spreadsheet_id": source_path,
+            "spreadsheet_id": spreadsheet_id,
             "worksheet": sheet_name
         }
 
@@ -92,7 +111,7 @@ async def load_table_google_sheets(
         response = await GoogleSheetsService.read_sheet_structured(
             service,  # Use the authenticated service from the decorator
             ctx,      # Use the context from the decorator
-            source_path,  # spreadsheet_id
+            spreadsheet_id,  # spreadsheet_id
             sheet_name    # sheet_name
         )
 
@@ -106,7 +125,8 @@ async def load_table_google_sheets(
         # Create source_info from the response
         source_info = {
             "type": "google_sheets",
-            "spreadsheet_id": source_path,
+            "spreadsheet_id": spreadsheet_id,
+            "original_uri": uri,
             "worksheet": response["worksheet"]["title"],
             "used_range": response.get("used_range"),
             "worksheet_url": response.get("worksheet_url"),

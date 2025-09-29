@@ -11,7 +11,7 @@ A comprehensive Model Context Protocol (MCP) server for in-memory tabular data m
 - **Pandas-like Interface**: Familiar DataFrame-style operations
 - **Column Name Focused**: Use semantic column names to reduce LLM errors
 
-### 🛠️ Tools Available (21 Total)
+### 🛠️ Tools Available (22 Total)
 
 #### 📊 Table Lifecycle Management (4 tools)
 - `create_table` - Create from data array with auto-detected headers
@@ -27,9 +27,10 @@ A comprehensive Model Context Protocol (MCP) server for in-memory tabular data m
 - `rename_columns` - Bulk column renaming
 - `clear_range` - Clear values while preserving structure
 
-#### 🔍 Data Query & Access (3 tools)
+#### 🔍 Data Query & Access (4 tools)
 - `get_table_data` - Flexible slicing, multiple output formats
 - `filter_rows` - Multi-condition filtering with AND/OR logic
+- `filter_table` - Pandas query syntax filtering
 - `sort_table` - Multi-column sorting, in-place or new table
 
 #### 💾 Export & Persistence (2 tools)

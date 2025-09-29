@@ -96,8 +96,7 @@ async def filter_rows(
     table_id: str,
     conditions: List[Dict[str, Any]],
     logic: str = "AND",
-    create_new_table: bool = False,
-    new_table_name: Optional[str] = None
+    in_place: bool = True
 ) -> Dict[str, Any]:
     """
     Filter table rows based on multiple conditions with AND/OR logic.
@@ -107,8 +106,7 @@ async def filter_rows(
         conditions: List of filter conditions. Each condition should have:
                    {"column": "col_name", "operator": "eq|ne|gt|gte|lt|lte|contains|startswith|endswith|isnull|notnull", "value": filter_value}
         logic: Logic operator for combining conditions ("AND" or "OR")
-        create_new_table: If True, creates a new table with filtered results
-        new_table_name: Name for the new table (if create_new_table is True)
+        in_place: If True, modifies the original table; if False, creates a new table
 
     Returns:
         Dict containing filtered results and operation information
@@ -157,9 +155,9 @@ async def filter_rows(
             "message": f"Filtered table {table_id}: {len(filtered_df)} rows match the criteria"
         }
 
-        if create_new_table:
+        if not in_place:
             # Create new table with filtered results
-            new_name = new_table_name or f"{table.metadata.name} (Filtered)"
+            new_name = f"{table.metadata.name} (Filtered)"
             new_table_id = table_manager.create_table(
                 data=filtered_df.values.tolist(),
                 headers=filtered_df.columns.tolist(),
@@ -174,9 +172,13 @@ async def filter_rows(
             result["new_table_id"] = new_table_id
             result["new_table_name"] = new_name
         else:
-            # Return filtered data directly
+            # Update original table in-place
+            with table._lock:
+                table.df = filtered_df
+                table._update_modified_time()
             result["data"] = filtered_df.to_dict('records')
             result["headers"] = filtered_df.columns.tolist()
+            result["message"] += " (in-place)"
 
         return result
 
@@ -194,8 +196,7 @@ async def sort_table(
     table_id: str,
     sort_columns: List[str],
     ascending: Optional[List[bool]] = None,
-    in_place: bool = True,
-    new_table_name: Optional[str] = None
+    in_place: bool = True
 ) -> Dict[str, Any]:
     """
     Sort table by multiple columns with option to create new table or modify in-place.
@@ -205,7 +206,6 @@ async def sort_table(
         sort_columns: List of column names to sort by (in order of priority)
         ascending: List of boolean values indicating sort direction for each column (True = ascending)
         in_place: If True, modifies the original table; if False, creates a new table
-        new_table_name: Name for the new table (if in_place is False)
 
     Returns:
         Dict containing sort operation information
@@ -258,7 +258,7 @@ async def sort_table(
             result["message"] += " (in-place)"
         else:
             # Create new table with sorted results
-            new_name = new_table_name or f"{table.metadata.name} (Sorted)"
+            new_name = f"{table.metadata.name} (Sorted)"
             new_table_id = table_manager.create_table(
                 data=sorted_df.values.tolist(),
                 headers=sorted_df.columns.tolist(),
@@ -289,8 +289,7 @@ async def filter_table(
     ctx: Context,
     table_id: str,
     query: str,
-    create_new_table: bool = False,
-    new_table_name: Optional[str] = None
+    in_place: bool = True
 ) -> Dict[str, Any]:
     """
     Filter table rows using simple pandas query syntax (like DataFrame filter).
@@ -298,8 +297,7 @@ async def filter_table(
     Args:
         table_id: ID of the target table
         query: Pandas query string (e.g., "Age > 25", "Name == 'John'", "Age > 20 and Role == 'Engineer'")
-        create_new_table: If True, creates a new table with filtered results
-        new_table_name: Name for the new table (if create_new_table is True)
+        in_place: If True, modifies the original table; if False, creates a new table
 
     Returns:
         Dict containing filtered results and operation information
@@ -339,9 +337,9 @@ async def filter_table(
             "message": f"Filtered table {table_id}: {len(filtered_df)} rows match the query '{query}'"
         }
 
-        if create_new_table:
+        if not in_place:
             # Create new table with filtered results
-            new_name = new_table_name or f"{table.metadata.name} (Filtered)"
+            new_name = f"{table.metadata.name} (Filtered)"
             new_table_id = table_manager.create_table(
                 data=filtered_df.values.tolist(),
                 headers=filtered_df.columns.tolist(),
@@ -355,9 +353,13 @@ async def filter_table(
             result["new_table_id"] = new_table_id
             result["new_table_name"] = new_name
         else:
-            # Return filtered data directly
+            # Update original table in-place
+            with table._lock:
+                table.df = filtered_df
+                table._update_modified_time()
             result["data"] = filtered_df.to_dict('records')
             result["headers"] = filtered_df.columns.tolist()
+            result["message"] += " (in-place)"
 
         return result
 
