@@ -115,28 +115,33 @@ async def test_export_tools(table_id):
     """Test export and persistence tools"""
     print("🧪 Testing Export & Persistence...")
 
-    from datatable_tools.export_tools import export_table
+    from datatable_tools.detailed_tools import export_table_to_range
     import os
     import tempfile
 
-    # Test export_table (CSV)
-    result = await export_table(
-        table_id=table_id,
-        export_format="csv",
-        return_content=True
-    )
-    assert result["success"], f"export_table (CSV) failed: {result.get('error')}"
-    assert "content" in result, "CSV content not returned"
-    print(f"   ✅ Exported as CSV content")
+    # Test export_table_to_range (CSV)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        csv_path = os.path.join(temp_dir, "test_export.csv")
+        result = await export_table_to_range(
+            ctx=None,
+            table_id=table_id,
+            uri=csv_path
+        )
+        assert result["success"], f"export_table_to_range (CSV) failed: {result.get('error')}"
+        assert os.path.exists(csv_path), "CSV file not created"
+        print(f"   ✅ Exported as CSV file: {csv_path}")
 
-    # Test export_table (JSON)
-    result = await export_table(
-        table_id=table_id,
-        export_format="json",
-        return_content=True
-    )
-    assert result["success"], f"export_table (JSON) failed: {result.get('error')}"
-    print(f"   ✅ Exported as JSON content")
+    # Test export_table_to_range (JSON)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        json_path = os.path.join(temp_dir, "test_export.json")
+        result = await export_table_to_range(
+            ctx=None,
+            table_id=table_id,
+            uri=json_path
+        )
+        assert result["success"], f"export_table_to_range (JSON) failed: {result.get('error')}"
+        assert os.path.exists(json_path), "JSON file not created"
+        print(f"   ✅ Exported as JSON file: {json_path}")
 
 async def test_advanced_tools(table_id, cloned_id):
     """Test advanced operations tools"""

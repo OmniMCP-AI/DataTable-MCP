@@ -231,7 +231,8 @@ class DataTableRangeOperations:
         worksheet: Any,
         start_cell: str,
         user_id: str,
-        include_headers: bool = True
+        include_headers: bool = True,
+        ctx: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
         Update spreadsheet with entire DataTable content using range update
@@ -299,7 +300,8 @@ class DataTableRangeOperations:
 
             # Update the range using GoogleSheetsService
             success = await self.google_sheets_service.update_range(
-                user_id=user_id,
+                service=None,  # Will be injected by decorator
+                ctx=ctx,
                 spreadsheet_id=spreadsheet_id,
                 range_notation=range_notation,
                 values=export_data

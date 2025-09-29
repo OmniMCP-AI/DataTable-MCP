@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive test suite for the simplified export_table function
+Comprehensive test suite for the export_table_to_range function
 Tests all supported export URI formats and verifies file creation
 """
 
@@ -20,13 +20,13 @@ sys.path.insert(0, '..')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from datatable_tools.export_tools import _export_file, _export_data_file, _export_data_google_sheets
+from datatable_tools.detailed_tools import export_table_to_range
 from datatable_tools.utils import detect_export_type, parse_export_uri
 from datatable_tools.table_manager import table_manager
 from datatable_tools.lifecycle_tools import _process_data_input
 
 class TestExportTableFormats(unittest.TestCase):
-    """Test export_table with various URI formats"""
+    """Test export_table_to_range with various URI formats"""
 
     def setUp(self):
         """Set up test data and clean environment"""

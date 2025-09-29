@@ -50,8 +50,8 @@ class TestUpdateRangeDataFrame(unittest.TestCase):
         result = await func(
             ctx=self.mock_ctx,
             uri=self.test_uri,
-            range_address="A1",
-            data=42
+            data=42,
+            range_address="A1"
         )
 
         self.assertTrue(result["success"])
@@ -78,8 +78,8 @@ class TestUpdateRangeDataFrame(unittest.TestCase):
         result = await func(
             ctx=self.mock_ctx,
             uri=self.test_uri,
-            range_address="A1:C3",
-            data=data
+            data=data,
+            range_address="A1:C3"
         )
 
         self.assertTrue(result["success"])
@@ -169,8 +169,8 @@ class TestUpdateRangeDataFrame(unittest.TestCase):
         result = await func(
             ctx=self.mock_ctx,
             uri=self.test_uri,
-            range_address="A1:C3",
-            data=data
+            data=data,
+            range_address="A1:C3"
         )
 
         self.assertTrue(result["success"])

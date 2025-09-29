@@ -12,24 +12,23 @@ logger = logging.getLogger(__name__)
 async def update_range(
     ctx: Context,
     uri: str,
-    range_address: str,
     data: Any,
+    range_address: Optional[str] = None,
     headers: Optional[List[str]] = None,
-    worksheet: Optional[str] = None
+    encoding: Optional[str] = None,
+    delimiter: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Update a range in a Google Spreadsheet using URI-based identification.
-    Supports various data formats similar to pd.DataFrame and create_table.
+    Update data to various formats using URI-based auto-detection.
+    For Google Sheets, supports precise range placement. For other formats, exports data to files.
 
     Args:
-        uri: Google Sheets URL or spreadsheet ID
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - {spreadsheet_id}
-        range_address: Range in A1 notation:
-                      - Single cell: "B5"
-                      - Row range: "A1:E1" or "1:1"
-                      - Column range: "B:B" or "B1:B10"
-                      - 2D range: "A1:C3"
+        uri: URI for the destination. Supports:
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
+             - CSV files: /path/to/file.csv
+             - Excel files: /path/to/file.xlsx
+             - JSON files: /path/to/file.json
+             - Parquet files: /path/to/file.parquet
         data: Data in various formats (similar to pd.DataFrame):
               - List[List[Any]]: 2D array of table data (rows x columns)
               - Dict[str, List]: Dictionary with column names as keys and column data as values
@@ -39,31 +38,66 @@ async def update_range(
               - pandas.Series: Single column data
               - List[Any]: Single column or row data
               - scalar: Single value
+        range_address: Range in A1 notation for Google Sheets (optional):
+                      - Single cell: "B5"
+                      - Row range: "A1:E1" or "1:1"
+                      - Column range: "B:B" or "B1:B10"
+                      - 2D range: "A1:C3"
+                      Only used for Google Sheets. If not provided for Google Sheets, replaces entire sheet.
         headers: Optional column headers for dictionary data
-        worksheet: Worksheet name override (optional, defaults to first sheet)
+        encoding: File encoding for CSV files (optional)
+        delimiter: Delimiter for CSV files (optional)
 
     Returns:
-        Dict containing update results and spreadsheet information
+        Dict containing update results and file/spreadsheet information
 
     Examples:
-        # Update single cell with scalar
-        update_range(ctx, uri, "B5", "New Value")
+        # Update specific range in Google Sheets
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
 
-        # Update row with list
-        update_range(ctx, uri, "A1:C1", ["Name", "Age", "City"])
+        # Replace entire Google Sheet
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data)
 
-        # Update range with DataFrame-like dict
-        update_range(ctx, uri, "A1:C2", {"Name": ["Alice", "Bob"], "Age": [25, 30], "City": ["NYC", "LA"]})
+        # Export to CSV file
+        update_range(ctx, "/path/to/data.csv", data)
 
-        # Update with records format
-        update_range(ctx, uri, "A1:C2", [{"Name": "Alice", "Age": 25}, {"Name": "Bob", "Age": 30}])
-
-        # Update with pandas DataFrame
-        import pandas as pd
-        df = pd.DataFrame({"Name": ["Alice"], "Age": [25]})
-        update_range(ctx, uri, "A1:B1", df)
+        # Export to Excel file
+        update_range(ctx, "/path/to/workbook.xlsx", data)
     """
-    spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+    try:
+        from datatable_tools.utils import parse_google_sheets_url, parse_export_uri
+        from datatable_tools.lifecycle_tools import _process_data_input
+
+        # Check if it's a Google Sheets URL first
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        if spreadsheet_id:
+            # Google Sheets handling
+            return await _handle_google_sheets_update(
+                ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name
+            )
+
+        # Handle other formats using URI-based export
+        return await _handle_file_export(ctx, uri, data, headers, encoding, delimiter)
+
+    except Exception as e:
+        logger.error(f"Error updating data to {uri}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to update data to {uri}"
+        }
+
+
+async def _handle_google_sheets_update(
+    ctx: Context,
+    uri: str,
+    data: Any,
+    range_address: Optional[str],
+    headers: Optional[List[str]],
+    spreadsheet_id: str,
+    sheet_name: Optional[str]
+) -> Dict[str, Any]:
+    """Handle Google Sheets updates with range support"""
     if not spreadsheet_id:
         return {
             "success": False,
@@ -71,20 +105,20 @@ async def update_range(
             "message": f"Could not parse spreadsheet ID from URI: {uri}"
         }
 
-    # Use provided worksheet name or parsed sheet_name
-    final_worksheet = worksheet or sheet_name or "Sheet1"
+    final_worksheet = sheet_name or "Sheet1"
 
-    try:
-        # Process data input using the same logic as create_table
-        processed_data, processed_headers = _process_data_input(data, headers)
+    # Process data input using the same logic as create_table
+    processed_data, processed_headers = _process_data_input(data, headers)
 
-        # Convert processed data to Google Sheets format
-        if not processed_data:
-            values = [[""]]  # Empty cell
-        else:
-            # Convert all values to strings for Google Sheets API
-            values = [[str(cell) for cell in row] for row in processed_data]
+    # Convert processed data to Google Sheets format
+    if not processed_data:
+        values = [[""]]  # Empty cell
+    else:
+        # Convert all values to strings for Google Sheets API
+        values = [[str(cell) for cell in row] for row in processed_data]
 
+    if range_address:
+        # Range-specific update
         # Determine if it's a single cell update
         import re
         single_cell_pattern = r'^[A-Z]+\d+$'
@@ -126,56 +160,352 @@ async def update_range(
                 "error": "Failed to update range",
                 "message": f"Failed to update range {range_address} in worksheet '{final_worksheet}'"
             }
+    else:
+        # Full sheet replacement using export_data functionality
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+        # Convert all values to strings for Google Sheets
+        data_strings = [[str(cell) for cell in row] for row in values]
+        headers_strings = [str(header) for header in processed_headers] if processed_headers else []
+
+        # Use the write_sheet_structured method
+        result = await GoogleSheetsService.write_sheet_structured(
+            service=None,  # Will be injected by decorator
+            ctx=ctx,
+            spreadsheet_identifier=spreadsheet_id,
+            data=data_strings,
+            headers=headers_strings,
+            sheet_name=final_worksheet
+        )
+
+        # Add metadata to the result
+        result.update({
+            "export_type": "google_sheets",
+            "rows_exported": len(data_strings),
+            "columns_exported": len(headers_strings) if headers_strings else (len(data_strings[0]) if data_strings else 0),
+            "original_uri": uri
+        })
+
+        return result
+
+
+async def _handle_file_export(
+    ctx: Context,
+    uri: str,
+    data: Any,
+    headers: Optional[List[str]],
+    encoding: Optional[str],
+    delimiter: Optional[str]
+) -> Dict[str, Any]:
+    """Handle file-based exports"""
+    from datatable_tools.utils import parse_export_uri
+    from datatable_tools.lifecycle_tools import _process_data_input
+
+    # Process data into standardized format
+    processed_data, processed_headers = _process_data_input(data, headers)
+
+    # Parse the URI to determine export type and parameters
+    export_info = parse_export_uri(uri)
+    export_type = export_info["export_type"]
+
+    logger.info(f"Exporting data to {export_type}: {uri}")
+
+    # Handle Google Sheets export without range (shouldn't reach here, but for safety)
+    if export_type == "google_sheets":
+        return await _export_data_google_sheets_full(ctx, processed_data, processed_headers, export_info)
+
+    # Handle file-based exports
+    return await _export_data_file(processed_data, processed_headers, export_info, encoding, delimiter)
+
+
+async def _export_data_google_sheets_full(ctx: Context, processed_data: List[List[Any]], processed_headers: List[str], export_info: dict) -> Dict[str, Any]:
+    """Internal function to export processed data to Google Sheets with authentication."""
+    try:
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+        # Convert all values to strings for Google Sheets
+        data = [[str(cell) for cell in row] for row in processed_data]
+        headers = [str(header) for header in processed_headers]
+
+        # Extract parameters from export_info
+        spreadsheet_id = export_info.get("spreadsheet_id")
+        sheet_name = export_info.get("sheet_name")
+
+        # Use the write_sheet_structured method
+        result = await GoogleSheetsService.write_sheet_structured(
+            service=None,  # Will be injected by decorator
+            ctx=ctx,
+            spreadsheet_identifier=spreadsheet_id,
+            data=data,
+            headers=headers,
+            sheet_name=sheet_name
+        )
+
+        # Add data metadata to the result
+        result.update({
+            "export_type": "google_sheets",
+            "rows_exported": len(data),
+            "columns_exported": len(headers),
+            "original_uri": export_info["original_uri"]
+        })
+
+        return result
 
     except Exception as e:
-        logger.error(f"Error updating range {range_address}: {e}")
+        logger.error(f"Error exporting data to Google Sheets: {e}")
         return {
             "success": False,
             "error": str(e),
-            "message": f"Error updating range {range_address}: {e}"
+            "message": f"Failed to export data to Google Sheets: {str(e)}"
         }
+
+
+async def _export_data_file(processed_data: List[List[Any]], processed_headers: List[str], export_info: dict, encoding: Optional[str], delimiter: Optional[str]) -> Dict[str, Any]:
+    """Internal function to export processed data to file-based formats."""
+    import pandas as pd
+    import os
+
+    export_type = export_info["export_type"]
+    file_path = export_info["file_path"]
+
+    # Create DataFrame from processed data
+    df = pd.DataFrame(processed_data, columns=processed_headers)
+
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else ".", exist_ok=True)
+
+    # Export based on format
+    if export_type == "csv":
+        csv_params = {"index": False}
+        if encoding:
+            csv_params["encoding"] = encoding
+        if delimiter:
+            csv_params["sep"] = delimiter
+        df.to_csv(file_path, **csv_params)
+
+    elif export_type == "excel":
+        df.to_excel(file_path, index=False)
+
+    elif export_type == "json":
+        df.to_json(file_path, orient='records', indent=2)
+
+    elif export_type == "parquet":
+        df.to_parquet(file_path, index=False)
+
+    else:
+        # Generic file export as CSV
+        df.to_csv(file_path, index=False)
+
+    # Get file info
+    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+    return {
+        "success": True,
+        "export_type": export_type,
+        "file_path": file_path,
+        "file_size": file_size,
+        "rows_exported": len(processed_data),
+        "columns_exported": len(processed_headers),
+        "original_uri": export_info["original_uri"],
+        "message": f"Exported data ({len(processed_data)} rows) to {export_type}: {file_path}"
+    }
 
 @mcp.tool
 async def export_table_to_range(
     ctx: Context,
     table_id: str,
     uri: str,
-    start_cell: str,
+    start_cell: Optional[str] = None,
     include_headers: bool = True,
-    worksheet: Optional[str] = None
+    encoding: Optional[str] = None,
+    delimiter: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Export DataTable content to a specific range in Google Spreadsheet using URI-based identification.
-    Uses /range/update endpoint for precise control over data placement.
+    Export DataTable content to various formats using URI-based auto-detection.
+    For Google Sheets, supports precise range placement. For other formats, exports entire table.
 
     Args:
         table_id: DataTable ID to export
-        uri: Google Sheets URL or spreadsheet ID
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - {spreadsheet_id}
-        start_cell: Starting cell for the data (e.g., "A1", "B5")
+        uri: URI for the export destination. Supports:
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
+             - CSV files: /path/to/file.csv
+             - Excel files: /path/to/file.xlsx
+             - JSON files: /path/to/file.json
+             - Parquet files: /path/to/file.parquet
+        start_cell: Starting cell for Google Sheets data (e.g., "A1", "B5"). Only used for Google Sheets.
         include_headers: Whether to include table headers (default True)
-        worksheet: Worksheet name override (optional, defaults to first sheet)
+        encoding: File encoding for CSV files (optional)
+        delimiter: Delimiter for CSV files (optional)
 
     Returns:
-        Dict containing export results and spreadsheet information
+        Dict containing export results and file/spreadsheet information
+
+    Examples:
+        # Export to specific range in Google Sheets
+        export_table_to_range(ctx, "table1", "https://docs.google.com/spreadsheets/d/{id}/edit", "B5")
+
+        # Export to CSV file
+        export_table_to_range(ctx, "table1", "/path/to/data.csv")
+
+        # Export to Excel file
+        export_table_to_range(ctx, "table1", "/path/to/workbook.xlsx")
     """
-    spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-    if not spreadsheet_id:
+    try:
+        from datatable_tools.utils import parse_export_uri, parse_google_sheets_url
+        from datatable_tools.table_manager import table_manager
+
+        # Get the table
+        table = table_manager.get_table(table_id)
+        if not table:
+            return {
+                "success": False,
+                "error": f"Table {table_id} not found",
+                "message": "Source table does not exist"
+            }
+
+        # Check if it's a Google Sheets URL first (for range-specific export)
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        if spreadsheet_id and start_cell:
+            # Google Sheets range-specific export
+            final_worksheet = sheet_name or "Sheet1"
+            return await range_operations.update_table_range(
+                table_id=table_id,
+                spreadsheet_id=spreadsheet_id,
+                worksheet=final_worksheet,
+                start_cell=start_cell,
+                user_id="",
+                include_headers=include_headers,
+                ctx=ctx
+            )
+
+        # General export using parse_export_uri for other formats
+        export_info = parse_export_uri(uri)
+        export_type = export_info["export_type"]
+
+        logger.info(f"Exporting table {table_id} to {export_type}: {uri}")
+
+        # Handle Google Sheets export without range (entire sheet replacement)
+        if export_type == "google_sheets":
+            return await _export_google_sheets_full(ctx, table, export_info, include_headers)
+
+        # Handle file-based exports
+        return await _export_file_with_headers(table, export_info, encoding, delimiter, include_headers)
+
+    except Exception as e:
+        logger.error(f"Error exporting table {table_id} to {uri}: {e}")
         return {
             "success": False,
-            "error": "Invalid Google Sheets URI",
-            "message": f"Could not parse spreadsheet ID from URI: {uri}"
+            "error": str(e),
+            "message": f"Failed to export table {table_id} to {uri}"
         }
 
-    # Use provided worksheet name or parsed sheet_name
-    final_worksheet = worksheet or sheet_name or "Sheet1"
 
-    return await range_operations.update_table_range(
-        table_id=table_id,
-        spreadsheet_id=spreadsheet_id,
-        worksheet=final_worksheet,
-        start_cell=start_cell,
-        user_id="",  # Remove user_id requirement
-        include_headers=include_headers
-    )
+async def _export_google_sheets_full(ctx: Context, table, export_info: dict, include_headers: bool) -> Dict[str, Any]:
+    """
+    Internal function to export entire table to Google Sheets with authentication.
+    """
+    try:
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+        # Get table data
+        df = table.df
+
+        # Convert to lists for Google Sheets
+        data = df.values.tolist()
+
+        if include_headers:
+            headers = df.columns.tolist()
+        else:
+            headers = []
+
+        # Convert all values to strings for Google Sheets
+        data = [[str(cell) for cell in row] for row in data]
+
+        # Extract parameters from export_info
+        spreadsheet_id = export_info.get("spreadsheet_id")
+        sheet_name = export_info.get("sheet_name")
+
+        # Use the write_sheet_structured method
+        result = await GoogleSheetsService.write_sheet_structured(
+            service=None,  # Will be injected by decorator
+            ctx=ctx,
+            spreadsheet_identifier=spreadsheet_id,
+            data=data,
+            headers=[str(h) for h in headers] if headers else [],
+            sheet_name=sheet_name
+        )
+
+        # Add table metadata to the result
+        result.update({
+            "table_id": table.table_id,
+            "table_name": table.metadata.name,
+            "export_type": "google_sheets",
+            "rows_exported": len(data),
+            "columns_exported": len(df.columns),
+            "original_uri": export_info["original_uri"],
+            "include_headers": include_headers
+        })
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error exporting to Google Sheets: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to export table to Google Sheets: {str(e)}"
+        }
+
+
+async def _export_file_with_headers(table, export_info: dict, encoding: Optional[str], delimiter: Optional[str], include_headers: bool) -> Dict[str, Any]:
+    """
+    Internal function to export to file-based formats with header control.
+    """
+    import pandas as pd
+    import os
+
+    export_type = export_info["export_type"]
+    file_path = export_info["file_path"]
+    df = table.df
+
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else ".", exist_ok=True)
+
+    # Export based on format
+    if export_type == "csv":
+        csv_params = {"index": False, "header": include_headers}
+        if encoding:
+            csv_params["encoding"] = encoding
+        if delimiter:
+            csv_params["sep"] = delimiter
+        df.to_csv(file_path, **csv_params)
+
+    elif export_type == "excel":
+        df.to_excel(file_path, index=False, header=include_headers)
+
+    elif export_type == "json":
+        df.to_json(file_path, orient='records', indent=2)
+
+    elif export_type == "parquet":
+        df.to_parquet(file_path, index=False)
+
+    else:
+        # Generic file export as CSV
+        df.to_csv(file_path, index=False, header=include_headers)
+
+    # Get file info
+    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+    return {
+        "success": True,
+        "table_id": table.table_id,
+        "export_type": export_type,
+        "file_path": file_path,
+        "file_size": file_size,
+        "rows_exported": len(df),
+        "columns_exported": len(df.columns),
+        "table_name": table.metadata.name,
+        "original_uri": export_info["original_uri"],
+        "include_headers": include_headers,
+        "message": f"Exported table '{table.metadata.name}' ({len(df)} rows) to {export_type}: {file_path}"
+    }

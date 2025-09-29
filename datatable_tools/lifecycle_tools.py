@@ -83,7 +83,7 @@ async def create_table(
 
 
 @mcp.tool
-async def load_table(
+async def load_data_table(
     ctx: Context,
     uri: str,
     name: Optional[str] = None,
