@@ -23,6 +23,7 @@ class DataTableRangeOperations:
 
     async def update_cell(
         self,
+        ctx: Any,  # Context parameter needed for Google Sheets API calls
         spreadsheet_id: str,
         worksheet: Any,
         cell_address: str,
@@ -33,6 +34,7 @@ class DataTableRangeOperations:
         Update a single cell in the spreadsheet
 
         Args:
+            ctx: Context for the API call
             spreadsheet_id: Target spreadsheet ID
             worksheet: Worksheet identifier (name, id, or WorkSheetInfo)
             cell_address: Cell address in A1 notation (e.g., "B5")
@@ -54,7 +56,7 @@ class DataTableRangeOperations:
 
             # Update the range using GoogleSheetsService
             success = await self.google_sheets_service.update_range(
-                user_id=user_id,
+                ctx=ctx,
                 spreadsheet_id=spreadsheet_id,
                 range_notation=range_notation,
                 values=values
@@ -86,6 +88,7 @@ class DataTableRangeOperations:
 
     async def update_row(
         self,
+        ctx: Any,  # Context parameter needed for Google Sheets API calls
         spreadsheet_id: str,
         worksheet: Any,
         row_number: int,
@@ -124,7 +127,7 @@ class DataTableRangeOperations:
 
             # Update the range using GoogleSheetsService
             success = await self.google_sheets_service.update_range(
-                user_id=user_id,
+                ctx=ctx,
                 spreadsheet_id=spreadsheet_id,
                 range_notation=range_notation,
                 values=values
@@ -158,6 +161,7 @@ class DataTableRangeOperations:
 
     async def update_column(
         self,
+        ctx: Any,  # Context parameter needed for Google Sheets API calls
         spreadsheet_id: str,
         worksheet: Any,
         column: str,
@@ -192,7 +196,7 @@ class DataTableRangeOperations:
 
             # Update the range using GoogleSheetsService
             success = await self.google_sheets_service.update_range(
-                user_id=user_id,
+                ctx=ctx,
                 spreadsheet_id=spreadsheet_id,
                 range_notation=range_notation,
                 values=values
@@ -300,7 +304,6 @@ class DataTableRangeOperations:
 
             # Update the range using GoogleSheetsService
             success = await self.google_sheets_service.update_range(
-                service=None,  # Will be injected by decorator
                 ctx=ctx,
                 spreadsheet_id=spreadsheet_id,
                 range_notation=range_notation,

@@ -127,12 +127,12 @@ async def test_google_sheets_mcp(url, headers):
             # Test 6: Update row data using update_range
             print(f"\n📝 Test 6: Updating row data")
 
-            new_row_data = [["New Product", 49.99, "Gadgets", 100, timestamp]]
+            new_row_data = [["New Product", 49.99, "Gadgets", 100, timestamp, "updated whole row"]]
 
             row_update_res = await session.call_tool("update_range", {
                 "uri": write_uri,
                 "data": new_row_data,
-                "range_address": "A5:E5"
+                "range_address": "A5:F5"
             })
             print(f"✅ Row update result: {row_update_res}")
 

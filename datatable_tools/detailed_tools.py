@@ -126,6 +126,7 @@ async def _handle_google_sheets_update(
         if re.match(single_cell_pattern, range_address) and len(values) == 1 and len(values[0]) == 1:
             # Single cell update
             return await range_operations.update_cell(
+                ctx=ctx,
                 spreadsheet_id=spreadsheet_id,
                 worksheet=final_worksheet,
                 cell_address=range_address,
@@ -138,7 +139,7 @@ async def _handle_google_sheets_update(
 
         # Use the GoogleSheetsService directly
         success = await range_operations.google_sheets_service.update_range(
-            user_id="",
+            ctx=ctx,
             spreadsheet_id=spreadsheet_id,
             range_notation=full_range,
             values=values
@@ -170,7 +171,6 @@ async def _handle_google_sheets_update(
 
         # Use the write_sheet_structured method
         result = await GoogleSheetsService.write_sheet_structured(
-            service=None,  # Will be injected by decorator
             ctx=ctx,
             spreadsheet_identifier=spreadsheet_id,
             data=data_strings,
@@ -233,7 +233,6 @@ async def _export_data_google_sheets_full(ctx: Context, processed_data: List[Lis
 
         # Use the write_sheet_structured method
         result = await GoogleSheetsService.write_sheet_structured(
-            service=None,  # Will be injected by decorator
             ctx=ctx,
             spreadsheet_identifier=spreadsheet_id,
             data=data,
@@ -427,7 +426,6 @@ async def _export_google_sheets_full(ctx: Context, table, export_info: dict, inc
 
         # Use the write_sheet_structured method
         result = await GoogleSheetsService.write_sheet_structured(
-            service=None,  # Will be injected by decorator
             ctx=ctx,
             spreadsheet_identifier=spreadsheet_id,
             data=data,
