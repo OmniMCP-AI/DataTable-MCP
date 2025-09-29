@@ -295,7 +295,7 @@ async def map_values(
     table_id: str,
     column_mappings: Dict[str, Dict[str, Any]],
     default_value: Optional[Any] = None,
-    create_new_columns: bool = False,
+    inplace: bool = True,
     new_column_suffix: str = "_mapped"
 ) -> Dict[str, Any]:
     """
@@ -306,8 +306,8 @@ async def map_values(
         column_mappings: Dict mapping column names to value mappings
                         {"column_name": {"old_value": "new_value", ...}}
         default_value: Default value for unmapped values (if None, keeps original)
-        create_new_columns: If True, creates new columns instead of modifying existing ones
-        new_column_suffix: Suffix for new columns when create_new_columns=True
+        inplace: If True, modifies existing columns; if False, creates new columns
+        new_column_suffix: Suffix for new columns when inplace=False
 
     Returns:
         Dict containing value mapping operation information
@@ -335,7 +335,7 @@ async def map_values(
             mapping_stats = {}
 
             for column, value_mapping in column_mappings.items():
-                if create_new_columns:
+                if not inplace:
                     new_column_name = f"{column}{new_column_suffix}"
                     # Create new column with mapped values
                     table.df[new_column_name] = table.df[column].map(value_mapping)
@@ -379,8 +379,8 @@ async def map_values(
             "success": True,
             "table_id": table_id,
             "column_mappings": column_mappings,
-            "create_new_columns": create_new_columns,
-            "new_column_suffix": new_column_suffix if create_new_columns else None,
+            "inplace": inplace,
+            "new_column_suffix": new_column_suffix if not inplace else None,
             "default_value": default_value,
             "mapping_statistics": mapping_stats,
             "total_columns_processed": len(column_mappings),

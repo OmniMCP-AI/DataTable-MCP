@@ -96,7 +96,7 @@ async def filter_rows(
     table_id: str,
     conditions: List[Dict[str, Any]],
     logic: str = "AND",
-    in_place: bool = True
+    inplace: bool = True
 ) -> Dict[str, Any]:
     """
     Filter table rows based on multiple conditions with AND/OR logic.
@@ -106,7 +106,7 @@ async def filter_rows(
         conditions: List of filter conditions. Each condition should have:
                    {"column": "col_name", "operator": "eq|ne|gt|gte|lt|lte|contains|startswith|endswith|isnull|notnull", "value": filter_value}
         logic: Logic operator for combining conditions ("AND" or "OR")
-        in_place: If True, modifies the original table; if False, creates a new table
+        inplace: If True, modifies the original table; if False, creates a new table
 
     Returns:
         Dict containing filtered results and operation information
@@ -155,7 +155,7 @@ async def filter_rows(
             "message": f"Filtered table {table_id}: {len(filtered_df)} rows match the criteria"
         }
 
-        if not in_place:
+        if not inplace:
             # Create new table with filtered results
             new_name = f"{table.metadata.name} (Filtered)"
             new_table_id = table_manager.create_table(
@@ -196,7 +196,7 @@ async def sort_table(
     table_id: str,
     sort_columns: List[str],
     ascending: Optional[List[bool]] = None,
-    in_place: bool = True
+    inplace: bool = True
 ) -> Dict[str, Any]:
     """
     Sort table by multiple columns with option to create new table or modify in-place.
@@ -205,7 +205,7 @@ async def sort_table(
         table_id: ID of the target table
         sort_columns: List of column names to sort by (in order of priority)
         ascending: List of boolean values indicating sort direction for each column (True = ascending)
-        in_place: If True, modifies the original table; if False, creates a new table
+        inplace: If True, modifies the original table; if False, creates a new table
 
     Returns:
         Dict containing sort operation information
@@ -246,11 +246,11 @@ async def sort_table(
             "table_id": table_id,
             "sort_columns": sort_columns,
             "ascending": ascending,
-            "in_place": in_place,
+            "inplace": inplace,
             "message": f"Sorted table {table_id} by columns: {sort_columns}"
         }
 
-        if in_place:
+        if inplace:
             # Update original table
             with table._lock:
                 table.df = sorted_df
@@ -289,7 +289,7 @@ async def filter_table(
     ctx: Context,
     table_id: str,
     query: str,
-    in_place: bool = True
+    inplace: bool = True
 ) -> Dict[str, Any]:
     """
     Filter table rows using simple pandas query syntax (like DataFrame filter).
@@ -297,7 +297,7 @@ async def filter_table(
     Args:
         table_id: ID of the target table
         query: Pandas query string (e.g., "Age > 25", "Name == 'John'", "Age > 20 and Role == 'Engineer'")
-        in_place: If True, modifies the original table; if False, creates a new table
+        inplace: If True, modifies the original table; if False, creates a new table
 
     Returns:
         Dict containing filtered results and operation information
@@ -337,7 +337,7 @@ async def filter_table(
             "message": f"Filtered table {table_id}: {len(filtered_df)} rows match the query '{query}'"
         }
 
-        if not in_place:
+        if not inplace:
             # Create new table with filtered results
             new_name = f"{table.metadata.name} (Filtered)"
             new_table_id = table_manager.create_table(
