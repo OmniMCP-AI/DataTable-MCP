@@ -21,7 +21,7 @@ from datatable_tools.detailed_tools import (
     update_spreadsheet_cell,
     update_spreadsheet_row,
     update_spreadsheet_column,
-    update_table_to_spreadsheet_range
+    export_table_to_range
 )
 
 # Test configuration from .env
@@ -168,7 +168,7 @@ async def test_update_table_range(table_id):
     print("=" * 60)
 
     try:
-        result = await update_table_to_spreadsheet_range(
+        result = await export_table_to_range(
             table_id=table_id,
             spreadsheet_id=EXAMPLE_SPREADSHEET_ID,
             worksheet="Class Data",

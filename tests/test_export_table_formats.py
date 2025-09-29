@@ -292,6 +292,95 @@ class TestExportTableFormats(unittest.TestCase):
 
         print(f"   ✅ Multiple encodings supported")
 
+    def test_file_preview_content(self):
+        """Test file content preview for text formats"""
+        print("\n👁️ Testing File Content Preview")
+
+        import asyncio
+
+        # Test CSV preview
+        csv_path = os.path.join(self.temp_dir, "preview_test.csv")
+        result = asyncio.run(self.export_helper(csv_path))
+
+        self.assertTrue(result["success"])
+
+        # Show file content preview like in demo
+        with open(csv_path, 'r') as f:
+            content = f.read()
+            preview = content[:100] + "..." if len(content) > 100 else content
+            print(f"   📄 CSV Preview: {preview}")
+
+        # Test JSON preview
+        json_path = os.path.join(self.temp_dir, "preview_test.json")
+        result = asyncio.run(self.export_helper(json_path))
+
+        self.assertTrue(result["success"])
+
+        with open(json_path, 'r') as f:
+            content = f.read()
+            preview = content[:100] + "..." if len(content) > 100 else content
+            print(f"   📋 JSON Preview: {preview}")
+
+        print(f"   ✅ File content previews generated successfully")
+
+    def test_comprehensive_export_demo(self):
+        """Test comprehensive export demo scenarios like the original demo script"""
+        print("\n🎭 Testing Comprehensive Export Demo Scenarios")
+
+        import asyncio
+
+        # Create demo table with more realistic employee data
+        demo_data = [
+            ["Alice Johnson", 25, "Software Engineer", 75000, "Engineering"],
+            ["Bob Smith", 30, "Product Manager", 85000, "Product"],
+            ["Carol Davis", 28, "UX Designer", 65000, "Design"],
+            ["David Wilson", 35, "Engineering Director", 120000, "Engineering"],
+            ["Eva Brown", 32, "Data Scientist", 95000, "Data"]
+        ]
+        demo_headers = ["Name", "Age", "Role", "Salary", "Department"]
+
+        demo_table_id = table_manager.create_table(
+            data=demo_data,
+            headers=demo_headers,
+            name="Employee Data Demo",
+            source_info={"type": "demo_export"}
+        )
+
+        demo_table = table_manager.get_table(demo_table_id)
+        self.assertIsNotNone(demo_table)
+
+        async def export_demo_helper(uri, encoding=None, delimiter=None):
+            """Helper for demo export testing"""
+            export_info = parse_export_uri(uri)
+            return await _export_file(demo_table, export_info, encoding, delimiter)
+
+        # Test all formats with demo data
+        test_exports = [
+            ("employees.csv", "📄 CSV Export"),
+            ("employees_semicolon.csv", "📄 CSV with Semicolon", None, ";"),
+            ("employees.xlsx", "📊 Excel Export"),
+            ("employees.json", "📋 JSON Export"),
+            ("employees.parquet", "🗃️ Parquet Export")
+        ]
+
+        for export_test in test_exports:
+            filename = export_test[0]
+            description = export_test[1]
+            encoding = export_test[2] if len(export_test) > 2 else None
+            delimiter = export_test[3] if len(export_test) > 3 else None
+
+            file_path = os.path.join(self.temp_dir, filename)
+            result = asyncio.run(export_demo_helper(file_path, encoding, delimiter))
+
+            self.assertTrue(result["success"], f"Failed to export {filename}")
+            self.assertEqual(result["rows_exported"], 5)
+            self.assertEqual(result["columns_exported"], 5)
+
+            file_size_kb = result["file_size"] / 1024
+            print(f"   ✅ {description}: {file_size_kb:.1f} KB ({result['rows_exported']} rows)")
+
+        print(f"   🎉 All demo export scenarios completed successfully")
+
     def test_large_data_export(self):
         """Test export performance with larger dataset"""
         print("\n⚡ Testing Large Data Export Performance")

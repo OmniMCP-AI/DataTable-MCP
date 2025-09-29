@@ -239,6 +239,88 @@ class TestCreateTableDataFormats(unittest.TestCase):
         except ImportError:
             print("   ⚠️  Pandas not available, skipping Series test")
 
+    def test_comprehensive_data_types(self):
+        """Test comprehensive mixed data types with dates and complex structures"""
+        print("\n🧪 Testing Comprehensive Data Types")
+
+        data = {
+            "ID": [1, 2, 3],
+            "Name": ["Alice", "Bob", "Carol"],
+            "Score": [95.5, 87.2, 92.0],
+            "Active": [True, False, True],
+            "Notes": ["Excellent", None, "Good"],
+            "Date": ["2024-01-01", "2024-01-02", "2024-01-03"]
+        }
+
+        result = self.create_table_helper(data, name="Comprehensive Types")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["shape"], [3, 6])
+        expected_headers = {"Active", "Date", "ID", "Name", "Notes", "Score"}
+        self.assertEqual(set(result["headers"]), expected_headers)
+        print(f"   ✅ Created comprehensive table: {result['table_id']} with shape {result['shape']}")
+
+    def test_products_data_realistic(self):
+        """Test realistic product data scenario"""
+        print("\n🧪 Testing Realistic Product Data")
+
+        data = {
+            "Product": ["Laptop", "Mouse", "Keyboard"],
+            "Price": [999.99, 29.99, 79.99],
+            "Stock": [25, 150, 75],
+            "Category": ["Electronics", "Electronics", "Electronics"]
+        }
+
+        result = self.create_table_helper(data, name="Product Catalog")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["shape"], [3, 4])
+        expected_headers = {"Category", "Price", "Product", "Stock"}
+        self.assertEqual(set(result["headers"]), expected_headers)
+        print(f"   ✅ Created product table: {result['table_id']} with shape {result['shape']}")
+
+    def test_phones_records_format(self):
+        """Test phone products in records format"""
+        print("\n🧪 Testing Phone Products Records")
+
+        data = [
+            {"Name": "iPhone 14", "Price": 999, "Brand": "Apple"},
+            {"Name": "Galaxy S23", "Price": 899, "Brand": "Samsung"},
+            {"Name": "Pixel 7", "Price": 699, "Brand": "Google"}
+        ]
+
+        result = self.create_table_helper(data, name="Phone Catalog")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["shape"], [3, 3])
+        expected_headers = {"Brand", "Name", "Price"}
+        self.assertEqual(set(result["headers"]), expected_headers)
+        print(f"   ✅ Created phone table: {result['table_id']} with shape {result['shape']}")
+
+    def test_country_data_comprehensive(self):
+        """Test comprehensive country data similar to pandas demo"""
+        print("\n🧪 Testing Country Data")
+
+        try:
+            import pandas as pd
+
+            df = pd.DataFrame({
+                "Country": ["USA", "UK", "Canada", "Australia"],
+                "Population": [331_000_000, 67_000_000, 38_000_000, 25_000_000],
+                "GDP": [21.43, 2.83, 1.74, 1.55],
+                "Currency": ["USD", "GBP", "CAD", "AUD"]
+            })
+
+            result = self.create_table_helper(df, name="Country Stats")
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["shape"], [4, 4])
+            self.assertEqual(result["headers"], ["Country", "Population", "GDP", "Currency"])
+            print(f"   ✅ Created country table: {result['table_id']} with shape {result['shape']}")
+
+        except ImportError:
+            print("   ⚠️  Pandas not available, skipping country data test")
+
     def test_numpy_arrays(self):
         """Test numpy array input"""
         print("\n🧪 Testing NumPy Array Input")
