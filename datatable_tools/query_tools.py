@@ -284,7 +284,7 @@ async def sort_table(
             "message": f"Failed to sort table {table_id}"
         }
 
-@mcp.tool()
+# @mcp.tool()
 async def filter_table(
     ctx: Context,
     table_id: str,

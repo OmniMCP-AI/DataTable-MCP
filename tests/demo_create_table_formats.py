@@ -4,7 +4,6 @@ Simple test script to demonstrate create_table with different data formats
 This is a quick demo script that shows all the supported data input formats
 """
 
-import asyncio
 import sys
 import json
 from datetime import datetime
@@ -12,17 +11,49 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, '..')
 
-from datatable_tools.lifecycle_tools import create_table
+from datatable_tools.lifecycle_tools import _process_data_input
 from datatable_tools.table_manager import table_manager
-from fastmcp import Context
 
-async def demo_create_table_formats():
+def demo_create_table_formats():
     """Demonstrate all supported data formats for create_table"""
 
     print("🚀 Demo: create_table with Different Data Formats")
     print("=" * 60)
 
-    ctx = Context()
+    def create_table_helper(data, headers=None, name="Demo Table"):
+        """Helper to create table using table manager directly"""
+        try:
+            # Process data using the same logic as the MCP tool
+            processed_data, processed_headers = _process_data_input(data, headers)
+
+            # Create table using table manager
+            table_id = table_manager.create_table(
+                data=processed_data,
+                headers=processed_headers,
+                name=name,
+                source_info={"type": "demo_creation"}
+            )
+
+            table = table_manager.get_table(table_id)
+            if not table:
+                raise Exception("Failed to create table")
+
+            return {
+                "success": True,
+                "table_id": table_id,
+                "name": table.metadata.name,
+                "shape": table.shape,
+                "headers": table.headers,
+                "message": f"Created table '{name}' with {table.shape[0]} rows and {table.shape[1]} columns"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to create table"
+            }
+
     results = []
 
     # Clean up any existing tables
@@ -37,7 +68,7 @@ async def demo_create_table_formats():
     ]
     headers = ["Name", "Age", "Role"]
 
-    result = await create_table(ctx, data, headers, "Traditional 2D List")
+    result = create_table_helper(data, headers, "Traditional 2D List")
     results.append(("Traditional 2D List", result))
     print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
 
@@ -50,7 +81,7 @@ async def demo_create_table_formats():
         "Category": ["Electronics", "Electronics", "Electronics"]
     }
 
-    result = await create_table(ctx, data, name="Dictionary Format")
+    result = create_table_helper(data, name="Dictionary Format")
     results.append(("Dictionary Format", result))
     print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
     print(f"   📝 Headers: {result['headers']}")
@@ -63,7 +94,7 @@ async def demo_create_table_formats():
         {"Name": "Pixel 7", "Price": 699, "Brand": "Google"}
     ]
 
-    result = await create_table(ctx, data, name="Records Format")
+    result = create_table_helper(data, name="Records Format")
     results.append(("Records Format", result))
     print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
     print(f"   📝 Headers: {result['headers']}")
@@ -73,7 +104,7 @@ async def demo_create_table_formats():
     data = [10, 20, 30, 40, 50]
     headers = ["Values"]
 
-    result = await create_table(ctx, data, headers, "Single Column")
+    result = create_table_helper(data, headers, "Single Column")
     results.append(("Single Column", result))
     print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
 
@@ -81,7 +112,7 @@ async def demo_create_table_formats():
     print("\n📄 Test 5: Single Row Dictionary")
     data = {"Name": "Tesla Model 3", "Price": 35000, "Range": 358, "Type": "Electric"}
 
-    result = await create_table(ctx, data, name="Single Row")
+    result = create_table_helper(data, name="Single Row")
     results.append(("Single Row", result))
     print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
 
@@ -95,7 +126,7 @@ async def demo_create_table_formats():
     ]
 
     for value, type_name in scalar_tests:
-        result = await create_table(ctx, value, name=f"Scalar {type_name}")
+        result = create_table_helper(value, name=f"Scalar {type_name}")
         results.append((f"Scalar {type_name}", result))
         print(f"   ✅ {type_name}: {result['success']}, Value: {value}")
 
@@ -110,7 +141,7 @@ async def demo_create_table_formats():
         "Date": ["2024-01-01", "2024-01-02", "2024-01-03"]
     }
 
-    result = await create_table(ctx, data, name="Mixed Types")
+    result = create_table_helper(data, name="Mixed Types")
     results.append(("Mixed Types", result))
     print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
 
@@ -126,7 +157,7 @@ async def demo_create_table_formats():
             "Currency": ["USD", "GBP", "CAD", "AUD"]
         })
 
-        result = await create_table(ctx, df, name="Pandas DataFrame")
+        result = create_table_helper(df, name="Pandas DataFrame")
         results.append(("Pandas DataFrame", result))
         print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
 
@@ -145,7 +176,7 @@ async def demo_create_table_formats():
             [7, 8, 9]
         ])
 
-        result = await create_table(ctx, arr, ["X", "Y", "Z"], "NumPy Array")
+        result = create_table_helper(arr, ["X", "Y", "Z"], "NumPy Array")
         results.append(("NumPy Array", result))
         print(f"   ✅ Success: {result['success']}, Shape: {result['shape']}")
 
@@ -160,7 +191,7 @@ async def demo_create_table_formats():
     ]
 
     for data, desc in empty_tests:
-        result = await create_table(ctx, data, name=desc)
+        result = create_table_helper(data, name=desc)
         results.append((desc, result))
         print(f"   ✅ {desc}: {result['success']}, Shape: {result['shape']}")
 
@@ -203,6 +234,6 @@ async def demo_create_table_formats():
 
 if __name__ == "__main__":
     print(f"⏰ Starting demo at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    success = asyncio.run(demo_create_table_formats())
+    success = demo_create_table_formats()
     print(f"\n⏰ Demo completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     sys.exit(0 if success else 1)

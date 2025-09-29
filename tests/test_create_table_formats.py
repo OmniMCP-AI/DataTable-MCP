@@ -4,10 +4,10 @@ Comprehensive test suite for the enhanced create_table function
 Tests all supported data input formats similar to pd.DataFrame
 """
 
-import asyncio
 import sys
 import logging
 import unittest
+import time
 from datetime import datetime
 import json
 
@@ -18,9 +18,8 @@ sys.path.insert(0, '..')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from datatable_tools.lifecycle_tools import create_table, _process_data_input
+from datatable_tools.lifecycle_tools import _process_data_input
 from datatable_tools.table_manager import table_manager
-from fastmcp import Context
 
 class TestCreateTableDataFormats(unittest.TestCase):
     """Test create_table with various data input formats"""
@@ -28,11 +27,40 @@ class TestCreateTableDataFormats(unittest.TestCase):
     def setUp(self):
         """Clean up any existing tables before each test"""
         table_manager.cleanup_expired_tables(force=True)
-        self.ctx = Context()
 
-    async def async_create_table(self, data, headers=None, name="Test Table"):
-        """Helper to call create_table async function"""
-        return await create_table(self.ctx, data, headers, name)
+    def create_table_helper(self, data, headers=None, name="Test Table"):
+        """Helper to create table using table manager directly"""
+        try:
+            # Process data using the same logic as the MCP tool
+            processed_data, processed_headers = _process_data_input(data, headers)
+
+            # Create table using table manager
+            table_id = table_manager.create_table(
+                data=processed_data,
+                headers=processed_headers,
+                name=name,
+                source_info={"type": "test_creation"}
+            )
+
+            table = table_manager.get_table(table_id)
+            if not table:
+                raise Exception("Failed to create table")
+
+            return {
+                "success": True,
+                "table_id": table_id,
+                "name": table.metadata.name,
+                "shape": table.shape,
+                "headers": table.headers,
+                "message": f"Created table '{name}' with {table.shape[0]} rows and {table.shape[1]} columns"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to create table"
+            }
 
     def test_traditional_2d_list(self):
         """Test traditional 2D list format"""
@@ -45,7 +73,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
         ]
         headers = ["Name", "Age", "Role"]
 
-        result = asyncio.run(self.async_create_table(data, headers))
+        result = self.create_table_helper(data, headers)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["shape"], [3, 3])
@@ -62,7 +90,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
             "Role": ["Engineer", "Manager", "Designer"]
         }
 
-        result = asyncio.run(self.async_create_table(data))
+        result = self.create_table_helper(data)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["shape"], [3, 3])
@@ -79,7 +107,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
             {"Name": "Carol", "Age": 28, "Role": "Designer"}
         ]
 
-        result = asyncio.run(self.async_create_table(data))
+        result = self.create_table_helper(data)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["shape"], [3, 3])
@@ -93,7 +121,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
         data = [1, 2, 3, 4, 5]
         headers = ["Numbers"]
 
-        result = asyncio.run(self.async_create_table(data, headers))
+        result = self.create_table_helper(data, headers)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["shape"], [5, 1])
@@ -106,7 +134,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
 
         data = {"Name": "Alice", "Age": 25, "Role": "Engineer"}
 
-        result = asyncio.run(self.async_create_table(data))
+        result = self.create_table_helper(data)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["shape"], [1, 3])
@@ -127,7 +155,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
 
         for value, desc in test_cases:
             with self.subTest(value=value, desc=desc):
-                result = asyncio.run(self.async_create_table(value, name=f"Scalar {desc}"))
+                result = self.create_table_helper(value, name=f"Scalar {desc}")
 
                 self.assertTrue(result["success"])
                 self.assertEqual(result["shape"], [1, 1])
@@ -145,7 +173,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
 
         for data, desc in test_cases:
             with self.subTest(data=data, desc=desc):
-                result = asyncio.run(self.async_create_table(data, name=f"Empty {desc}"))
+                result = self.create_table_helper(data, name=f"Empty {desc}")
 
                 self.assertTrue(result["success"])
                 self.assertEqual(result["shape"], [0, 0])
@@ -163,7 +191,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
             "Notes": ["Good", None, "Excellent"]
         }
 
-        result = asyncio.run(self.async_create_table(data))
+        result = self.create_table_helper(data)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["shape"], [3, 5])
@@ -182,7 +210,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
                 "C": [1.1, 2.2, 3.3]
             })
 
-            result = asyncio.run(self.async_create_table(df))
+            result = self.create_table_helper(df)
 
             self.assertTrue(result["success"])
             self.assertEqual(result["shape"], [3, 3])
@@ -201,7 +229,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
 
             series = pd.Series([10, 20, 30, 40], name="Values")
 
-            result = asyncio.run(self.async_create_table(series))
+            result = self.create_table_helper(series)
 
             self.assertTrue(result["success"])
             self.assertEqual(result["shape"], [4, 1])
@@ -220,7 +248,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
 
             # Test 1D array
             arr_1d = np.array([1, 2, 3, 4, 5])
-            result = asyncio.run(self.async_create_table(arr_1d, name="NumPy 1D"))
+            result = self.create_table_helper(arr_1d, name="NumPy 1D")
 
             self.assertTrue(result["success"])
             self.assertEqual(result["shape"], [5, 1])
@@ -228,7 +256,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
 
             # Test 2D array
             arr_2d = np.array([[1, 2, 3], [4, 5, 6]])
-            result = asyncio.run(self.async_create_table(arr_2d, name="NumPy 2D"))
+            result = self.create_table_helper(arr_2d, name="NumPy 2D")
 
             self.assertTrue(result["success"])
             self.assertEqual(result["shape"], [2, 3])
@@ -244,7 +272,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
         data = {"A": [1, 2], "B": [3, 4]}
         custom_headers = ["X", "Y"]
 
-        result = asyncio.run(self.async_create_table(data, custom_headers))
+        result = self.create_table_helper(data, custom_headers)
 
         self.assertTrue(result["success"])
         self.assertEqual(result["headers"], custom_headers)
@@ -257,7 +285,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
         # Test mismatched column lengths
         data = {"A": [1, 2, 3], "B": [4, 5]}  # Different lengths
 
-        result = asyncio.run(self.async_create_table(data))
+        result = self.create_table_helper(data)
 
         self.assertFalse(result["success"])
         self.assertIn("same length", result["error"])
@@ -278,7 +306,7 @@ class TestCreateTableDataFormats(unittest.TestCase):
         }
 
         start_time = time.time()
-        result = asyncio.run(self.async_create_table(data, name="Large Dataset"))
+        result = self.create_table_helper(data, name="Large Dataset")
         end_time = time.time()
 
         self.assertTrue(result["success"])
@@ -323,9 +351,10 @@ def run_comprehensive_tests():
     # Create test suite
     suite = unittest.TestSuite()
 
-    # Add test cases
-    suite.addTest(unittest.makeSuite(TestCreateTableDataFormats))
-    suite.addTest(unittest.makeSuite(TestProcessDataInput))
+    # Add test cases (modern approach)
+    loader = unittest.TestLoader()
+    suite.addTests(loader.loadTestsFromTestCase(TestCreateTableDataFormats))
+    suite.addTests(loader.loadTestsFromTestCase(TestProcessDataInput))
 
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)

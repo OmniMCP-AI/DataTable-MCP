@@ -83,176 +83,84 @@ async def create_table(
 
 
 @mcp.tool()
-@require_google_service("sheets", "sheets_read")
-async def load_table_from_google_sheets(
-    service,
+async def load_table(
     ctx: Context,
     uri: str,
     name: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Load a table from Google Sheets using a URL or spreadsheet ID.
-
-    Args:
-        uri: Google Sheets URL or spreadsheet ID
-             Examples:
-             - https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
-             - https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0
-             - 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
-        name: Optional table name
-
-    Returns:
-        Dict containing table_id and loaded table information
-    """
-    try:
-        from datatable_tools.utils import parse_google_sheets_url, is_google_sheets_url
-        from datatable_tools.data_sources import create_data_source, SpreadsheetDataSource
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-
-        # Validate and parse the URI
-        if not is_google_sheets_url(uri):
-            return {
-                "success": False,
-                "error": "Invalid Google Sheets URL or ID",
-                "message": "Please provide a valid Google Sheets URL or spreadsheet ID"
-            }
-
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-        if not spreadsheet_id:
-            return {
-                "success": False,
-                "error": "Could not extract spreadsheet ID from URI",
-                "message": "Please check the Google Sheets URL format"
-            }
-
-        # Create Google Sheets data source
-        source_params = {
-            "spreadsheet_id": spreadsheet_id,
-            "worksheet": sheet_name
-        }
-
-        data_source = create_data_source("google_sheets", **source_params)
-
-        # Load data from source - call GoogleSheetsService directly with injected service and ctx
-        response = await GoogleSheetsService.read_sheet_structured(
-            service,  # Use the authenticated service from the decorator
-            ctx,      # Use the context from the decorator
-            spreadsheet_id,  # spreadsheet_id
-            sheet_name    # sheet_name
-        )
-
-        if not response.get("success"):
-            raise Exception(f"Failed to read spreadsheet: {response.get('message', 'Unknown error')}")
-
-        # Extract data and headers
-        headers = response.get("headers", [])
-        data = response.get("data", [])
-
-        # Create source_info from the response
-        source_info = {
-            "type": "google_sheets",
-            "spreadsheet_id": spreadsheet_id,
-            "original_uri": uri,
-            "worksheet": response["worksheet"]["title"],
-            "used_range": response.get("used_range"),
-            "worksheet_url": response.get("worksheet_url"),
-            "row_count": response.get("row_count", len(data)),
-            "column_count": response.get("column_count", len(headers))
-        }
-
-        # Create table
-        table_id = table_manager.create_table(
-            data=data,
-            headers=headers,
-            name=name or f"Loaded from Google Sheets",
-            source_info=source_info
-        )
-
-        table = table_manager.get_table(table_id)
-        return {
-            "success": True,
-            "table_id": table_id,
-            "name": table.metadata.name,
-            "shape": table.shape,
-            "headers": table.headers,
-            "source_info": source_info,
-            "message": f"Loaded table from Google Sheets with {table.shape[0]} rows and {table.shape[1]} columns"
-        }
-
-    except Exception as e:
-        logger.error(f"Error loading table from Google Sheets: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to load table from Google Sheets"
-        }
-
-@mcp.tool()
-async def load_table(
-    ctx: Context,
-    source_type: str,
-    source_path: str,
-    name: Optional[str] = None,
-    sheet_name: Optional[str] = None,
+    query: Optional[str] = None,
     encoding: Optional[str] = None,
-    delimiter: Optional[str] = None,
-    query: Optional[str] = None
+    delimiter: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Load a table from external sources (excel/csv/database). For Google Sheets, use load_table_google_sheets.
+    Load a table from various data sources using URI-based auto-detection.
 
     Args:
-        source_type: Type of source ("excel", "csv", "database") - NOT "google_sheets"
-        source_path: Path/URL to the source (file path, database connection string)
+        uri: URI to the data source. Supports:
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
+             - CSV files: /path/to/file.csv or https://example.com/data.csv
+             - Excel files: /path/to/file.xlsx or https://example.com/data.xlsx
+             - JSON files: /path/to/file.json
+             - Database: postgresql://user:pass@host:port/db
         name: Optional table name
-        sheet_name: Sheet name for Excel (optional)
+        query: SQL query for database sources (required for databases)
         encoding: File encoding for CSV files (optional)
         delimiter: Delimiter for CSV files (optional)
-        query: SQL query for database sources (required for database)
 
     Returns:
         Dict containing table_id and loaded table information
+
+    Examples:
+        # Google Sheets
+        uri = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+
+        # CSV file
+        uri = "/path/to/data.csv"
+
+        # Database
+        uri = "postgresql://user:pass@localhost:5432/mydb"
+        query = "SELECT * FROM users"
     """
     try:
+        from datatable_tools.utils import parse_source_uri, detect_source_type
         from datatable_tools.data_sources import create_data_source
 
-        # Redirect Google Sheets to the dedicated function
-        if source_type == "google_sheets":
-            return {
-                "success": False,
-                "error": "Use load_table_google_sheets for Google Sheets sources",
-                "message": "Please use the load_table_google_sheets function for loading Google Sheets data"
-            }
+        # Parse the URI to determine source type and parameters
+        source_info = parse_source_uri(uri)
+        source_type = source_info["source_type"]
 
-        # Validate required parameters
+        logger.info(f"Loading table from {source_type} source: {uri}")
+
+        # Handle Google Sheets with authentication
+        if source_type == "google_sheets":
+            return await _load_google_sheets(ctx, source_info, name)
+
+        # Validate database query requirement
         if source_type == "database" and not query:
             return {
                 "success": False,
-                "error": "query is required for database source",
+                "error": "query is required for database sources",
                 "message": "Please provide a SQL query for database sources"
             }
 
         # Create appropriate data source
-        source_params = {
-            "file_path": source_path if source_type in ["excel", "csv"] else None,
-            "sheet_name": sheet_name,
-            "encoding": encoding,
-            "delimiter": delimiter,
-            "connection_string": source_path if source_type == "database" else None,
-            "query": query
-        }
-
+        source_params = _build_source_params(source_info, encoding, delimiter, query)
         data_source = create_data_source(source_type, **source_params)
 
         # Load data from source
-        data, headers, source_info = await data_source.load_data()
+        data, headers, metadata = await data_source.load_data()
+
+        # Enhance metadata with original URI
+        metadata.update({
+            "original_uri": uri,
+            "detected_type": source_type
+        })
 
         # Create table
         table_id = table_manager.create_table(
             data=data,
             headers=headers,
             name=name or f"Loaded from {source_type}",
-            source_info=source_info
+            source_info=metadata
         )
 
         table = table_manager.get_table(table_id)
@@ -262,19 +170,115 @@ async def load_table(
             "name": table.metadata.name,
             "shape": table.shape,
             "headers": table.headers,
-            "source_info": source_info,
+            "source_type": source_type,
+            "source_info": metadata,
             "message": f"Loaded table from {source_type} with {table.shape[0]} rows and {table.shape[1]} columns"
         }
 
     except Exception as e:
-        logger.error(f"Error loading table from {source_type}: {e}")
+        logger.error(f"Error loading table from {uri}: {e}")
         return {
             "success": False,
             "error": str(e),
-            "message": f"Failed to load table from {source_type}"
+            "message": f"Failed to load table from {uri}"
         }
 
-@mcp.tool()
+
+@require_google_service("sheets", "sheets_read")
+async def _load_google_sheets(service, ctx: Context, source_info: dict, name: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Internal function to load Google Sheets with authentication.
+
+    Args:
+        service: Authenticated Google Sheets service
+        ctx: Context
+        source_info: Parsed source information
+        name: Optional table name
+    """
+    from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+    spreadsheet_id = source_info["spreadsheet_id"]
+    sheet_name = source_info["sheet_name"]
+    original_uri = source_info["original_uri"]
+
+    # Load data from Google Sheets
+    response = await GoogleSheetsService.read_sheet_structured(
+        service, ctx, spreadsheet_id, sheet_name
+    )
+
+    if not response.get("success"):
+        raise Exception(f"Failed to read spreadsheet: {response.get('message', 'Unknown error')}")
+
+    # Extract data and headers
+    headers = response.get("headers", [])
+    data = response.get("data", [])
+
+    # Create enhanced source_info
+    metadata = {
+        "type": "google_sheets",
+        "spreadsheet_id": spreadsheet_id,
+        "original_uri": original_uri,
+        "worksheet": response["worksheet"]["title"],
+        "used_range": response.get("used_range"),
+        "worksheet_url": response.get("worksheet_url"),
+        "row_count": response.get("row_count", len(data)),
+        "column_count": response.get("column_count", len(headers))
+    }
+
+    # Create table
+    table_id = table_manager.create_table(
+        data=data,
+        headers=headers,
+        name=name or f"Loaded from Google Sheets",
+        source_info=metadata
+    )
+
+    table = table_manager.get_table(table_id)
+    return {
+        "success": True,
+        "table_id": table_id,
+        "name": table.metadata.name,
+        "shape": table.shape,
+        "headers": table.headers,
+        "source_type": "google_sheets",
+        "source_info": metadata,
+        "message": f"Loaded table from Google Sheets with {table.shape[0]} rows and {table.shape[1]} columns"
+    }
+
+
+def _build_source_params(source_info: dict, encoding: Optional[str], delimiter: Optional[str], query: Optional[str]) -> dict:
+    """
+    Build parameters for data source creation based on source type.
+
+    Args:
+        source_info: Parsed source information
+        encoding: File encoding
+        delimiter: CSV delimiter
+        query: SQL query
+
+    Returns:
+        Parameters dictionary for data source
+    """
+    source_type = source_info["source_type"]
+
+    if source_type == "database":
+        return {
+            "connection_string": source_info["connection_string"],
+            "query": query
+        }
+    elif source_type in ["csv", "excel", "json", "file"]:
+        params = {
+            "file_path": source_info["file_path"]
+        }
+        if encoding:
+            params["encoding"] = encoding
+        if delimiter:
+            params["delimiter"] = delimiter
+        return params
+    else:
+        return {}
+
+# @mcp.tool()
 async def clone_table(
     ctx: Context,
     source_table_id: str,

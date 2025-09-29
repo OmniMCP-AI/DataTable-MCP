@@ -2,8 +2,171 @@
 Utility functions for DataTable MCP tools
 """
 import re
+import os
 from typing import Optional, Tuple
 from urllib.parse import urlparse, parse_qs
+
+
+def detect_export_type(uri: str) -> str:
+    """
+    Automatically detect the export type from a URI.
+
+    Args:
+        uri: URI/path for the export destination
+
+    Returns:
+        Export type: "google_sheets", "csv", "excel", "json", "parquet", or "file"
+    """
+    if not uri:
+        raise ValueError("URI cannot be empty")
+
+    # Google Sheets detection
+    if is_google_sheets_url(uri):
+        return "google_sheets"
+
+    # File extension based detection
+    if uri.startswith(('http://', 'https://')):
+        # Remote URL - check extension
+        path_part = urlparse(uri).path.lower()
+        if path_part.endswith('.csv'):
+            return "csv"
+        elif path_part.endswith(('.xlsx', '.xls')):
+            return "excel"
+        elif path_part.endswith('.json'):
+            return "json"
+        elif path_part.endswith('.parquet'):
+            return "parquet"
+        else:
+            return "file"
+
+    # Local file paths
+    ext = os.path.splitext(uri.lower())[1]
+    if ext == '.csv':
+        return "csv"
+    elif ext in ['.xlsx', '.xls']:
+        return "excel"
+    elif ext == '.json':
+        return "json"
+    elif ext == '.parquet':
+        return "parquet"
+    else:
+        return "file"
+
+
+def parse_export_uri(uri: str) -> dict:
+    """
+    Parse an export URI and extract relevant parameters.
+
+    Args:
+        uri: URI to parse for export
+
+    Returns:
+        Dictionary with parsed parameters
+    """
+    export_type = detect_export_type(uri)
+
+    if export_type == "google_sheets":
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        return {
+            "export_type": "google_sheets",
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_name": sheet_name,
+            "original_uri": uri
+        }
+    else:
+        # File-based exports
+        return {
+            "export_type": export_type,
+            "file_path": uri,
+            "original_uri": uri
+        }
+
+
+def detect_source_type(uri: str) -> str:
+    """
+    Automatically detect the source type from a URI.
+
+    Args:
+        uri: URI/path to the data source
+
+    Returns:
+        Source type: "google_sheets", "csv", "excel", "json", "database", or "file"
+    """
+    if not uri:
+        raise ValueError("URI cannot be empty")
+
+    # Google Sheets detection
+    if is_google_sheets_url(uri):
+        return "google_sheets"
+
+    # Database connection strings
+    if uri.startswith(('postgresql://', 'mysql://', 'sqlite://', 'oracle://', 'mssql://')):
+        return "database"
+
+    # HTTP/HTTPS URLs
+    if uri.startswith(('http://', 'https://')):
+        # Check file extension in URL
+        path_part = urlparse(uri).path.lower()
+        if path_part.endswith(('.csv')):
+            return "csv"
+        elif path_part.endswith(('.xlsx', '.xls')):
+            return "excel"
+        elif path_part.endswith(('.json')):
+            return "json"
+        else:
+            return "file"  # Generic file
+
+    # Local file paths
+    if os.path.isfile(uri) or '/' in uri or '\\' in uri:
+        ext = os.path.splitext(uri.lower())[1]
+        if ext == '.csv':
+            return "csv"
+        elif ext in ['.xlsx', '.xls']:
+            return "excel"
+        elif ext == '.json':
+            return "json"
+        else:
+            return "file"
+
+    # Fallback
+    return "file"
+
+
+def parse_source_uri(uri: str) -> dict:
+    """
+    Parse a URI and extract relevant parameters for data loading.
+
+    Args:
+        uri: URI to parse
+
+    Returns:
+        Dictionary with parsed parameters
+    """
+    source_type = detect_source_type(uri)
+
+    if source_type == "google_sheets":
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        return {
+            "source_type": "google_sheets",
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_name": sheet_name,
+            "original_uri": uri
+        }
+
+    elif source_type == "database":
+        return {
+            "source_type": "database",
+            "connection_string": uri,
+            "original_uri": uri
+        }
+
+    else:
+        # File-based sources (csv, excel, json, file)
+        return {
+            "source_type": source_type,
+            "file_path": uri,
+            "original_uri": uri
+        }
 
 
 def parse_google_sheets_url(url: str) -> Tuple[Optional[str], Optional[str]]:
