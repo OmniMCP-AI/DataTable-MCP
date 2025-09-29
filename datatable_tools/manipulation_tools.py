@@ -60,8 +60,7 @@ async def add_column(
     table_id: str,
     column_name: str,
     default_value: Optional[Any] = None,
-    position: Optional[int] = None,
-    in_place: bool = True
+    position: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Add a new column to the table with optional default values.
@@ -71,7 +70,6 @@ async def add_column(
         column_name: Name of the new column
         default_value: Default value for all rows in the new column
         position: Optional position to insert column (if not specified, adds at end)
-        in_place: If True, modifies the original table. If False, creates a new table with the column added
 
     Returns:
         Dict containing success status and updated table information
@@ -93,49 +91,16 @@ async def add_column(
             }
 
         original_columns = table.headers.copy()
-
-        if in_place:
-            # Modify the original table
-            table.add_column(column_name, default_value)
-            result_table_id = table_id
-            result_table_name = table.metadata.name
-        else:
-            # Create a new table with the column added
-            new_df = table.df.copy()
-            new_df[column_name] = default_value
-
-            # Reorder columns if position is specified
-            if position is not None and 0 <= position <= len(new_df.columns):
-                cols = new_df.columns.tolist()
-                cols.insert(position, cols.pop(cols.index(column_name)))
-                new_df = new_df[cols]
-
-            new_table_name = f"{table.metadata.name}_with_{column_name}"
-            result_table_id = table_manager.create_table(
-                data=new_df.values.tolist(),
-                headers=new_df.columns.tolist(),
-                name=new_table_name,
-                source_info={
-                    "type": "column_added",
-                    "source_table_id": table_id,
-                    "added_column": column_name,
-                    "default_value": default_value,
-                    "position": position
-                }
-            )
-            result_table_name = new_table_name
+        table.add_column(column_name, default_value)
 
         return {
             "success": True,
-            "table_id": result_table_id,
-            "original_table_id": table_id,
+            "table_id": table_id,
             "column_name": column_name,
             "default_value": default_value,
             "original_columns": len(original_columns),
-            "new_columns": len(original_columns) + 1,
-            "in_place": in_place,
-            "new_table_name": result_table_name if not in_place else None,
-            "message": f"Added column '{column_name}' to table {table_id}" + ("" if in_place else f" (created new table: {result_table_id})")
+            "new_columns": len(table.headers),
+            "message": f"Added column '{column_name}' to table {table_id}"
         }
 
     except Exception as e:
@@ -146,7 +111,7 @@ async def add_column(
             "message": f"Failed to add column to table {table_id}"
         }
 
-@mcp.tool()
+# @mcp.tool()
 async def update_cell(
     ctx: Context,
     table_id: str,
@@ -227,7 +192,7 @@ async def update_cell(
             "message": f"Failed to update cell in table {table_id}"
         }
 
-@mcp.tool()
+# @mcp.tool()
 async def delete_row(
     ctx: Context,
     table_id: str,
@@ -282,7 +247,7 @@ async def delete_row(
             "message": f"Failed to delete rows from table {table_id}"
         }
 
-@mcp.tool()
+# @mcp.tool()
 async def delete_column(
     ctx: Context,
     table_id: str,

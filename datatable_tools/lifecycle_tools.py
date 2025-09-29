@@ -12,7 +12,7 @@ async def create_table(
     ctx: Context,
     data: Any,
     headers: Optional[List[str]] = None,
-    name: str = "Untitled Table"
+    name: Optional[str] = "Untitled Table"
 ) -> Dict[str, Any]:
     """
     Create a new DataTable from various data formats (similar to pd.DataFrame).

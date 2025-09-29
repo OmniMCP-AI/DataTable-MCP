@@ -7,7 +7,7 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool()
+# @mcp.tool()
 async def get_table_data(
     ctx: Context,
     table_id: str,

@@ -7,4 +7,3 @@ from . import query_tools
 from . import export_tools
 from . import advanced_tools
 from . import session_tools
-from . import detailed_tools  # New detailed spreadsheet operations
