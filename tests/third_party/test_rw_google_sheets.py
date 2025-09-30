@@ -297,6 +297,201 @@ async def test_write_additional_worksheet(spreadsheet_id, client):
         return False
 
 
+async def test_append_functionality(spreadsheet_id, client):
+    """Test the new append_last_row and append_last_column functionality"""
+    if not spreadsheet_id or not client:
+        print("\n⏭️  Skipping append test - no spreadsheet or client available")
+        return False
+
+    print(f"\n🧪 Test 5: Testing append_last_row and append_last_column functionality")
+    print("=" * 60)
+
+    try:
+        # Import the updated update_range function
+        import sys
+        import os
+        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_dir)
+
+        from datatable_tools.detailed_tools import update_range
+
+        # Create a mock context (for testing purposes)
+        class MockContext:
+            def __init__(self):
+                self.user_id = TEST_USER_ID
+
+        ctx = MockContext()
+
+        # Get the actual function (handle MCP wrapper)
+        update_range_func = update_range.fn if hasattr(update_range, 'fn') else update_range
+
+        # Test 5a: Append to last row (should add data below existing data)
+        print("\n🔸 Test 5a: Append to last row")
+        additional_employee_data = [
+            ["Frank Miller", "31", "HR", "$72,000", "2024-03-15"],
+            ["Grace Lee", "27", "Engineering", "$89,000", "2024-04-01"]
+        ]
+
+        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+        result = await update_range_func(
+            ctx=ctx,
+            uri=spreadsheet_url,
+            data=additional_employee_data,
+            append_last_row=True,
+            append_last_column=False
+        )
+
+        if result.get("success"):
+            print("✅ SUCCESS: Data appended to last row!")
+            print(f"   - Updated range: {result.get('range', 'Unknown')}")
+            print(f"   - Updated cells: {result.get('updated_cells', 'Unknown')}")
+        else:
+            print(f"❌ FAILED: {result.get('error', 'Unknown error')}")
+            return False
+
+        # Test 5b: Append to last column (should add data to the right of existing data)
+        print("\n🔸 Test 5b: Append to last column")
+        bonus_data = [
+            ["Bonus"],
+            ["$5,000"],
+            ["$3,000"],
+            ["$4,000"],
+            ["$4,500"],
+            ["$3,500"],
+            ["$2,500"],
+            ["$4,000"]
+        ]
+
+        result = await update_range_func(
+            ctx=ctx,
+            uri=spreadsheet_url,
+            data=bonus_data,
+            append_last_row=False,
+            append_last_column=True
+        )
+
+        if result.get("success"):
+            print("✅ SUCCESS: Data appended to last column!")
+            print(f"   - Updated range: {result.get('range', 'Unknown')}")
+            print(f"   - Updated cells: {result.get('updated_cells', 'Unknown')}")
+        else:
+            print(f"❌ FAILED: {result.get('error', 'Unknown error')}")
+            return False
+
+        # Test 5c: Append to both last row and last column (should add data to bottom-right)
+        print("\n🔸 Test 5c: Append to last row and column")
+        notes_data = [
+            ["Notes"],
+            ["Excellent performer"]
+        ]
+
+        result = await update_range_func(
+            ctx=ctx,
+            uri=spreadsheet_url,
+            data=notes_data,
+            append_last_row=True,
+            append_last_column=True
+        )
+
+        if result.get("success"):
+            print("✅ SUCCESS: Data appended to bottom-right!")
+            print(f"   - Updated range: {result.get('range', 'Unknown')}")
+            print(f"   - Updated cells: {result.get('updated_cells', 'Unknown')}")
+            return True
+        else:
+            print(f"❌ FAILED: {result.get('error', 'Unknown error')}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Error testing append functionality: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def test_range_expansion(spreadsheet_id, client):
+    """Test the range auto-expansion functionality"""
+    if not spreadsheet_id or not client:
+        print("\n⏭️  Skipping range expansion test - no spreadsheet or client available")
+        return False
+
+    print(f"\n🧪 Test 6: Testing range auto-expansion functionality")
+    print("=" * 60)
+
+    try:
+        # Import the updated update_range function
+        import sys
+        import os
+        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_dir)
+
+        from datatable_tools.detailed_tools import update_range
+
+        # Create a mock context
+        class MockContext:
+            def __init__(self):
+                self.user_id = TEST_USER_ID
+
+        ctx = MockContext()
+
+        # Get the actual function (handle MCP wrapper)
+        update_range_func = update_range.fn if hasattr(update_range, 'fn') else update_range
+
+        # Create a test worksheet for range expansion
+        try:
+            body = {
+                'requests': [{
+                    'addSheet': {
+                        'properties': {
+                            'title': 'Range_Expansion_Test'
+                        }
+                    }
+                }]
+            }
+            client.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body=body
+            ).execute()
+            print("✅ Created Range_Expansion_Test worksheet")
+        except Exception as e:
+            print(f"⚠️  Worksheet may already exist: {e}")
+
+        # Test 6a: Write data larger than specified range (should auto-expand)
+        print("\n🔸 Test 6a: Auto-expand range A1:B2 for 3x4 data")
+        large_data = [
+            ["Col1", "Col2", "Col3", "Col4"],
+            ["Row1", "Data1", "Data2", "Data3"],
+            ["Row2", "Data4", "Data5", "Data6"]
+        ]
+
+        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+        result = await update_range_func(
+            ctx=ctx,
+            uri=spreadsheet_url + "#gid=2",  # Assuming this is the 3rd sheet (gid=2)
+            data=large_data,
+            range_address="A1:B2",  # This should auto-expand to A1:D3
+            append_last_row=False,
+            append_last_column=False
+        )
+
+        if result.get("success"):
+            print("✅ SUCCESS: Range auto-expanded!")
+            print(f"   - Expected expansion: A1:B2 → A1:D3")
+            print(f"   - Updated range: {result.get('range', 'Unknown')}")
+            print(f"   - Updated cells: {result.get('updated_cells', 'Unknown')}")
+            print(f"   - Data shape: {result.get('data_shape', 'Unknown')}")
+            return True
+        else:
+            print(f"❌ FAILED: {result.get('error', 'Unknown error')}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Error testing range expansion: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 async def run_real_google_sheets_test():
     """Run real Google Sheets integration test with modern auth"""
     print("🚀 REAL Google Sheets Integration Test (Environment Variables)")
@@ -343,6 +538,12 @@ async def run_real_google_sheets_test():
     # Test 4: Additional worksheet
     worksheet_success = await test_write_additional_worksheet(spreadsheet_id, client)
 
+    # Test 5: Append functionality
+    append_success = await test_append_functionality(spreadsheet_id, client)
+
+    # Test 6: Range expansion
+    expansion_success = await test_range_expansion(spreadsheet_id, client)
+
     print("\n🏁 Real Google Sheets tests completed!")
     print("=" * 70)
 
@@ -351,7 +552,9 @@ async def run_real_google_sheets_test():
         ("Create Spreadsheet", spreadsheet_id is not None),
         ("Write Data", write_success),
         ("Read Data", read_success),
-        ("Additional Worksheet", worksheet_success)
+        ("Additional Worksheet", worksheet_success),
+        ("Append Functionality", append_success),
+        ("Range Auto-Expansion", expansion_success)
     ]
 
     passed = sum(1 for _, success in tests if success)
@@ -378,6 +581,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Real Google Sheets Integration with Environment Variables")
     parser.add_argument("--check-env", action="store_true",
                        help="Only check environment variables without running tests")
+    parser.add_argument("--test-append", action="store_true",
+                       help="Run only the append functionality tests")
+    parser.add_argument("--test-expansion", action="store_true",
+                       help="Run only the range expansion tests")
+    parser.add_argument("--test-new-features", action="store_true",
+                       help="Run only the new append and expansion tests")
     args = parser.parse_args()
 
     if args.check_env:
@@ -404,6 +613,56 @@ if __name__ == "__main__":
             else:
                 print(f"❌ {var}: Not set")
         sys.exit(0)
+
+    # Handle specific test options
+    if args.test_append or args.test_expansion or args.test_new_features:
+        async def run_specific_tests():
+            # Run only specific tests
+            print("🧪 Running specific new feature tests...")
+
+            # Still need to create a spreadsheet first
+            result = await test_create_real_spreadsheet()
+            if not result:
+                print("❌ Cannot proceed without authentication")
+                return False
+
+            spreadsheet_id, client = result
+
+            # Write initial data for append tests
+            initial_data = [
+                ["Name", "Age", "Department", "Salary", "Start Date"],
+                ["Alice Johnson", "28", "Engineering", "$95,000", "2023-01-15"],
+                ["Bob Smith", "32", "Marketing", "$78,000", "2022-03-10"]
+            ]
+            await client.write_data(spreadsheet_id, "Sheet1", initial_data)
+
+            test_results = []
+
+            if args.test_append or args.test_new_features:
+                append_success = await test_append_functionality(spreadsheet_id, client)
+                test_results.append(("Append Functionality", append_success))
+
+            if args.test_expansion or args.test_new_features:
+                expansion_success = await test_range_expansion(spreadsheet_id, client)
+                test_results.append(("Range Auto-Expansion", expansion_success))
+
+            # Print results
+            passed = sum(1 for _, success in test_results if success)
+            total = len(test_results)
+
+            print(f"\n📊 NEW FEATURES TEST RESULTS: {passed}/{total} tests passed")
+            for test_name, success in test_results:
+                status = "✅" if success else "❌"
+                print(f"  {status} {test_name}")
+
+            if spreadsheet_id:
+                print(f"\n🌐 TEST SPREADSHEET:")
+                print(f"📋 URL: https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit")
+
+            return passed == total
+
+        success = asyncio.run(run_specific_tests())
+        sys.exit(0 if success else 1)
 
     # Run the full test suite
     success = asyncio.run(run_real_google_sheets_test())
