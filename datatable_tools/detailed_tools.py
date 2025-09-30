@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 async def append_rows(
     ctx: Context,
     uri: str,
-    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
     headers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
@@ -69,7 +69,7 @@ async def append_rows(
 async def append_columns(
     ctx: Context,
     uri: str,
-    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
     headers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
@@ -117,7 +117,7 @@ async def append_columns(
 async def update_range(
     ctx: Context,
     uri: str,
-    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
     range_address: str,
     headers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
