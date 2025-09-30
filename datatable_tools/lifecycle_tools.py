@@ -99,8 +99,7 @@ async def create_table(
 @mcp.tool
 async def load_data_table(
     ctx: Context,
-    uri: str,
-    name: Optional[str] = None
+    uri: str
 ) -> TableResponse:
     """
     Load a table from Google Sheets using URI-based auto-detection
@@ -108,7 +107,6 @@ async def load_data_table(
     Args:
         uri: Google Sheets URI. Supports:
              - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
-        name: Optional table name
 
     Returns:
         Dict containing table_id and loaded Google Sheets table information
@@ -138,11 +136,11 @@ async def load_data_table(
     }
 
     # Load Google Sheets with authentication
-    return await _load_google_sheets(ctx, source_info, name)
+    return await _load_google_sheets(ctx, source_info)
 
 
 @require_google_service("sheets", "sheets_read")
-async def _load_google_sheets(service, ctx: Context, source_info: dict, name: Optional[str] = None) -> TableResponse:
+async def _load_google_sheets(service, ctx: Context, source_info: dict) -> TableResponse:
     """
     Internal function to load Google Sheets with authentication.
 
@@ -150,7 +148,6 @@ async def _load_google_sheets(service, ctx: Context, source_info: dict, name: Op
         service: Authenticated Google Sheets service
         ctx: Context
         source_info: Parsed source information
-        name: Optional table name
     """
     from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
 
@@ -186,7 +183,7 @@ async def _load_google_sheets(service, ctx: Context, source_info: dict, name: Op
     table_id = table_manager.create_table(
         data=data,
         headers=headers,
-        name=name or f"Loaded from Google Sheets",
+        name=f"Sheet: {response['worksheet']['title']}",
         source_info=metadata
     )
 

@@ -27,7 +27,8 @@ async def test_google_sheets_mcp(url, headers):
             TEST_USER_ID = "68501372a3569b6897673a48"
 
             # Real spreadsheet IDs from previous tests
-            read_only_uri = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?gid=0#gid=0"  # Public demo sheet
+            # read_only_uri = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?gid=0#gid=0"  # Public demo sheet
+            read_only_uri = "https://docs.google.com/spreadsheets/d/1DpaI7L4yfYptsv6X2TL0InhVbeFfe2TpZPPoY98llR0/edit?gid=1411021775#gid=1411021775"
             #uri = 
             read_write_uri = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=265933634#gid=265933634"
 
@@ -50,7 +51,7 @@ async def test_google_sheets_mcp(url, headers):
 
             load_res = await session.call_tool("load_data_table", {
                 "uri": sheets_uri,
-                "name": "Class Data Demo"
+                # "name": "Class Data Demo"
             })
             print(f"✅ Load result: {load_res}")
 
@@ -67,8 +68,7 @@ async def test_google_sheets_mcp(url, headers):
             print(f"   URI: {invalid_uri}")
 
             invalid_load_res = await session.call_tool("load_data_table", {
-                "uri": invalid_uri,
-                "name": "Invalid Test"
+                "uri": invalid_uri
             })
             print(f"Result: {invalid_load_res}")
 

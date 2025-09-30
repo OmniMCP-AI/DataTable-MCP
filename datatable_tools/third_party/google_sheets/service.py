@@ -156,16 +156,32 @@ class GoogleSheetsService:
     @staticmethod
     @require_google_service("sheets", "sheets_read")
     async def get_worksheet_info(service, ctx: Context, spreadsheet_id: str, sheet_name: str = None) -> Dict[str, Any]:
-        """Get worksheet information including used range"""
+        """Get worksheet information including used range
+
+        Args:
+            service: Google Sheets service
+            ctx: Context
+            spreadsheet_id: Spreadsheet ID
+            sheet_name: Sheet name or "gid:{gid}" format
+        """
         spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
 
         # Find the target sheet
         target_sheet = None
         if sheet_name:
-            for sheet in spreadsheet['sheets']:
-                if sheet['properties']['title'] == sheet_name:
-                    target_sheet = sheet
-                    break
+            # Check if sheet_name is in "gid:{gid}" format
+            if sheet_name.startswith("gid:"):
+                gid = int(sheet_name[4:])
+                for sheet in spreadsheet['sheets']:
+                    if sheet['properties']['sheetId'] == gid:
+                        target_sheet = sheet
+                        break
+            else:
+                # Find by sheet name
+                for sheet in spreadsheet['sheets']:
+                    if sheet['properties']['title'] == sheet_name:
+                        target_sheet = sheet
+                        break
         else:
             target_sheet = spreadsheet['sheets'][0] if spreadsheet['sheets'] else None
 
@@ -205,18 +221,42 @@ class GoogleSheetsService:
         """
         Read sheet data with structure information (headers detection, etc.)
         Returns data in the format expected by the DataTable system
+
+        Args:
+            service: Google Sheets service
+            ctx: Context
+            spreadsheet_id: Spreadsheet ID
+            sheet_name: Sheet name or "gid:{gid}" format
         """
+        logger.info(f"read_sheet_structured called with spreadsheet_id={spreadsheet_id}, sheet_name={sheet_name}")
+
         # Get spreadsheet info
         spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
 
         # Find the target sheet
         target_sheet = None
         if sheet_name:
-            for sheet in spreadsheet['sheets']:
-                if sheet['properties']['title'] == sheet_name:
-                    target_sheet = sheet
-                    break
+            # Check if sheet_name is in "gid:{gid}" format
+            if sheet_name.startswith("gid:"):
+                gid = int(sheet_name[4:])
+                logger.info(f"Looking for sheet with gid={gid}")
+                for sheet in spreadsheet['sheets']:
+                    sheet_id = sheet['properties']['sheetId']
+                    sheet_title = sheet['properties']['title']
+                    logger.info(f"  Checking sheet: {sheet_title} (gid={sheet_id})")
+                    if sheet_id == gid:
+                        target_sheet = sheet
+                        logger.info(f"  ✓ Found matching sheet: {sheet_title}")
+                        break
+            else:
+                # Find by sheet name
+                logger.info(f"Looking for sheet with name={sheet_name}")
+                for sheet in spreadsheet['sheets']:
+                    if sheet['properties']['title'] == sheet_name:
+                        target_sheet = sheet
+                        break
         else:
+            logger.info("No sheet_name provided, using first sheet")
             target_sheet = spreadsheet['sheets'][0] if spreadsheet['sheets'] else None
 
         if not target_sheet:

@@ -171,7 +171,7 @@ def parse_source_uri(uri: str) -> dict:
 
 def parse_google_sheets_url(url: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Parse a Google Sheets URL to extract spreadsheet ID and sheet name.
+    Parse a Google Sheets URL to extract spreadsheet ID and sheet identifier.
 
     Supports various Google Sheets URL formats:
     - https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}
@@ -184,8 +184,11 @@ def parse_google_sheets_url(url: str) -> Tuple[Optional[str], Optional[str]]:
         url: Google Sheets URL or spreadsheet ID
 
     Returns:
-        Tuple of (spreadsheet_id, sheet_name)
-        sheet_name will be None if not specified in URL
+        Tuple of (spreadsheet_id, sheet_identifier)
+        sheet_identifier will be:
+        - None if not specified in URL (will use first sheet)
+        - "gid:{gid}" if gid is specified in URL (needs to be resolved to sheet name)
+        - sheet name if directly specified
     """
     # If it's just a spreadsheet ID (no URL structure)
     if not url.startswith('http') and len(url) > 20 and '/' not in url:
@@ -203,33 +206,30 @@ def parse_google_sheets_url(url: str) -> Tuple[Optional[str], Optional[str]]:
 
         spreadsheet_id = path_match.group(1)
 
-        # Try to extract sheet name from various URL formats
-        sheet_name = None
+        # Try to extract sheet identifier from various URL formats
+        sheet_identifier = None
 
         # Method 1: From fragment (#gid=123456)
         if parsed.fragment:
             if parsed.fragment.startswith('gid='):
                 gid = parsed.fragment[4:]
-                # We have the gid but would need to map it to sheet name
-                # For now, we'll leave sheet_name as None and let the API use default
-                pass
+                sheet_identifier = f"gid:{gid}"
             elif 'gid=' in parsed.fragment:
                 gid_match = re.search(r'gid=([0-9]+)', parsed.fragment)
                 if gid_match:
-                    # Same as above - we have gid but not sheet name
-                    pass
+                    sheet_identifier = f"gid:{gid_match.group(1)}"
 
         # Method 2: From query parameters (?gid=123456)
-        if parsed.query:
+        if not sheet_identifier and parsed.query:
             query_params = parse_qs(parsed.query)
             if 'gid' in query_params:
-                # Same issue - we have gid but not sheet name
-                pass
+                gid = query_params['gid'][0]
+                sheet_identifier = f"gid:{gid}"
 
         # Method 3: Some URLs might have sheet name directly (less common)
         # This would be custom handling for specific URL formats
 
-        return spreadsheet_id, sheet_name
+        return spreadsheet_id, sheet_identifier
 
     except Exception:
         # If URL parsing fails, try to extract just the ID

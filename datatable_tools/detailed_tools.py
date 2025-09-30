@@ -199,8 +199,6 @@ async def _handle_google_sheets_append(
             "message": f"Could not parse spreadsheet ID from URI: {uri}"
         }
 
-    final_worksheet = sheet_name or "Sheet1"
-
     # Process data input using the same logic as create_table
     processed_data, processed_headers = _process_data_input(data, headers)
 
@@ -214,11 +212,15 @@ async def _handle_google_sheets_append(
     from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
     try:
         # Get current worksheet info to determine used range
+        # This will also resolve gid: format to actual sheet name
         worksheet_info = await GoogleSheetsService.get_worksheet_info(
             ctx=ctx,
             spreadsheet_id=spreadsheet_id,
-            sheet_name=final_worksheet
+            sheet_name=sheet_name
         )
+
+        # Use the resolved sheet title from worksheet_info
+        final_worksheet = worksheet_info["title"]
 
         # Calculate append position based on mode
         if append_mode == "rows":
@@ -309,8 +311,6 @@ async def _handle_google_sheets_update(
             "message": f"Could not parse spreadsheet ID from URI: {uri}"
         }
 
-    final_worksheet = sheet_name or "Sheet1"
-
     # Process data input using the same logic as create_table
     processed_data, processed_headers = _process_data_input(data, headers)
 
@@ -320,6 +320,27 @@ async def _handle_google_sheets_update(
     else:
         # Convert all values to strings for Google Sheets API
         values = [[str(cell) for cell in row] for row in processed_data]
+
+    # Resolve gid: format to actual sheet name if needed
+    from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+    if sheet_name and sheet_name.startswith("gid:"):
+        try:
+            # Get worksheet info to resolve the gid to sheet name
+            worksheet_info = await GoogleSheetsService.get_worksheet_info(
+                ctx=ctx,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+            final_worksheet = worksheet_info["title"]
+        except Exception as e:
+            logger.error(f"Failed to resolve sheet gid: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to resolve sheet identifier: {sheet_name}"
+            }
+    else:
+        final_worksheet = sheet_name or "Sheet1"
 
     if range_address:
         # Range-specific update with auto-expansion if data doesn't fit
