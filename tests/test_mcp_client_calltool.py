@@ -61,7 +61,25 @@ async def test_google_sheets_mcp(url, headers):
                     table_id = content.get('table_id')
                     print(f"✅ Table loaded successfully: {table_id}")
 
-     
+            # Test 2: Load table with invalid URI (expect error)
+            print(f"\n📘 Test 2: Loading data with invalid URI (expect error)")
+            invalid_uri = "https://invalid-uri-format"
+            print(f"   URI: {invalid_uri}")
+
+            invalid_load_res = await session.call_tool("load_data_table", {
+                "uri": invalid_uri,
+                "name": "Invalid Test"
+            })
+            print(f"Result: {invalid_load_res}")
+
+            # Check if error was properly returned
+            if invalid_load_res.isError:
+                print(f"✅ Expected error received: isError = True")
+                if invalid_load_res.content and invalid_load_res.content[0].text:
+                    print(f"   Error message: {invalid_load_res.content[0].text}")
+            else:
+                print(f"❌ Expected isError = True, but got isError = False")
+
             write_uri = read_write_uri
             
 
@@ -88,6 +106,35 @@ async def test_google_sheets_mcp(url, headers):
                 "range_address": "A5:F5"
             })
             print(f"✅ Row update result: {row_update_res}")
+
+            # Test 7: Append rows using append_rows
+            print(f"\n📝 Test 7: Appending new rows")
+
+            new_rows = [
+                ["Appended Product 1", 29.99, "Electronics", 50, timestamp, "appended row 1"],
+                ["Appended Product 2", 39.99, "Books", 75, timestamp, "appended row 2"]
+            ]
+
+            append_rows_res = await session.call_tool("append_rows", {
+                "uri": write_uri,
+                "data": new_rows
+            })
+            print(f"✅ Append rows result: {append_rows_res}")
+
+            # Test 8: Append columns using append_columns
+            print(f"\n📝 Test 8: Appending new columns")
+
+            new_columns = [
+                ["Status", "Active", "Active", "Active", "Active", "Active"],
+                ["Rating", 4.5, 4.0, 5.0, 4.2, 4.8]
+            ]
+
+            append_columns_res = await session.call_tool("append_columns", {
+                "uri": write_uri,
+                "data": new_columns,
+                "headers": ["Status", "Rating"]
+            })
+            print(f"✅ Append columns result: {append_columns_res}")
 
             print("\n" + "=" * 60)
             print("🎉 All Google Sheets MCP tests completed!")

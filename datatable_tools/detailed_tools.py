@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 import logging
 from fastmcp import Context
 from core.server import mcp
@@ -9,106 +9,286 @@ from datatable_tools.lifecycle_tools import _process_data_input
 logger = logging.getLogger(__name__)
 
 @mcp.tool
-async def update_range(
+async def append_rows(
     ctx: Context,
     uri: str,
-    data: Any,
-    range_address: Optional[str] = None,
-    headers: Optional[List[str]] = None,
-    encoding: Optional[str] = None,
-    delimiter: Optional[str] = None,
-    append_last_row: bool = True,
-    append_last_column: bool = True
+    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    headers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Update data to various formats using URI-based auto-detection.
-    For Google Sheets, supports precise range placement. For other formats, exports data to files.
+    Append data as new rows below existing data in Google Sheets.
+    Automatically detects the last row and appends below it starting from column A.
 
     Args:
-        uri: URI for the destination. Supports:
-             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
-             - CSV files: /path/to/file.csv
-             - Excel files: /path/to/file.xlsx
-             - JSON files: /path/to/file.json
-             - Parquet files: /path/to/file.parquet
-        data: Data in various formats (similar to pd.DataFrame):
+        uri: Google Sheets URI. Supports:
+             - https://docs.google.com/spreadsheets/d/{id}/edit
+             - spreadsheet ID
+        data: Data in pandas-like formats. Accepts:
               - List[List[Any]]: 2D array of table data (rows x columns)
               - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - Dict[str, Any]: Dictionary with column names as keys and scalar/sequence values
               - List[Dict]: List of dictionaries (records format)
-              - pandas.DataFrame: Existing DataFrame
-              - pandas.Series: Single column data
-              - List[Any]: Single column or row data
-              - scalar: Single value
-        range_address: Range in A1 notation for Google Sheets (optional):
-                      - Single cell: "B5"
-                      - Row range: "A1:E1" or "1:1"
-                      - Column range: "B:B" or "B1:B10"
-                      - 2D range: "A1:C3"
-                      Only used for Google Sheets. If not provided for Google Sheets, replaces entire sheet.
-                      When append_last_row or append_last_column is True, this parameter is ignored.
-                      If the data dimensions exceed the range, the range will be automatically expanded.
-        headers: Optional column headers for dictionary data
-        encoding: File encoding for CSV files (optional)
-        delimiter: Delimiter for CSV files (optional)
-        append_last_row: When True (default), automatically detects the last row in the sheet
-                        and appends data after it. Ignores range_address when enabled.
-        append_last_column: When True (default), automatically detects the last column in the sheet
-                           and appends data after it. Ignores range_address when enabled.
+              - pd.DataFrame: Existing DataFrame
+        headers: Optional column headers. If None and first row contains short strings followed
+                by rows with longer content (>50 chars), headers will be auto-detected and
+                extracted from the first row.
 
     Returns:
         Dict containing update results and file/spreadsheet information
 
     Examples:
-        # Update specific range in Google Sheets
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
+        # Append new records to Google Sheets
+        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+                   data=[["John", 25], ["Jane", 30]])
 
-        # Append to the last row and column (default behavior)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data)
+        # Append with explicit headers
+        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+                   data=[["John", 25]], headers=["name", "age"])
 
-        # Append only to the last row, starting from column A
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data,
-                    append_last_row=True, append_last_column=False)
-
-        # Append only to the last column, starting from row 1
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data,
-                    append_last_row=False, append_last_column=True)
-
-        # Use specific range (ignores append parameters)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5",
-                    append_last_row=False, append_last_column=False)
-
-        # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
-
-        # Export to CSV file
-        update_range(ctx, "/path/to/data.csv", data)
-
-        # Export to Excel file
-        update_range(ctx, "/path/to/workbook.xlsx", data)
+        # Append with auto-detected headers (first row = headers if long content follows)
+        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+                   data=[["name", "description"],
+                         ["Item1", "This is a long description that will trigger header detection"]])
     """
     try:
         from datatable_tools.utils import parse_google_sheets_url
-        from datatable_tools.lifecycle_tools import _process_data_input
 
-        # Check if it's a Google Sheets URL first
         spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-        if spreadsheet_id:
-            # Google Sheets handling
-            return await _handle_google_sheets_update(
-                ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name,
-                append_last_row, append_last_column
-            )
+        if not spreadsheet_id:
+            raise ValueError(f"Invalid Google Sheets URI: {uri}")
 
-        # Handle other formats using URI-based export
-        return await _handle_file_export(ctx, uri, data, headers, encoding, delimiter)
+        return await _handle_google_sheets_append(
+            ctx, uri, data, headers, spreadsheet_id, sheet_name, append_mode="rows"
+        )
+
+    except Exception as e:
+        logger.error(f"Error appending rows to {uri}: {e}")
+        raise
+
+
+@mcp.tool
+async def append_columns(
+    ctx: Context,
+    uri: str,
+    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    headers: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Append data as new columns to the right of existing data in Google Sheets.
+    Automatically detects the last column and appends to its right starting from row 1.
+
+    Args:
+        uri: Google Sheets URI. Supports:
+             - https://docs.google.com/spreadsheets/d/{id}/edit
+             - spreadsheet ID
+        data: Data in pandas-like formats. Accepts:
+              - List[List[Any]]: 2D array of table data (rows x columns)
+              - Dict[str, List]: Dictionary with column names as keys and column data as values
+              - List[Dict]: List of dictionaries (records format)
+              - pd.DataFrame: Existing DataFrame
+        headers: Optional column headers. If None and first row contains short strings followed
+                by rows with longer content (>50 chars), headers will be auto-detected and
+                extracted from the first row.
+
+    Returns:
+        Dict containing update results and file/spreadsheet information
+
+    Examples:
+        # Append new columns to Google Sheets
+        append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+                      data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
+    """
+    try:
+        from datatable_tools.utils import parse_google_sheets_url
+
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        if not spreadsheet_id:
+            raise ValueError(f"Invalid Google Sheets URI: {uri}")
+
+        return await _handle_google_sheets_append(
+            ctx, uri, data, headers, spreadsheet_id, sheet_name, append_mode="columns"
+        )
+
+    except Exception as e:
+        logger.error(f"Error appending columns to {uri}: {e}")
+        raise
+
+
+@mcp.tool
+async def update_range(
+    ctx: Context,
+    uri: str,
+    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    range_address: Optional[str] = None,
+    headers: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Update data in Google Sheets with precise range placement.
+
+    Args:
+        uri: Google Sheets URI. Supports:
+             - https://docs.google.com/spreadsheets/d/{id}/edit
+             - spreadsheet ID
+        data: Data in pandas-like formats. Accepts:
+              - List[List[Any]]: 2D array of table data (rows x columns)
+              - Dict[str, List]: Dictionary with column names as keys and column data as values
+              - List[Dict]: List of dictionaries (records format)
+              - pd.DataFrame: Existing DataFrame
+        range_address: Range in A1 notation (optional):
+                      - Single cell: "B5"
+                      - Row range: "A1:E1" or "1:1"
+                      - Column range: "B:B" or "B1:B10"
+                      - 2D range: "A1:C3"
+                      If not provided, replaces entire sheet.
+                      If the data dimensions exceed the range, the range will be automatically expanded.
+        headers: Optional column headers. If None and first row contains short strings followed
+                by rows with longer content (>50 chars), headers will be auto-detected and
+                extracted from the first row.
+
+    Returns:
+        Dict containing update results and spreadsheet information
+
+    Examples:
+        # Update specific range in Google Sheets
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
+
+        # Replace entire sheet
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data)
+
+        # With auto-detected headers (first row = headers if long content follows)
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+                    data=[["name", "description"],
+                          ["Item1", "This is a long description that will trigger header detection"]])
+
+        # With explicit headers
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+                    data=[["John", 25]], headers=["name", "age"])
+
+        # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
+    """
+    try:
+        from datatable_tools.utils import parse_google_sheets_url
+
+        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        if not spreadsheet_id:
+            raise ValueError(f"Invalid Google Sheets URI: {uri}")
+
+        return await _handle_google_sheets_update(
+            ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name
+        )
 
     except Exception as e:
         logger.error(f"Error updating data to {uri}: {e}")
+        raise
+
+
+async def _handle_google_sheets_append(
+    ctx: Context,
+    uri: str,
+    data: Any,
+    headers: Optional[List[str]],
+    spreadsheet_id: str,
+    sheet_name: Optional[str],
+    append_mode: str  # "rows" or "columns"
+) -> Dict[str, Any]:
+    """Handle Google Sheets append operations (rows or columns)"""
+    if not spreadsheet_id:
+        return {
+            "success": False,
+            "error": "Invalid Google Sheets URI",
+            "message": f"Could not parse spreadsheet ID from URI: {uri}"
+        }
+
+    final_worksheet = sheet_name or "Sheet1"
+
+    # Process data input using the same logic as create_table
+    processed_data, processed_headers = _process_data_input(data, headers)
+
+    # Convert processed data to Google Sheets format
+    if not processed_data:
+        values = [[""]]  # Empty cell
+    else:
+        # Convert all values to strings for Google Sheets API
+        values = [[str(cell) for cell in row] for row in processed_data]
+
+    from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+    try:
+        # Get current worksheet info to determine used range
+        worksheet_info = await GoogleSheetsService.get_worksheet_info(
+            ctx=ctx,
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=final_worksheet
+        )
+
+        # Calculate append position based on mode
+        if append_mode == "rows":
+            # Append below the last row, starting from column A
+            start_row = worksheet_info["row_count"] + 1
+            start_col_index = 0
+        elif append_mode == "columns":
+            # Append to the right of the last column, starting from row 1
+            start_row = 1
+            start_col_index = worksheet_info["col_count"]
+        else:
+            # Fallback to A1
+            start_row = 1
+            start_col_index = 0
+
+        # Convert column index to letter (A=0, B=1, ..., Z=25, AA=26, etc.)
+        def col_index_to_letter(index):
+            result = ""
+            while index >= 0:
+                result = chr(65 + index % 26) + result
+                index = index // 26 - 1
+                if index < 0:
+                    break
+            return result
+
+        start_col = col_index_to_letter(start_col_index)
+
+        # Calculate end position based on data size
+        end_row = start_row + len(values) - 1
+        end_col_index = start_col_index + (len(values[0]) if values else 1) - 1
+        end_col = col_index_to_letter(end_col_index)
+
+        # Create the range address
+        range_address = f"{start_col}{start_row}:{end_col}{end_row}"
+
+    except Exception as e:
+        logger.error(f"Failed to auto-detect append position: {e}")
         return {
             "success": False,
             "error": str(e),
-            "message": f"Failed to update data to {uri}"
+            "message": f"Failed to determine append position for {append_mode}"
+        }
+
+    # Use the range update logic
+    full_range = f"{final_worksheet}!{range_address}"
+
+    # Use the GoogleSheetsService directly
+    success = await range_operations.google_sheets_service.update_range(
+        ctx=ctx,
+        spreadsheet_id=spreadsheet_id,
+        range_notation=full_range,
+        values=values
+    )
+
+    if success:
+        return {
+            "success": True,
+            "spreadsheet_id": spreadsheet_id,
+            "worksheet": final_worksheet,
+            "range": range_address,
+            "append_mode": append_mode,
+            "updated_cells": sum(len(row) for row in values),
+            "data_shape": (len(values), len(values[0]) if values else 0),
+            "message": f"Successfully appended {append_mode} at {range_address} in worksheet '{final_worksheet}'"
+        }
+    else:
+        return {
+            "success": False,
+            "error": "Failed to append data",
+            "message": f"Failed to append {append_mode} at {range_address} in worksheet '{final_worksheet}'"
         }
 
 
@@ -119,9 +299,7 @@ async def _handle_google_sheets_update(
     range_address: Optional[str],
     headers: Optional[List[str]],
     spreadsheet_id: str,
-    sheet_name: Optional[str],
-    append_last_row: bool,
-    append_last_column: bool
+    sheet_name: Optional[str]
 ) -> Dict[str, Any]:
     """Handle Google Sheets updates with range support"""
     if not spreadsheet_id:
@@ -142,59 +320,6 @@ async def _handle_google_sheets_update(
     else:
         # Convert all values to strings for Google Sheets API
         values = [[str(cell) for cell in row] for row in processed_data]
-
-    # Auto-detect append position if append parameters are enabled and no range_address is provided
-    if (append_last_row or append_last_column) and range_address is None:
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-        try:
-            # Get current worksheet info to determine used range
-            worksheet_info = await GoogleSheetsService.get_worksheet_info(
-                ctx=ctx,
-                spreadsheet_id=spreadsheet_id,
-                sheet_name=final_worksheet
-            )
-
-            # Calculate append position
-            if append_last_row and append_last_column:
-                # Append to the bottom-right: next row and next column
-                start_row = worksheet_info["row_count"] + 1
-                start_col_index = worksheet_info["col_count"]
-            elif append_last_row:
-                # Append to next row, starting from column A
-                start_row = worksheet_info["row_count"] + 1
-                start_col_index = 0
-            elif append_last_column:
-                # Append to next column, starting from row 1
-                start_row = 1
-                start_col_index = worksheet_info["col_count"]
-            else:
-                # Fallback to A1 if neither is true
-                start_row = 1
-                start_col_index = 0
-
-            # Convert column index to letter (A=0, B=1, ..., Z=25, AA=26, etc.)
-            def col_index_to_letter(index):
-                result = ""
-                while index >= 0:
-                    result = chr(65 + index % 26) + result
-                    index = index // 26 - 1
-                    if index < 0:
-                        break
-                return result
-
-            start_col = col_index_to_letter(start_col_index)
-
-            # Calculate end position based on data size
-            end_row = start_row + len(values) - 1
-            end_col_index = start_col_index + (len(values[0]) if values else 1) - 1
-            end_col = col_index_to_letter(end_col_index)
-
-            # Create the range address
-            range_address = f"{start_col}{start_row}:{end_col}{end_row}"
-
-        except Exception as e:
-            logger.warning(f"Failed to auto-detect append position: {e}. Using default behavior.")
-            # Fall through to existing logic without range_address
 
     if range_address:
         # Range-specific update with auto-expansion if data doesn't fit

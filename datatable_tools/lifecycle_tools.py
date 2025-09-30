@@ -120,50 +120,25 @@ async def load_data_table(
         # Google Sheets ID
         uri = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
     """
-    try:
-        from datatable_tools.utils import parse_google_sheets_url
+    from datatable_tools.utils import parse_google_sheets_url
 
-        # Parse the URI to get Google Sheets info
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+    # Parse the URI to get Google Sheets info
+    spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
 
-        if not spreadsheet_id:
-            return {
-                "success": False,
-                "table_id": None,
-                "name": None,
-                "shape": None,
-                "headers": None,
-                "data": None,
-                "source_info": None,
-                "error": "Invalid Google Sheets URI",
-                "message": f"Could not parse Google Sheets ID from URI: {uri}"
-            }
+    if not spreadsheet_id:
+        raise ValueError(f"Invalid Google Sheets URI: Could not parse Google Sheets ID from URI: {uri}")
 
-        logger.info(f"Loading table from Google Sheets: {spreadsheet_id}")
+    logger.info(f"Loading table from Google Sheets: {spreadsheet_id}")
 
-        # Create source info for Google Sheets
-        source_info = {
-            "spreadsheet_id": spreadsheet_id,
-            "sheet_name": sheet_name,
-            "original_uri": uri
-        }
+    # Create source info for Google Sheets
+    source_info = {
+        "spreadsheet_id": spreadsheet_id,
+        "sheet_name": sheet_name,
+        "original_uri": uri
+    }
 
-        # Load Google Sheets with authentication
-        return await _load_google_sheets(ctx, source_info, name)
-
-    except Exception as e:
-        logger.error(f"Error loading table from Google Sheets {uri}: {e}")
-        return {
-            "success": False,
-            "table_id": None,
-            "name": None,
-            "shape": None,
-            "headers": None,
-            "data": None,
-            "source_info": None,
-            "error": str(e),
-            "message": f"Failed to load table from Google Sheets {uri}"
-        }
+    # Load Google Sheets with authentication
+    return await _load_google_sheets(ctx, source_info, name)
 
 
 @require_google_service("sheets", "sheets_read")
@@ -410,7 +385,47 @@ def _process_data_input(data: Any, headers: Optional[List[str]] = None) -> tuple
         # 2D list: [[1,2], [3,4]]
         processed_data = [list(row) for row in data]
         num_cols = len(processed_data[0]) if processed_data else 0
-        processed_headers = headers or [f"Column_{i+1}" for i in range(num_cols)]
+
+        # Auto-detect headers if not provided
+        if headers is None and len(processed_data) >= 2:
+            first_row = processed_data[0]
+            second_row = processed_data[1] if len(processed_data) > 1 else []
+
+            # Check if first row looks like headers:
+            # - All strings
+            # - All values look like column names (short, no long paragraphs)
+            # - Not the only row
+            first_row_all_strings = all(isinstance(v, str) for v in first_row)
+
+            if first_row_all_strings:
+                # Check if first row values are short (likely column names, not content)
+                # A heuristic: column names are usually < 50 chars
+                first_row_looks_like_headers = all(len(str(v)) < 50 for v in first_row)
+
+                # Check if second row has different characteristics (longer strings or mixed types)
+                if second_row:
+                    second_row_has_long_content = any(
+                        isinstance(v, str) and len(v) >= 50 for v in second_row
+                    )
+
+                    # If first row looks like headers AND (second row has long content OR mixed types)
+                    if first_row_looks_like_headers and second_row_has_long_content:
+                        # First row is likely headers
+                        processed_headers = first_row
+                        processed_data = processed_data[1:]  # Remove header row from data
+                        logger.info(f"Auto-detected headers from first row: {processed_headers}")
+                    else:
+                        # First row is data
+                        processed_headers = [f"Column_{i+1}" for i in range(num_cols)]
+                else:
+                    # Only one row, treat first row as data
+                    processed_headers = [f"Column_{i+1}" for i in range(num_cols)]
+            else:
+                # First row has non-strings, definitely data
+                processed_headers = [f"Column_{i+1}" for i in range(num_cols)]
+        else:
+            processed_headers = headers or [f"Column_{i+1}" for i in range(num_cols)]
+
         return processed_data, processed_headers
 
     # Handle 1D list/tuple (single column or single row)
