@@ -7,7 +7,7 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool
+# @mcp.tool
 async def add_row(
     ctx: Context,
     table_id: str,
@@ -54,7 +54,7 @@ async def add_row(
             "message": f"Failed to append row to table {table_id}"
         }
 
-@mcp.tool
+# @mcp.tool
 async def add_column(
     ctx: Context,
     table_id: str,

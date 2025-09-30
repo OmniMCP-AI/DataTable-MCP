@@ -21,7 +21,7 @@ class TableResponse(TypedDict):
     error: Optional[str]
     message: str
 
-@mcp.tool
+# @mcp.tool
 async def create_table(
     ctx: Context,
     data: Any,
@@ -276,7 +276,7 @@ async def clone_table(
             "message": f"Failed to clone table {source_table_id}"
         }
 
-@mcp.tool
+# @mcp.tool
 async def list_tables(ctx: Context) -> Dict[str, Any]:
     """
     Get inventory of all tables in the current session.
