@@ -2,6 +2,10 @@
 """
 Real Google Sheets integration test - writes to actual Google Sheets
 Updated to use environment variables for OAuth authentication
+
+Related tests:
+- test_permission_and_fallback.py: Tests permission checking and automatic
+  new spreadsheet creation when write permission is denied
 """
 
 import asyncio
