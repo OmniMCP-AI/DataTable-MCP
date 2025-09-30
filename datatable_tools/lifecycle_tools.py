@@ -21,6 +21,17 @@ class TableResponse(TypedDict):
     error: Optional[str]
     message: str
 
+
+class SpreadsheetResponse(TypedDict):
+    """Response type for creating new Google Sheets spreadsheet"""
+    success: bool
+    spreadsheet_url: str
+    rows_created: int
+    columns_created: int
+    data_shape: tuple[int, int]
+    error: Optional[str]
+    message: str
+
 # @mcp.tool
 async def create_table(
     ctx: Context,

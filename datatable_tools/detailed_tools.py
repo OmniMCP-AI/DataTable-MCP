@@ -4,9 +4,118 @@ from fastmcp import Context
 from core.server import mcp
 from datatable_tools.range_operations import range_operations
 from datatable_tools.utils import parse_google_sheets_url
-from datatable_tools.lifecycle_tools import _process_data_input
+from datatable_tools.lifecycle_tools import _process_data_input, SpreadsheetResponse
 
 logger = logging.getLogger(__name__)
+
+@mcp.tool
+async def write_new_sheet(
+    ctx: Context,
+    data: list[Any],
+    headers: Optional[List[str]] = None,
+    sheet_name: Optional[str] = None
+) -> SpreadsheetResponse:
+    """
+    Create a new Google Sheets spreadsheet with the provided data.
+
+    Args:
+        data: Data in pandas-like formats. Accepts:
+              - List[List[Any]]: 2D array of table data (rows x columns)
+              - Dict[str, List]: Dictionary with column names as keys and column data as values
+              - List[Dict]: List of dictionaries (records format)
+              - pd.DataFrame: Existing DataFrame
+        headers: Optional column headers. If None and first row contains short strings followed
+                by rows with longer content (>50 chars), headers will be auto-detected and
+                extracted from the first row.
+        sheet_name: Optional name for the new spreadsheet (default: "New DataTable")
+
+    Returns:
+        SpreadsheetResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the created spreadsheet
+            - rows_created: Number of rows written
+            - columns_created: Number of columns written
+            - data_shape: Tuple of (rows, columns)
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
+
+    Examples:
+        # Create new spreadsheet with data
+        write_new_sheet(ctx, data=[["John", 25], ["Jane", 30]],
+                        headers=["name", "age"])
+
+        # Create with custom name
+        write_new_sheet(ctx, data=[["Product", "Price"], ["Widget", 9.99]],
+                        sheet_name="Product Catalog")
+
+        # Create with auto-detected headers
+        write_new_sheet(ctx, data=[["name", "description"],
+                                   ["Item1", "This is a long description"]])
+    """
+    try:
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+
+        # Process data input using the same logic as other tools
+        processed_data, processed_headers = _process_data_input(data, headers)
+
+        # Convert processed data to Google Sheets format
+        if not processed_data:
+            values = [[""]]  # Empty cell
+        else:
+            # Convert all values to strings for Google Sheets API
+            values = [[str(cell) for cell in row] for row in processed_data]
+
+        # Convert headers to strings
+        headers_strings = [str(header) for header in processed_headers] if processed_headers else []
+
+        # Use default sheet name if not provided
+        final_sheet_name = sheet_name or "New DataTable"
+
+        # Create new spreadsheet
+        result = await GoogleSheetsService.create_new_spreadsheet(
+            ctx=ctx,
+            title=final_sheet_name,
+            data=values,
+            headers=headers_strings
+        )
+
+        if result.get('success'):
+            spreadsheet_id = result.get('spreadsheet_id', '')
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
+            return SpreadsheetResponse(
+                success=True,
+                spreadsheet_url=spreadsheet_url,
+                rows_created=len(values),
+                columns_created=len(values[0]) if values else 0,
+                data_shape=(len(values), len(values[0]) if values else 0),
+                error=None,
+                message=f"Successfully created new spreadsheet '{final_sheet_name}' with {len(values)} rows"
+            )
+        else:
+            error_msg = result.get('error', 'Unknown error')
+            return SpreadsheetResponse(
+                success=False,
+                spreadsheet_url='',
+                rows_created=0,
+                columns_created=0,
+                data_shape=(0, 0),
+                error=error_msg,
+                message=f"Failed to create new spreadsheet: {error_msg}"
+            )
+
+    except Exception as e:
+        logger.error(f"Error creating new spreadsheet: {e}")
+        return SpreadsheetResponse(
+            success=False,
+            spreadsheet_url='',
+            rows_created=0,
+            columns_created=0,
+            data_shape=(0, 0),
+            error=str(e),
+            message=f"Failed to create new spreadsheet: {str(e)}"
+        )
+
 
 @mcp.tool
 async def append_rows(

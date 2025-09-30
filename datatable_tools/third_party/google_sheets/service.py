@@ -134,6 +134,75 @@ class GoogleSheetsService:
         }
 
     @staticmethod
+    @require_google_service("sheets", "sheets_write")
+    async def create_new_spreadsheet(service, ctx: Context, title: str,
+                                    data: List[List[str]],
+                                    headers: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Create a new spreadsheet with initial data.
+
+        Args:
+            title: Name for the new spreadsheet
+            data: Initial data rows to write
+            headers: Optional column headers
+
+        Returns:
+            Dict containing spreadsheet ID, URL, worksheet info, and success status
+        """
+        # Create the spreadsheet
+        spreadsheet = {
+            'properties': {
+                'title': title
+            }
+        }
+
+        result = service.spreadsheets().create(body=spreadsheet).execute()
+        spreadsheet_id = result['spreadsheetId']
+        spreadsheet_url = result['spreadsheetUrl']
+
+        # Get the first sheet's info
+        created_spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        first_sheet = created_spreadsheet['sheets'][0] if created_spreadsheet['sheets'] else None
+
+        if not first_sheet:
+            raise UserError("Failed to create spreadsheet with initial sheet")
+
+        sheet_props = first_sheet['properties']
+        sheet_title = sheet_props['title']
+        sheet_id = sheet_props['sheetId']
+
+        # Prepare data for writing
+        write_data = []
+        if headers:
+            write_data.append(headers)
+        write_data.extend(data)
+
+        # Write initial data if provided
+        if write_data:
+            range_name = f"'{sheet_title}'!A1"
+            body = {'values': write_data}
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+
+        total_rows = len(write_data)
+        total_cols = len(write_data[0]) if write_data else 0
+
+        return {
+            "success": True,
+            "spreadsheet_id": spreadsheet_id,
+            "spreadsheet_url": spreadsheet_url,
+            "worksheet": sheet_title,
+            "sheet_id": sheet_id,
+            "updated_range": f"A1:{chr(65 + total_cols - 1)}{total_rows}" if total_rows > 0 and total_cols > 0 else "A1:A1",
+            "updated_cells": total_rows * total_cols,
+            "message": f"Successfully created new spreadsheet '{title}' with {len(data)} data rows"
+        }
+
+    @staticmethod
     async def get_spreadsheet_info(service, ctx: Context, spreadsheet_id: str) -> Dict[str, Any]:
         """Get spreadsheet metadata"""
         spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()

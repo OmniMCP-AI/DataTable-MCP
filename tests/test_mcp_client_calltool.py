@@ -88,9 +88,10 @@ async def test_google_sheets_mcp(url, headers):
 
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+            # Note: data must be a list, even for single cell updates
             cell_update_res = await session.call_tool("update_range", {
                 "uri": write_uri,
-                "data": f"Updated: {timestamp}",
+                "data": [[f"Updated: {timestamp}"]],  # Must be list[list] format
                 "range_address": "F1"
             })
             print(f"✅ Cell update result: {cell_update_res}")
@@ -135,6 +136,62 @@ async def test_google_sheets_mcp(url, headers):
                 "headers": ["Status", "Rating"]
             })
             print(f"✅ Append columns result: {append_columns_res}")
+
+            # Test 9: Create new sheet (New functionality)
+            print(f"\n📝 Test 9: Creating a new Google Sheets spreadsheet")
+
+            new_sheet_data = [
+                ["Product Name", "Price", "Category", "Stock"],
+                ["Laptop", 999.99, "Electronics", 15],
+                ["Mouse", 25.99, "Electronics", 50],
+                ["Notebook", 5.99, "Office", 100]
+            ]
+
+            create_sheet_res = await session.call_tool("write_new_sheet", {
+                "data": new_sheet_data,
+                "sheet_name": f"Test Sheet {timestamp}"
+            })
+            print(f"✅ Create new sheet result: {create_sheet_res}")
+
+            # Verify the result includes spreadsheet URL
+            if create_sheet_res.content and create_sheet_res.content[0].text:
+                result_content = json.loads(create_sheet_res.content[0].text)
+                if result_content.get('success'):
+                    new_spreadsheet_url = result_content.get('spreadsheet_url')
+                    print(f"   ✅ New spreadsheet created:")
+                    print(f"      URL: {new_spreadsheet_url}")
+                    print(f"      Rows: {result_content.get('rows_created')}")
+                    print(f"      Columns: {result_content.get('columns_created')}")
+
+            # Test 10: Verify list[list] format for complex data (Bug fix verification)
+            print(f"\n📝 Test 10: Verifying correct list[list] format for complex data")
+
+            # This test verifies the bug fix where data should be list[list[Any]] not a JSON string
+            complex_data = [
+                ["Username", "Display Name", "Followers", "Published At", "Content"],
+                ["elonmusk", "Elon Musk", "226889664", "2025-09-30 05:45:44", "RT @mazemoore: Test tweet"],
+                ["testuser", "Test User", "1000", "2025-09-30 06:00:00", "Another test tweet"]
+            ]
+
+            complex_data_res = await session.call_tool("append_rows", {
+                "uri": write_uri,
+                "data": complex_data  # This should work as list[list] format
+            })
+            print(f"✅ Complex data append result: {complex_data_res}")
+
+            # Verify the result shows multiple cells were updated, not just 1 cell
+            if complex_data_res.content and complex_data_res.content[0].text:
+                result_content = json.loads(complex_data_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    data_shape = result_content.get('data_shape', [0, 0])
+                    print(f"   ✅ Updated {updated_cells} cells with shape {data_shape}")
+                    print(f"   Expected: 15 cells (3 rows × 5 columns)")
+
+                    if updated_cells == 15 and data_shape == [3, 5]:
+                        print(f"   ✅ PASS: Data correctly formatted as list[list]")
+                    else:
+                        print(f"   ❌ FAIL: Expected 15 cells [3, 5], got {updated_cells} cells {data_shape}")
 
             print("\n" + "=" * 60)
             print("🎉 All Google Sheets MCP tests completed!")
