@@ -2,11 +2,19 @@ from typing import Dict, List, Optional, Any
 from typing_extensions import TypedDict
 import logging
 from fastmcp import Context
+from pydantic import BaseModel, Field
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
 from datatable_tools.auth.service_decorator import require_google_service
 
 logger = logging.getLogger(__name__)
+
+
+class LoadDataTableRequest(BaseModel):
+    """Request model for loading a data table from Google Sheets"""
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URLs (https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}) or just the spreadsheet ID. The gid parameter in the URL specifies which worksheet to use; if not provided, the first worksheet will be loaded."
+    )
 
 
 class TableResponse(TypedDict):
@@ -99,32 +107,21 @@ async def create_table(
 @mcp.tool
 async def load_data_table(
     ctx: Context,
-    uri: str
+    request: LoadDataTableRequest
 ) -> TableResponse:
     """
     Load a table from Google Sheets using URI-based auto-detection
 
-    Args:
-        uri: Google Sheets URI. Supports:
-             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
-
     Returns:
         Dict containing table_id and loaded Google Sheets table information
-
-    Examples:
-        # Google Sheets URL
-        uri = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
-
-        # Google Sheets ID
-        uri = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
     """
     from datatable_tools.utils import parse_google_sheets_url
 
     # Parse the URI to get Google Sheets info
-    spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+    spreadsheet_id, sheet_name = parse_google_sheets_url(request.uri)
 
     if not spreadsheet_id:
-        raise ValueError(f"Invalid Google Sheets URI: Could not parse Google Sheets ID from URI: {uri}")
+        raise ValueError(f"Invalid Google Sheets URI: Could not parse Google Sheets ID from URI: {request.uri}")
 
     logger.info(f"Loading table from Google Sheets: {spreadsheet_id}")
 
@@ -132,7 +129,7 @@ async def load_data_table(
     source_info = {
         "spreadsheet_id": spreadsheet_id,
         "sheet_name": sheet_name,
-        "original_uri": uri
+        "original_uri": request.uri
     }
 
     # Load Google Sheets with authentication

@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any
 import logging
 from fastmcp import Context
+from pydantic import BaseModel, Field
 from core.server import mcp
 from datatable_tools.range_operations import range_operations
 from datatable_tools.utils import parse_google_sheets_url
@@ -8,177 +9,131 @@ from datatable_tools.lifecycle_tools import _process_data_input
 
 logger = logging.getLogger(__name__)
 
+
+class AppendRowsRequest(BaseModel):
+    """Request model for appending rows to Google Sheets"""
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URLs (https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}) or just the spreadsheet ID. The gid parameter in the URL specifies which worksheet to use."
+    )
+    data: Any = Field(
+        description="Data to append as new rows. Accepts multiple formats: List[List[Any]] for 2D arrays, Dict[str, List] for column-oriented data, List[Dict] for record format, or pandas DataFrame."
+    )
+    headers: Optional[List[str]] = Field(
+        default=None,
+        description="Optional column headers. If None and first row contains short strings (<50 chars) followed by rows with longer content, headers will be auto-detected from the first row."
+    )
+
+
+class AppendColumnsRequest(BaseModel):
+    """Request model for appending columns to Google Sheets"""
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URLs (https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}) or just the spreadsheet ID. The gid parameter in the URL specifies which worksheet to use."
+    )
+    data: Any = Field(
+        description="Data to append as new columns. Accepts multiple formats: List[List[Any]] for 2D arrays, Dict[str, List] for column-oriented data, List[Dict] for record format, or pandas DataFrame."
+    )
+    headers: Optional[List[str]] = Field(
+        default=None,
+        description="Optional column headers. If None and first row contains short strings (<50 chars) followed by rows with longer content, headers will be auto-detected from the first row."
+    )
+
+
+class UpdateRangeRequest(BaseModel):
+    """Request model for updating a specific range in Google Sheets"""
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URLs (https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}) or just the spreadsheet ID. The gid parameter in the URL specifies which worksheet to use."
+    )
+    data: Any = Field(
+        description="Data to write to the range. Accepts multiple formats: List[List[Any]] for 2D arrays, Dict[str, List] for column-oriented data, List[Dict] for record format, pandas DataFrame, or a single value for single cell updates."
+    )
+    range_address: str = Field(
+        description="Cell range in A1 notation (required). Examples: single cell 'B5', row range 'A1:E1' or '1:1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. If data dimensions exceed the range, it will be automatically expanded."
+    )
+    headers: Optional[List[str]] = Field(
+        default=None,
+        description="Optional column headers. If None and first row contains short strings (<50 chars) followed by rows with longer content, headers will be auto-detected from the first row."
+    )
+
 @mcp.tool
 async def append_rows(
     ctx: Context,
-    uri: str,
-    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    headers: Optional[List[str]] = None
+    request: AppendRowsRequest
 ) -> Dict[str, Any]:
     """
     Append data as new rows below existing data in Google Sheets.
     Automatically detects the last row and appends below it starting from column A.
 
-    Args:
-        uri: Google Sheets URI. Supports:
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - spreadsheet ID
-        data: Data in pandas-like formats. Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
-
     Returns:
         Dict containing update results and file/spreadsheet information
-
-    Examples:
-        # Append new records to Google Sheets
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                   data=[["John", 25], ["Jane", 30]])
-
-        # Append with explicit headers
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                   data=[["John", 25]], headers=["name", "age"])
-
-        # Append with auto-detected headers (first row = headers if long content follows)
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                   data=[["name", "description"],
-                         ["Item1", "This is a long description that will trigger header detection"]])
     """
     try:
         from datatable_tools.utils import parse_google_sheets_url
 
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        spreadsheet_id, sheet_name = parse_google_sheets_url(request.uri)
         if not spreadsheet_id:
-            raise ValueError(f"Invalid Google Sheets URI: {uri}")
+            raise ValueError(f"Invalid Google Sheets URI: {request.uri}")
 
         return await _handle_google_sheets_append(
-            ctx, uri, data, headers, spreadsheet_id, sheet_name, append_mode="rows"
+            ctx, request.uri, request.data, request.headers, spreadsheet_id, sheet_name, append_mode="rows"
         )
 
     except Exception as e:
-        logger.error(f"Error appending rows to {uri}: {e}")
+        logger.error(f"Error appending rows to {request.uri}: {e}")
         raise
 
 
 @mcp.tool
 async def append_columns(
     ctx: Context,
-    uri: str,
-    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    headers: Optional[List[str]] = None
+    request: AppendColumnsRequest
 ) -> Dict[str, Any]:
     """
     Append data as new columns to the right of existing data in Google Sheets.
     Automatically detects the last column and appends to its right starting from row 1.
 
-    Args:
-        uri: Google Sheets URI. Supports:
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - spreadsheet ID
-        data: Data in pandas-like formats. Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
-
     Returns:
         Dict containing update results and file/spreadsheet information
-
-    Examples:
-        # Append new columns to Google Sheets
-        append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                      data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
     """
     try:
         from datatable_tools.utils import parse_google_sheets_url
 
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        spreadsheet_id, sheet_name = parse_google_sheets_url(request.uri)
         if not spreadsheet_id:
-            raise ValueError(f"Invalid Google Sheets URI: {uri}")
+            raise ValueError(f"Invalid Google Sheets URI: {request.uri}")
 
         return await _handle_google_sheets_append(
-            ctx, uri, data, headers, spreadsheet_id, sheet_name, append_mode="columns"
+            ctx, request.uri, request.data, request.headers, spreadsheet_id, sheet_name, append_mode="columns"
         )
 
     except Exception as e:
-        logger.error(f"Error appending columns to {uri}: {e}")
+        logger.error(f"Error appending columns to {request.uri}: {e}")
         raise
 
 
 @mcp.tool
 async def update_range(
     ctx: Context,
-    uri: str,
-    data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    range_address: str,
-    headers: Optional[List[str]] = None
+    request: UpdateRangeRequest
 ) -> Dict[str, Any]:
     """
     Update data in Google Sheets with precise range placement.
 
-    Args:
-        uri: Google Sheets URI. Supports:
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - spreadsheet ID
-        data: Data in pandas-like formats. Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
-        range_address: Range in A1 notation (required):
-                      - Single cell: "B5"
-                      - Row range: "A1:E1" or "1:1"
-                      - Column range: "B:B" or "B1:B10"
-                      - 2D range: "A1:C3"
-                      If the data dimensions exceed the range, the range will be automatically expanded.
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
-
     Returns:
         Dict containing update results and spreadsheet information
-
-    Examples:
-        # Update specific range in Google Sheets
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
-
-        # Update entire sheet from A1
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "A1")
-
-        # With auto-detected headers (first row = headers if long content follows)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                    data=[["name", "description"],
-                          ["Item1", "This is a long description that will trigger header detection"]],
-                    range_address="A1")
-
-        # With explicit headers
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                    data=[["John", 25]], headers=["name", "age"], range_address="A1")
-
-        # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
     """
     try:
         from datatable_tools.utils import parse_google_sheets_url
 
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
+        spreadsheet_id, sheet_name = parse_google_sheets_url(request.uri)
         if not spreadsheet_id:
-            raise ValueError(f"Invalid Google Sheets URI: {uri}")
+            raise ValueError(f"Invalid Google Sheets URI: {request.uri}")
 
         return await _handle_google_sheets_update(
-            ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name
+            ctx, request.uri, request.data, request.range_address, request.headers, spreadsheet_id, sheet_name
         )
 
     except Exception as e:
-        logger.error(f"Error updating data to {uri}: {e}")
+        logger.error(f"Error updating data to {request.uri}: {e}")
         raise
 
 

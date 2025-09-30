@@ -50,8 +50,9 @@ async def test_google_sheets_mcp(url, headers):
             print(f"   URI: {sheets_uri}")
 
             load_res = await session.call_tool("load_data_table", {
-                "uri": sheets_uri,
-                # "name": "Class Data Demo"
+                "request": {
+                    "uri": sheets_uri
+                }
             })
             print(f"✅ Load result: {load_res}")
 
@@ -68,7 +69,9 @@ async def test_google_sheets_mcp(url, headers):
             print(f"   URI: {invalid_uri}")
 
             invalid_load_res = await session.call_tool("load_data_table", {
-                "uri": invalid_uri
+                "request": {
+                    "uri": invalid_uri
+                }
             })
             print(f"Result: {invalid_load_res}")
 
@@ -89,9 +92,11 @@ async def test_google_sheets_mcp(url, headers):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             cell_update_res = await session.call_tool("update_range", {
-                "uri": write_uri,
-                "data": f"Updated: {timestamp}",
-                "range_address": "F1"
+                "request": {
+                    "uri": write_uri,
+                    "data": f"Updated: {timestamp}",
+                    "range_address": "F1"
+                }
             })
             print(f"✅ Cell update result: {cell_update_res}")
 
@@ -101,9 +106,11 @@ async def test_google_sheets_mcp(url, headers):
             new_row_data = [["New Product", 49.99, "Gadgets", 100, timestamp, "updated whole row"]]
 
             row_update_res = await session.call_tool("update_range", {
-                "uri": write_uri,
-                "data": new_row_data,
-                "range_address": "A5:F5"
+                "request": {
+                    "uri": write_uri,
+                    "data": new_row_data,
+                    "range_address": "A5:F5"
+                }
             })
             print(f"✅ Row update result: {row_update_res}")
 
@@ -116,8 +123,10 @@ async def test_google_sheets_mcp(url, headers):
             ]
 
             append_rows_res = await session.call_tool("append_rows", {
-                "uri": write_uri,
-                "data": new_rows
+                "request": {
+                    "uri": write_uri,
+                    "data": new_rows
+                }
             })
             print(f"✅ Append rows result: {append_rows_res}")
 
@@ -130,9 +139,11 @@ async def test_google_sheets_mcp(url, headers):
             ]
 
             append_columns_res = await session.call_tool("append_columns", {
-                "uri": write_uri,
-                "data": new_columns,
-                "headers": ["Status", "Rating"]
+                "request": {
+                    "uri": write_uri,
+                    "data": new_columns,
+                    "headers": ["Status", "Rating"]
+                }
             })
             print(f"✅ Append columns result: {append_columns_res}")
 
