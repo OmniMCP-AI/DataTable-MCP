@@ -205,14 +205,17 @@ async def test_write_real_data(spreadsheet_id, client):
     print(f"\n🧪 Test 2: Writing REAL data to Google Sheets {spreadsheet_id}")
     print("=" * 60)
 
-    # Sample employee data
+    # Sample employee data with current timestamp
+    from datetime import datetime
+    current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     employee_data = [
-        ["Name", "Age", "Department", "Salary", "Start Date"],
-        ["Alice Johnson", "28", "Engineering", "$95,000", "2023-01-15"],
-        ["Bob Smith", "32", "Marketing", "$78,000", "2022-03-10"],
-        ["Carol Davis", "29", "Design", "$85,000", "2023-06-01"],
-        ["David Wilson", "35", "Sales", "$92,000", "2021-11-20"],
-        ["Eve Chen", "26", "Engineering", "$88,000", "2024-02-01"]
+        ["Name", "Age", "Department", "Salary", "Start Date", "Test Timestamp", "Test Purpose"],
+        ["Alice Johnson", "28", "Engineering", "$95,000", "2023-01-15", current_timestamp, "Initial test data"],
+        ["Bob Smith", "32", "Marketing", "$78,000", "2022-03-10", current_timestamp, "Initial test data"],
+        ["Carol Davis", "29", "Design", "$85,000", "2023-06-01", current_timestamp, "Initial test data"],
+        ["David Wilson", "35", "Sales", "$92,000", "2021-11-20", current_timestamp, "Initial test data"],
+        ["Eve Chen", "26", "Engineering", "$88,000", "2024-02-01", current_timestamp, "Initial test data"]
     ]
 
     success = await client.write_data(spreadsheet_id, "Sheet1", employee_data)
@@ -313,15 +316,19 @@ async def test_append_functionality(spreadsheet_id, client):
     print("=" * 60)
 
     try:
+        # Use current datetime formatted properly
+        from datetime import datetime
+        current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Test 5a: Append to last row (should add data below existing data)
         print("\n🔸 Test 5a: Direct append to last row using client")
         additional_employee_data = [
-            ["Frank Miller", "31", "HR", "$72,000", "2024-03-15"],
-            ["Grace Lee", "27", "Engineering", "$89,000", "2024-04-01"]
+            ["Frank Miller", "31", "HR", "$72,000", "2024-03-15", current_timestamp, "Test: Append last row"],
+            ["Grace Lee", "27", "Engineering", "$89,000", "2024-04-01", current_timestamp, "Test: Append last row"]
         ]
 
         # First, get the current data to know where to append
-        current_data = await client.read_data(spreadsheet_id, "Sheet1", "A1:E10")
+        current_data = await client.read_data(spreadsheet_id, "Sheet1", "A1:G20")
         next_row = len(current_data) + 1
 
         # Write data starting from the next available row
@@ -335,6 +342,7 @@ async def test_append_functionality(spreadsheet_id, client):
         if success:
             print("✅ SUCCESS: Data appended to last row!")
             print(f"   - Appended at row: {next_row}")
+            print(f"   - Current timestamp: {current_timestamp}")
         else:
             print("❌ FAILED: Could not append to last row")
             return False
@@ -343,22 +351,26 @@ async def test_append_functionality(spreadsheet_id, client):
         print("\n🔸 Test 5b: Direct append to last column using client")
 
         # Get current data to determine column count
-        current_data = await client.read_data(spreadsheet_id, "Sheet1", "A1:Z10")
+        current_data = await client.read_data(spreadsheet_id, "Sheet1", "A1:Z20")
         if current_data:
             max_cols = max(len(row) for row in current_data) if current_data else 0
-            next_col_letter = chr(65 + max_cols)  # Convert to letter (F for column 6)
+            next_col_letter = chr(65 + max_cols)  # Convert to letter
         else:
-            next_col_letter = "F"  # Default fallback
+            next_col_letter = "H"  # Default fallback (after G which is remarks)
+
+        # Update timestamp for this test
+        column_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         bonus_data = [
-            ["Bonus"],
-            ["$5,000"],
-            ["$3,000"],
-            ["$4,000"],
-            ["$4,500"],
-            ["$3,500"],
-            ["$2,500"],
-            ["$4,000"]
+            ["Bonus", "Test Purpose"],
+            ["$5,000", f"Test: Append last column ({column_timestamp})"],
+            ["$3,000", f"Test: Append last column ({column_timestamp})"],
+            ["$4,000", f"Test: Append last column ({column_timestamp})"],
+            ["$4,500", f"Test: Append last column ({column_timestamp})"],
+            ["$3,500", f"Test: Append last column ({column_timestamp})"],
+            ["$2,500", f"Test: Append last column ({column_timestamp})"],
+            ["$4,000", f"Test: Append last column ({column_timestamp})"],
+            ["$3,000", f"Test: Append last column ({column_timestamp})"]
         ]
 
         success = await client.write_data(
@@ -371,6 +383,7 @@ async def test_append_functionality(spreadsheet_id, client):
         if success:
             print("✅ SUCCESS: Data appended to last column!")
             print(f"   - Appended at column: {next_col_letter}")
+            print(f"   - Current timestamp: {column_timestamp}")
         else:
             print("❌ FAILED: Could not append to last column")
             return False
@@ -379,7 +392,7 @@ async def test_append_functionality(spreadsheet_id, client):
         print("\n🔸 Test 5c: Append to bottom-right using client")
 
         # Get updated data dimensions
-        current_data = await client.read_data(spreadsheet_id, "Sheet1", "A1:Z15")
+        current_data = await client.read_data(spreadsheet_id, "Sheet1", "A1:Z25")
         if current_data:
             max_rows = len(current_data)
             max_cols = max(len(row) for row in current_data) if current_data else 0
@@ -389,9 +402,12 @@ async def test_append_functionality(spreadsheet_id, client):
             next_row = 1
             next_col_letter = "A"
 
+        # Update timestamp for this test
+        corner_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         notes_data = [
-            ["Notes"],
-            ["Excellent performer"]
+            ["Notes", "Test Info"],
+            [f"Test completed at {corner_timestamp}", f"Test: Append bottom-right ({corner_timestamp})"]
         ]
 
         success = await client.write_data(
@@ -404,6 +420,7 @@ async def test_append_functionality(spreadsheet_id, client):
         if success:
             print("✅ SUCCESS: Data appended to bottom-right!")
             print(f"   - Appended at: {next_col_letter}{next_row}")
+            print(f"   - Current timestamp: {corner_timestamp}")
             return True
         else:
             print("❌ FAILED: Could not append to bottom-right")
@@ -431,6 +448,10 @@ async def test_range_expansion(spreadsheet_id, client):
     print("=" * 60)
 
     try:
+        # Use current datetime formatted properly for range expansion test
+        from datetime import datetime
+        expansion_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Create a test worksheet for range expansion demonstration
         try:
             body = {
@@ -455,9 +476,9 @@ async def test_range_expansion(spreadsheet_id, client):
         print("   💡 Writing 3x4 data that would expand A1:B2 → A1:D3")
 
         large_data = [
-            ["Col1", "Col2", "Col3", "Col4"],
-            ["Row1", "Data1", "Data2", "Data3"],
-            ["Row2", "Data4", "Data5", "Data6"]
+            ["Col1", "Col2", "Col3", "Col4", "Test Timestamp", "Test Purpose"],
+            ["Row1", "Data1", "Data2", "Data3", expansion_timestamp, f"Test: Range expansion demo ({expansion_timestamp})"],
+            ["Row2", "Data4", "Data5", "Data6", expansion_timestamp, f"Test: Range expansion demo ({expansion_timestamp})"]
         ]
 
         # Write the data to show what would happen with auto-expansion
@@ -472,9 +493,10 @@ async def test_range_expansion(spreadsheet_id, client):
             print("✅ SUCCESS: Large data written successfully!")
             print("   💡 This demonstrates the concept:")
             print("   - Original range: A1:B2 (2x2)")
-            print("   - Data size: 3x4")
-            print("   - Auto-expanded range would be: A1:D3")
-            print("   - Data now occupies: A1:D3")
+            print("   - Data size: 3x6 (including timestamp and purpose)")
+            print("   - Auto-expanded range would be: A1:F3")
+            print("   - Data now occupies: A1:F3")
+            print(f"   - Current timestamp: {expansion_timestamp}")
             print(f"   📋 View result: https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit")
             return True
         else:
@@ -624,11 +646,14 @@ if __name__ == "__main__":
 
             spreadsheet_id, client = result
 
-            # Write initial data for append tests
+            # Write initial data for append tests with proper headers and timestamps
+            from datetime import datetime
+            setup_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
             initial_data = [
-                ["Name", "Age", "Department", "Salary", "Start Date"],
-                ["Alice Johnson", "28", "Engineering", "$95,000", "2023-01-15"],
-                ["Bob Smith", "32", "Marketing", "$78,000", "2022-03-10"]
+                ["Name", "Age", "Department", "Salary", "Start Date", "Test Timestamp", "Test Purpose"],
+                ["Alice Johnson", "28", "Engineering", "$95,000", "2023-01-15", setup_timestamp, "Initial test setup"],
+                ["Bob Smith", "32", "Marketing", "$78,000", "2022-03-10", setup_timestamp, "Initial test setup"]
             ]
             await client.write_data(spreadsheet_id, "Sheet1", initial_data)
 
@@ -642,7 +667,7 @@ if __name__ == "__main__":
                 expansion_success = await test_range_expansion(spreadsheet_id, client)
                 test_results.append(("Range Auto-Expansion", expansion_success))
 
-            # Print results
+            # Print results with enhanced information
             passed = sum(1 for _, success in test_results if success)
             total = len(test_results)
 
@@ -652,8 +677,16 @@ if __name__ == "__main__":
                 print(f"  {status} {test_name}")
 
             if spreadsheet_id:
+                from datetime import datetime
+                completion_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                 print(f"\n🌐 TEST SPREADSHEET:")
                 print(f"📋 URL: https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit")
+                print(f"📅 Test run completed at: {completion_timestamp}")
+                print("\n💡 Check the spreadsheet to see:")
+                print("  - Timestamp columns showing when each test ran")
+                print("  - Purpose columns explaining what each test demonstrated")
+                print("  - Multiple sheets showing different test scenarios")
 
             return passed == total
 
