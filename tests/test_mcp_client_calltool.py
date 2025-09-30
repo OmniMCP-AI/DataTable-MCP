@@ -11,6 +11,7 @@ from mcp.client.streamable_http import streamablehttp_client
 import asyncio
 import json
 from mcp import ClientSession
+from datetime import datetime
 
 async def test_google_sheets_mcp(url, headers):
     """Test Google Sheets operations using DataTable MCP tools"""
@@ -60,57 +61,9 @@ async def test_google_sheets_mcp(url, headers):
                     table_id = content.get('table_id')
                     print(f"✅ Table loaded successfully: {table_id}")
 
-            # # Test 2: Get sample data from loaded table
-            # print(f"\n📊 Test 2: Getting loaded table data")
-
-            # data_res = await session.call_tool("get_table_data", {
-            #     "table_id": table_id,
-            #     "output_format": "records",
-            #     "max_rows": 3
-            # })
-            # print(f"✅ Sample data: {data_res}")
-
-            # Test 3: Create a new table with test data
-            print(f"\n📝 Test 3: Creating new table for export")
-
-            from datetime import datetime
-            
-            # Generate dynamic timestamps for each run
-            now = datetime.now()
-            test_data = [
-                ["Product", "Price", "Category", "Stock", "Updated"],
-                ["Laptop", 999.99, "Electronics", 25, now.strftime("%Y-%m-%d %H:%M:%S")],
-                ["Mouse", 29.99, "Electronics", 150, now.strftime("%Y-%m-%d %H:%M:%S")],
-                ["Book", 19.99, "Education", 75, now.strftime("%Y-%m-%d %H:%M:%S")]
-            ]
-
-            create_res = await session.call_tool("create_table", {
-                "data": test_data[1:],  # Data without headers
-                "headers": test_data[0],  # Headers
-                "name": "MCP Test Products"
-            })
-            print(f"✅ Create table result: {create_res}")
-
-            # Extract new table ID
-            if create_res.content and create_res.content[0].text:
-                content = json.loads(create_res.content[0].text)
-                if content.get('success'):
-                    new_table_id = content.get('table_id')
-                    print(f"✅ New table created: {new_table_id}")
-
-            # Test 4: Export table to Google Sheets using export_table_to_range
-            print(f"\n📗 Test 4: Writing table to Google Sheets")
+     
             write_uri = read_write_uri
-            print(f"   URI: {write_uri}")
-
-            if 'new_table_id' in locals():
-                export_res = await session.call_tool("export_table_to_range", {
-                    "table_id": new_table_id,
-                    "uri": write_uri,
-                    "start_cell": "A1",
-                    "include_headers": True
-                })
-                print(f"✅ Export result: {export_res}")
+            
 
             # Test 5: Update specific range using update_range function
             print(f"\n📝 Test 5: Updating specific range")
