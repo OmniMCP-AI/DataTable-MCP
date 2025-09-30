@@ -16,7 +16,9 @@ async def update_range(
     range_address: Optional[str] = None,
     headers: Optional[List[str]] = None,
     encoding: Optional[str] = None,
-    delimiter: Optional[str] = None
+    delimiter: Optional[str] = None,
+    append_last_row: bool = True,
+    append_last_column: bool = True
 ) -> Dict[str, Any]:
     """
     Update data to various formats using URI-based auto-detection.
@@ -44,9 +46,15 @@ async def update_range(
                       - Column range: "B:B" or "B1:B10"
                       - 2D range: "A1:C3"
                       Only used for Google Sheets. If not provided for Google Sheets, replaces entire sheet.
+                      When append_last_row or append_last_column is True, this parameter is ignored.
+                      If the data dimensions exceed the range, the range will be automatically expanded.
         headers: Optional column headers for dictionary data
         encoding: File encoding for CSV files (optional)
         delimiter: Delimiter for CSV files (optional)
+        append_last_row: When True (default), automatically detects the last row in the sheet
+                        and appends data after it. Ignores range_address when enabled.
+        append_last_column: When True (default), automatically detects the last column in the sheet
+                           and appends data after it. Ignores range_address when enabled.
 
     Returns:
         Dict containing update results and file/spreadsheet information
@@ -55,8 +63,23 @@ async def update_range(
         # Update specific range in Google Sheets
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
 
-        # Replace entire Google Sheet
+        # Append to the last row and column (default behavior)
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data)
+
+        # Append only to the last row, starting from column A
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data,
+                    append_last_row=True, append_last_column=False)
+
+        # Append only to the last column, starting from row 1
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data,
+                    append_last_row=False, append_last_column=True)
+
+        # Use specific range (ignores append parameters)
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5",
+                    append_last_row=False, append_last_column=False)
+
+        # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
 
         # Export to CSV file
         update_range(ctx, "/path/to/data.csv", data)
@@ -65,7 +88,7 @@ async def update_range(
         update_range(ctx, "/path/to/workbook.xlsx", data)
     """
     try:
-        from datatable_tools.utils import parse_google_sheets_url, parse_export_uri
+        from datatable_tools.utils import parse_google_sheets_url
         from datatable_tools.lifecycle_tools import _process_data_input
 
         # Check if it's a Google Sheets URL first
@@ -73,7 +96,8 @@ async def update_range(
         if spreadsheet_id:
             # Google Sheets handling
             return await _handle_google_sheets_update(
-                ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name
+                ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name,
+                append_last_row, append_last_column
             )
 
         # Handle other formats using URI-based export
@@ -95,7 +119,9 @@ async def _handle_google_sheets_update(
     range_address: Optional[str],
     headers: Optional[List[str]],
     spreadsheet_id: str,
-    sheet_name: Optional[str]
+    sheet_name: Optional[str],
+    append_last_row: bool,
+    append_last_column: bool
 ) -> Dict[str, Any]:
     """Handle Google Sheets updates with range support"""
     if not spreadsheet_id:
@@ -117,10 +143,126 @@ async def _handle_google_sheets_update(
         # Convert all values to strings for Google Sheets API
         values = [[str(cell) for cell in row] for row in processed_data]
 
+    # Auto-detect append position if append parameters are enabled and no range_address is provided
+    if (append_last_row or append_last_column) and range_address is None:
+        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
+        try:
+            # Get current worksheet info to determine used range
+            worksheet_info = await GoogleSheetsService.get_worksheet_info(
+                ctx=ctx,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=final_worksheet
+            )
+
+            # Calculate append position
+            if append_last_row and append_last_column:
+                # Append to the bottom-right: next row and next column
+                start_row = worksheet_info["row_count"] + 1
+                start_col_index = worksheet_info["col_count"]
+            elif append_last_row:
+                # Append to next row, starting from column A
+                start_row = worksheet_info["row_count"] + 1
+                start_col_index = 0
+            elif append_last_column:
+                # Append to next column, starting from row 1
+                start_row = 1
+                start_col_index = worksheet_info["col_count"]
+            else:
+                # Fallback to A1 if neither is true
+                start_row = 1
+                start_col_index = 0
+
+            # Convert column index to letter (A=0, B=1, ..., Z=25, AA=26, etc.)
+            def col_index_to_letter(index):
+                result = ""
+                while index >= 0:
+                    result = chr(65 + index % 26) + result
+                    index = index // 26 - 1
+                    if index < 0:
+                        break
+                return result
+
+            start_col = col_index_to_letter(start_col_index)
+
+            # Calculate end position based on data size
+            end_row = start_row + len(values) - 1
+            end_col_index = start_col_index + (len(values[0]) if values else 1) - 1
+            end_col = col_index_to_letter(end_col_index)
+
+            # Create the range address
+            range_address = f"{start_col}{start_row}:{end_col}{end_row}"
+
+        except Exception as e:
+            logger.warning(f"Failed to auto-detect append position: {e}. Using default behavior.")
+            # Fall through to existing logic without range_address
+
     if range_address:
-        # Range-specific update
-        # Determine if it's a single cell update
+        # Range-specific update with auto-expansion if data doesn't fit
         import re
+
+        # Parse the range to understand its dimensions
+        def parse_range(range_str):
+            """Parse range like A1:B2 to get start and end cells"""
+            if ':' in range_str:
+                start_cell, end_cell = range_str.split(':')
+            else:
+                start_cell = end_cell = range_str
+            return start_cell, end_cell
+
+        def cell_to_indices(cell):
+            """Convert cell like A1 to (0, 0) (row, col)"""
+            match = re.match(r'([A-Z]+)(\d+)', cell)
+            if not match:
+                raise ValueError(f"Invalid cell format: {cell}")
+            col_str, row_str = match.groups()
+
+            # Convert column letters to index
+            col_index = 0
+            for i, char in enumerate(reversed(col_str)):
+                col_index += (ord(char) - ord('A') + 1) * (26 ** i)
+            col_index -= 1  # Convert to 0-based
+
+            row_index = int(row_str) - 1  # Convert to 0-based
+            return row_index, col_index
+
+        def indices_to_cell(row_index, col_index):
+            """Convert (row, col) indices to cell like A1"""
+            # Convert column index to letters
+            col_str = ""
+            col_index += 1  # Convert to 1-based
+            while col_index > 0:
+                col_index -= 1
+                col_str = chr(65 + col_index % 26) + col_str
+                col_index //= 26
+
+            row_str = str(row_index + 1)  # Convert to 1-based
+            return col_str + row_str
+
+        try:
+            start_cell, end_cell = parse_range(range_address)
+            start_row, start_col = cell_to_indices(start_cell)
+            end_row, end_col = cell_to_indices(end_cell)
+
+            # Calculate current range dimensions
+            range_rows = end_row - start_row + 1
+            range_cols = end_col - start_col + 1
+
+            # Calculate data dimensions
+            data_rows = len(values)
+            data_cols = len(values[0]) if values else 0
+
+            # Expand range if data is larger
+            if data_rows > range_rows or data_cols > range_cols:
+                new_end_row = start_row + max(data_rows, range_rows) - 1
+                new_end_col = start_col + max(data_cols, range_cols) - 1
+                new_end_cell = indices_to_cell(new_end_row, new_end_col)
+                range_address = f"{start_cell}:{new_end_cell}"
+                logger.info(f"Expanded range to {range_address} to fit data dimensions ({data_rows}, {data_cols})")
+
+        except Exception as e:
+            logger.warning(f"Failed to parse/expand range {range_address}: {e}. Using original range.")
+
+        # Determine if it's a single cell update
         single_cell_pattern = r'^[A-Z]+\d+$'
 
         if re.match(single_cell_pattern, range_address) and len(values) == 1 and len(values[0]) == 1:
@@ -314,7 +456,7 @@ async def export_table_to_range(
     ctx: Context,
     table_id: str,
     uri: str,
-    start_cell: Optional[str] = None,
+    start_cell: Optional[str] = "A1",
     include_headers: bool = True,
     encoding: Optional[str] = None,
     delimiter: Optional[str] = None

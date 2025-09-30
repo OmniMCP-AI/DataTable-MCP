@@ -92,7 +92,7 @@ async def load_data_table(
     delimiter: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Load a table from various data sources using URI-based auto-detection.
+    Load a table from (Google Sheets/and future others) using URI-based auto-detection
 
     Args:
         uri: URI to the data source. Supports:
