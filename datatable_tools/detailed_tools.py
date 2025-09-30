@@ -118,7 +118,7 @@ async def update_range(
     ctx: Context,
     uri: str,
     data: Any,  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    range_address: Optional[str] = None,
+    range_address: str,
     headers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
@@ -133,12 +133,11 @@ async def update_range(
               - Dict[str, List]: Dictionary with column names as keys and column data as values
               - List[Dict]: List of dictionaries (records format)
               - pd.DataFrame: Existing DataFrame
-        range_address: Range in A1 notation (optional):
+        range_address: Range in A1 notation (required):
                       - Single cell: "B5"
                       - Row range: "A1:E1" or "1:1"
                       - Column range: "B:B" or "B1:B10"
                       - 2D range: "A1:C3"
-                      If not provided, replaces entire sheet.
                       If the data dimensions exceed the range, the range will be automatically expanded.
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
@@ -151,17 +150,18 @@ async def update_range(
         # Update specific range in Google Sheets
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
 
-        # Replace entire sheet
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data)
+        # Update entire sheet from A1
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "A1")
 
         # With auto-detected headers (first row = headers if long content follows)
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
                     data=[["name", "description"],
-                          ["Item1", "This is a long description that will trigger header detection"]])
+                          ["Item1", "This is a long description that will trigger header detection"]],
+                    range_address="A1")
 
         # With explicit headers
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                    data=[["John", 25]], headers=["name", "age"])
+                    data=[["John", 25]], headers=["name", "age"], range_address="A1")
 
         # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
