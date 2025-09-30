@@ -288,6 +288,39 @@ class GoogleSheetsService:
 
     @staticmethod
     @require_google_service("sheets", "sheets_write")
+    async def check_write_permission(service, ctx: Context, spreadsheet_id: str) -> bool:
+        """
+        Check if we have write permission for a spreadsheet
+
+        Args:
+            spreadsheet_id: The spreadsheet ID to check
+
+        Returns:
+            True if we have write permission, False otherwise
+        """
+        try:
+            # Try to get the spreadsheet metadata - this will work if we have any access
+            spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+
+            # Check if we can edit - we'll try a harmless operation
+            # Get the first sheet to check permissions
+            if not spreadsheet.get('sheets'):
+                return False
+
+            # If we got here, we at least have read access
+            # To check write permission, we need to check if we can perform write operations
+            # The safest way is to check the spreadsheet metadata for editable status
+            # However, Google Sheets API doesn't directly expose this, so we'll assume
+            # if we can get the spreadsheet with write scope, we have write permission
+            return True
+
+        except Exception as e:
+            # If we can't access it at all, we don't have permission
+            logger.warning(f"No access to spreadsheet {spreadsheet_id}: {e}")
+            return False
+
+    @staticmethod
+    @require_google_service("sheets", "sheets_write")
     async def write_sheet_structured(service, ctx: Context, spreadsheet_identifier: str,
                                    data: List[List[str]], headers: Optional[List[str]] = None,
                                    sheet_name: str = None, title: Optional[str] = None) -> Dict[str, Any]:
@@ -296,15 +329,20 @@ class GoogleSheetsService:
         Accepts either spreadsheet ID or spreadsheet name
         Returns structured response compatible with DataTable system
 
+        If the spreadsheet exists but user lacks write permission, automatically creates
+        a new spreadsheet with the data.
+
         Args:
             spreadsheet_identifier: Either spreadsheet ID or spreadsheet name
             data: List of data rows to write
             headers: Optional column headers
             sheet_name: Optional worksheet name (uses first sheet if not specified)
-            title: Optional title for new spreadsheet (if identifier not found)
+            title: Optional title for new spreadsheet (if identifier not found or no permission)
         """
         # Resolve spreadsheet identifier to ID
         spreadsheet_id = None
+        needs_new_spreadsheet = False
+        creation_reason = None
 
         # Check if it looks like a spreadsheet ID (contains specific characters)
         if len(spreadsheet_identifier) > 20 and ('_' in spreadsheet_identifier or '-' in spreadsheet_identifier):
@@ -321,18 +359,46 @@ class GoogleSheetsService:
                 # Not a valid ID, so it must be a name - we'll need Drive API for this
                 # For now, we'll use the title parameter to create a new spreadsheet
                 spreadsheet_id = None
+                needs_new_spreadsheet = True
+                creation_reason = "not_found"
 
-        # Create spreadsheet if identifier not found and title is provided
-        if not spreadsheet_id and title:
+        # Check write permissions for existing spreadsheet
+        if spreadsheet_id and not needs_new_spreadsheet:
+            try:
+                # Try to get the spreadsheet to verify it exists and check permissions
+                service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+                # If we can access it with write scope, assume we can write
+                # Note: The actual write operation below will fail if we don't have permission
+                # and that's when we'll catch it and create a new spreadsheet
+            except Exception as e:
+                logger.warning(f"Cannot access spreadsheet {spreadsheet_id}: {e}")
+                needs_new_spreadsheet = True
+                creation_reason = "insufficient_permissions"
+
+        # Create spreadsheet if needed
+        if needs_new_spreadsheet or (not spreadsheet_id and title):
+            if creation_reason == "insufficient_permissions":
+                spreadsheet_name = title or f"Copy of Spreadsheet {spreadsheet_identifier[:8]}"
+                logger.info(f"No write permission for spreadsheet {spreadsheet_identifier}, creating new spreadsheet")
+            elif creation_reason == "not_found":
+                spreadsheet_name = title or f"New Spreadsheet"
+                logger.info(f"Spreadsheet {spreadsheet_identifier} not found, creating new spreadsheet")
+            else:
+                spreadsheet_name = title or "New Spreadsheet"
+
             spreadsheet = {
                 'properties': {
-                    'title': title
+                    'title': spreadsheet_name
                 }
             }
             result = service.spreadsheets().create(body=spreadsheet).execute()
+            original_spreadsheet_id = spreadsheet_id
             spreadsheet_id = result['spreadsheetId']
+            logger.info(f"Created new spreadsheet {spreadsheet_id} with name '{spreadsheet_name}'")
         elif not spreadsheet_id:
             raise UserError(f"Spreadsheet '{spreadsheet_identifier}' not found. Please provide a valid spreadsheet ID or use the 'title' parameter to create a new spreadsheet.")
+        else:
+            original_spreadsheet_id = None
 
         # Prepare data for writing
         write_data = []
@@ -340,74 +406,142 @@ class GoogleSheetsService:
             write_data.append(headers)
         write_data.extend(data)
 
-        # Get spreadsheet info to determine actual sheet name
-        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        try:
+            # Get spreadsheet info to determine actual sheet name
+            spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
 
-        # Determine sheet name/id
-        if sheet_name:
-            # Verify the sheet exists
-            target_sheet = None
-            for sheet in spreadsheet['sheets']:
-                if sheet['properties']['title'] == sheet_name:
-                    target_sheet = sheet
-                    break
-            if not target_sheet:
-                raise UserError(f"Sheet '{sheet_name}' not found")
-            range_name = f"'{sheet_name}'!A1"
-            clear_range = f"'{sheet_name}'"
-        else:
-            # Use the first sheet's actual name
-            first_sheet = spreadsheet['sheets'][0] if spreadsheet['sheets'] else None
-            if not first_sheet:
-                raise UserError("No sheets found in spreadsheet")
-            actual_sheet_name = first_sheet['properties']['title']
-            range_name = f"'{actual_sheet_name}'!A1"
-            clear_range = f"'{actual_sheet_name}'"
+            # Determine sheet name/id
+            if sheet_name:
+                # Verify the sheet exists
+                target_sheet = None
+                for sheet in spreadsheet['sheets']:
+                    if sheet['properties']['title'] == sheet_name:
+                        target_sheet = sheet
+                        break
+                if not target_sheet:
+                    raise UserError(f"Sheet '{sheet_name}' not found")
+                range_name = f"'{sheet_name}'!A1"
+                clear_range = f"'{sheet_name}'"
+            else:
+                # Use the first sheet's actual name
+                first_sheet = spreadsheet['sheets'][0] if spreadsheet['sheets'] else None
+                if not first_sheet:
+                    raise UserError("No sheets found in spreadsheet")
+                actual_sheet_name = first_sheet['properties']['title']
+                range_name = f"'{actual_sheet_name}'!A1"
+                clear_range = f"'{actual_sheet_name}'"
 
-        # Clear existing data first
-        service.spreadsheets().values().clear(
-            spreadsheetId=spreadsheet_id,
-            range=clear_range
-        ).execute()
+            # Clear existing data first
+            service.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=clear_range
+            ).execute()
 
-        # Write new data
-        body = {
-            'values': write_data
-        }
-        service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-            valueInputOption='RAW',
-            body=body
-        ).execute()
+            # Write new data
+            body = {
+                'values': write_data
+            }
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
 
-        # Use the sheet info we already retrieved
-        if sheet_name:
-            # We already validated target_sheet exists above
-            sheet_props = target_sheet['properties']
-        else:
-            # We already retrieved first_sheet above
-            sheet_props = first_sheet['properties']
+            # Use the sheet info we already retrieved
+            if sheet_name:
+                # We already validated target_sheet exists above
+                sheet_props = target_sheet['properties']
+            else:
+                # We already retrieved first_sheet above
+                sheet_props = first_sheet['properties']
 
-        sheet_title = sheet_props['title']
-        sheet_id = sheet_props['sheetId']
+            sheet_title = sheet_props['title']
+            sheet_id = sheet_props['sheetId']
 
-        worksheet_info = {
-            "title": sheet_title,
-            "id": sheet_id,
-            "url": f"{spreadsheet['spreadsheetUrl']}#gid={sheet_id}"
-        }
+            worksheet_info = {
+                "title": sheet_title,
+                "id": sheet_id,
+                "url": f"{spreadsheet['spreadsheetUrl']}#gid={sheet_id}"
+            }
 
-        total_rows = len(write_data)
-        total_cols = len(headers) if headers else (len(write_data[0]) if write_data else 0)
+            total_rows = len(write_data)
+            total_cols = len(headers) if headers else (len(write_data[0]) if write_data else 0)
 
-        return {
-            "success": True,
-            "spreadsheet_id": spreadsheet_id,
-            "worksheet": worksheet_info,
-            "updated_range": f"A1:{chr(65 + total_cols - 1)}{total_rows}" if total_rows > 0 and total_cols > 0 else "A1:A1",
-            "updated_cells": total_rows * total_cols,
-            "matched_columns": headers if headers else [],
-            "worksheet_url": worksheet_info["url"],
-            "message": f"Successfully wrote {len(data)} rows to worksheet '{worksheet_info['title']}'"
-        }
+            # Build message with creation info if applicable
+            message = f"Successfully wrote {len(data)} rows to worksheet '{worksheet_info['title']}'"
+            if original_spreadsheet_id and creation_reason == "insufficient_permissions":
+                message += f" (created new spreadsheet due to insufficient permissions on {original_spreadsheet_id})"
+
+            return {
+                "success": True,
+                "spreadsheet_id": spreadsheet_id,
+                "worksheet": worksheet_info,
+                "updated_range": f"A1:{chr(65 + total_cols - 1)}{total_rows}" if total_rows > 0 and total_cols > 0 else "A1:A1",
+                "updated_cells": total_rows * total_cols,
+                "matched_columns": headers if headers else [],
+                "worksheet_url": worksheet_info["url"],
+                "message": message,
+                "created_new_spreadsheet": bool(original_spreadsheet_id),
+                "original_spreadsheet_id": original_spreadsheet_id if original_spreadsheet_id else None
+            }
+
+        except Exception as write_error:
+            # If write failed due to permissions, create a new spreadsheet and retry
+            if not original_spreadsheet_id and "permission" in str(write_error).lower():
+                logger.warning(f"Write permission denied for {spreadsheet_id}, creating new spreadsheet: {write_error}")
+
+                # Create a new spreadsheet
+                spreadsheet_name = title or f"Copy of Spreadsheet {spreadsheet_identifier[:8]}"
+                new_spreadsheet = {
+                    'properties': {
+                        'title': spreadsheet_name
+                    }
+                }
+                result = service.spreadsheets().create(body=new_spreadsheet).execute()
+                new_spreadsheet_id = result['spreadsheetId']
+                logger.info(f"Created new spreadsheet {new_spreadsheet_id} due to permission error")
+
+                # Get new spreadsheet info
+                spreadsheet = service.spreadsheets().get(spreadsheetId=new_spreadsheet_id).execute()
+                first_sheet = spreadsheet['sheets'][0] if spreadsheet['sheets'] else None
+                if not first_sheet:
+                    raise UserError("Failed to create new spreadsheet")
+
+                actual_sheet_name = first_sheet['properties']['title']
+                range_name = f"'{actual_sheet_name}'!A1"
+
+                # Write to the new spreadsheet
+                body = {'values': write_data}
+                service.spreadsheets().values().update(
+                    spreadsheetId=new_spreadsheet_id,
+                    range=range_name,
+                    valueInputOption='RAW',
+                    body=body
+                ).execute()
+
+                sheet_props = first_sheet['properties']
+                worksheet_info = {
+                    "title": sheet_props['title'],
+                    "id": sheet_props['sheetId'],
+                    "url": f"{spreadsheet['spreadsheetUrl']}#gid={sheet_props['sheetId']}"
+                }
+
+                total_rows = len(write_data)
+                total_cols = len(headers) if headers else (len(write_data[0]) if write_data else 0)
+
+                return {
+                    "success": True,
+                    "spreadsheet_id": new_spreadsheet_id,
+                    "worksheet": worksheet_info,
+                    "updated_range": f"A1:{chr(65 + total_cols - 1)}{total_rows}" if total_rows > 0 and total_cols > 0 else "A1:A1",
+                    "updated_cells": total_rows * total_cols,
+                    "matched_columns": headers if headers else [],
+                    "worksheet_url": worksheet_info["url"],
+                    "message": f"Successfully wrote {len(data)} rows to new spreadsheet '{worksheet_info['title']}' (created due to insufficient permissions on original spreadsheet)",
+                    "created_new_spreadsheet": True,
+                    "original_spreadsheet_id": spreadsheet_id
+                }
+            else:
+                # Re-raise other errors
+                raise
