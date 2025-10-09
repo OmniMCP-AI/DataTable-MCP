@@ -312,8 +312,20 @@ async def _handle_google_sheets_append(
     if not processed_data:
         values = [[""]]  # Empty cell
     else:
-        # Convert all values to strings for Google Sheets API
-        values = [[str(cell) for cell in row] for row in processed_data]
+        # If headers were provided or detected, include them in the output
+        # This ensures the complete data (headers + content) is written to the sheet
+        if (processed_headers and 
+            len(processed_headers) > 0 and 
+            not processed_headers[0].startswith("Column_") and
+            headers is not None):  # Only include headers if they were explicitly provided
+            
+            # Include headers as the first row, followed by the data
+            values = [[str(cell) for cell in processed_headers]]  # Headers first
+            values.extend([[str(cell) for cell in row] for row in processed_data])  # Then data
+            logger.info(f"Including provided headers in append output: {processed_headers}")
+        else:
+            # No headers provided or auto-generated headers, just use the data
+            values = [[str(cell) for cell in row] for row in processed_data]
 
     from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
     try:
