@@ -122,7 +122,6 @@ async def append_rows(
     ctx: Context,
     uri: str,
     data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    headers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Append data as new rows below existing data in Google Sheets.
@@ -137,9 +136,6 @@ async def append_rows(
               - Dict[str, List]: Dictionary with column names as keys and column data as values
               - List[Dict]: List of dictionaries (records format)
               - pd.DataFrame: Existing DataFrame
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
 
     Returns:
         Dict containing update results and file/spreadsheet information
@@ -148,10 +144,6 @@ async def append_rows(
         # Append new records to Google Sheets
         append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
                    data=[["John", 25], ["Jane", 30]])
-
-        # Append with explicit headers
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                   data=[["John", 25]], headers=["name", "age"])
 
         # Append with auto-detected headers (first row = headers if long content follows)
         append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
@@ -166,7 +158,7 @@ async def append_rows(
             raise ValueError(f"Invalid Google Sheets URI: {uri}")
 
         return await _handle_google_sheets_append(
-            ctx, uri, data, headers, spreadsheet_id, sheet_name, append_mode="rows"
+            ctx, uri, data, None, spreadsheet_id, sheet_name, append_mode="rows"
         )
 
     except Exception as e:
