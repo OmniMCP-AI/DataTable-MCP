@@ -406,25 +406,58 @@ def _process_data_input(data: Any, headers: Optional[List[str]] = None) -> tuple
             first_row_all_strings = all(isinstance(v, str) for v in first_row)
 
             if first_row_all_strings:
+                # Enhanced header detection heuristics
                 # Check if first row values are short (likely column names, not content)
-                # A heuristic: column names are usually < 50 chars
-                first_row_looks_like_headers = all(len(str(v)) < 50 for v in first_row)
-
+                # todo: this is definite not a good idea to do so
+                first_row_looks_like_headers = all(len(str(v)) <= 100 for v in first_row)  # Increased threshold
+                
+                # Additional heuristics for header detection
+                first_row_avg_length = sum(len(str(v)) for v in first_row) / len(first_row)
+                
                 # Check if second row has different characteristics (longer strings or mixed types)
                 if second_row:
                     second_row_has_long_content = any(
                         isinstance(v, str) and len(v) >= 50 for v in second_row
                     )
+                    
+                    # Calculate average length of second row strings
+                    second_row_string_lengths = [len(str(v)) for v in second_row if isinstance(v, str)]
+                    second_row_avg_length = sum(second_row_string_lengths) / len(second_row_string_lengths) if second_row_string_lengths else 0
+                    
+                    # Enhanced detection criteria:
+                    # 1. First row looks like headers AND second row has long content
+                    # 2. OR significant length difference between rows (second row much longer)
+                    # 3. OR first row has typical header patterns (short, descriptive words)
+                    length_ratio_suggests_headers = (
+                        second_row_avg_length > first_row_avg_length * 2 and 
+                        first_row_avg_length < 30
+                    )
+                    
+                    # Check for typical header characteristics
+                    first_row_header_like = all(
+                        len(str(v).split()) <= 5 and  # Headers usually have few words
+                        not any(char in str(v).lower() for char in ['.', '!', '?']) and  # No sentence endings
+                        len(str(v).strip()) > 0  # Not empty
+                        for v in first_row
+                    )
 
-                    # If first row looks like headers AND (second row has long content OR mixed types)
-                    if first_row_looks_like_headers and second_row_has_long_content:
+                    # Decision logic - more aggressive header detection
+                    should_treat_as_headers = (
+                        (first_row_looks_like_headers and second_row_has_long_content) or
+                        length_ratio_suggests_headers or
+                        (first_row_header_like and second_row_avg_length > 30)
+                    )
+                    
+                    if should_treat_as_headers:
                         # First row is likely headers
-                        processed_headers = first_row
+                        processed_headers = [str(v) for v in first_row]
                         processed_data = processed_data[1:]  # Remove header row from data
                         logger.info(f"Auto-detected headers from first row: {processed_headers}")
+                        logger.debug(f"Header detection metrics - First row avg: {first_row_avg_length:.1f}, Second row avg: {second_row_avg_length:.1f}, Ratio: {second_row_avg_length/max(first_row_avg_length, 1):.1f}")
                     else:
                         # First row is data
                         processed_headers = [f"Column_{i+1}" for i in range(num_cols)]
+                        logger.debug(f"Headers not detected - treating first row as data")
                 else:
                     # Only one row, treat first row as data
                     processed_headers = [f"Column_{i+1}" for i in range(num_cols)]

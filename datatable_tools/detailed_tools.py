@@ -227,11 +227,10 @@ async def update_range(
     ctx: Context,
     uri: str,
     data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    range_address: str,
-    headers: Optional[List[str]] = None
+    range_address: str
 ) -> Dict[str, Any]:
     """
-    Update data in Google Sheets with precise range placement.
+    Update data in Google Sheets with precise range placement and automatic header detection.
 
     Args:
         uri: Google Sheets URI. Supports:
@@ -248,9 +247,13 @@ async def update_range(
                       - Column range: "B:B" or "B1:B10"
                       - 2D range: "A1:C3"
                       If the data dimensions exceed the range, the range will be automatically expanded.
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
+
+    Header Detection:
+        Headers are automatically detected when the first row contains short strings (typically
+        column names) followed by rows with longer content. The system uses multiple heuristics:
+        - Length analysis: First row shorter than subsequent rows
+        - Content patterns: Headers typically have few words, no sentence endings
+        - Statistical comparison: Significant length differences between rows
 
     Returns:
         Dict containing update results and spreadsheet information
@@ -262,15 +265,17 @@ async def update_range(
         # Update entire sheet from A1
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "A1")
 
-        # With auto-detected headers (first row = headers if long content follows)
+        # Automatic header detection (first row = headers if pattern matches)
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
                     data=[["name", "description"],
                           ["Item1", "This is a long description that will trigger header detection"]],
                     range_address="A1")
 
-        # With explicit headers
+        # Works with comparison tables (like Agent Kit vs n8n)
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
-                    data=[["John", 25]], headers=["name", "age"], range_address="A1")
+                    data=[["Dimension", "Agent Kit", "n8n"],
+                          ["Primary Purpose", "Fast, visual agents...", "Workflow automation..."]],
+                    range_address="A1")
 
         # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
         update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
@@ -283,7 +288,7 @@ async def update_range(
             raise ValueError(f"Invalid Google Sheets URI: {uri}")
 
         return await _handle_google_sheets_update(
-            ctx, uri, data, range_address, headers, spreadsheet_id, sheet_name
+            ctx, uri, data, range_address, None, spreadsheet_id, sheet_name
         )
 
     except Exception as e:
@@ -396,6 +401,7 @@ async def _handle_google_sheets_append(
             "message": f"Successfully appended {append_mode} at {range_address} in worksheet '{final_worksheet}'"
         }
     else:
+        # todo should raise an erorr instead
         return {
             "success": False,
             "error": "Failed to append data",
@@ -420,15 +426,27 @@ async def _handle_google_sheets_update(
             "message": f"Could not parse spreadsheet ID from URI: {uri}"
         }
 
-    # Process data input using the same logic as create_table
-    processed_data, processed_headers = _process_data_input(data, headers)
+    # Process data input with automatic header detection
+    processed_data, processed_headers = _process_data_input(data, headers=None)
+    logger.info(f"_process_data_input in update_range: processed_headers = {processed_headers}")
 
     # Convert processed data to Google Sheets format
     if not processed_data:
         values = [[""]]  # Empty cell
     else:
-        # Convert all values to strings for Google Sheets API
-        values = [[str(cell) for cell in row] for row in processed_data]
+        # If headers were detected and extracted, include them back in the output
+        # This ensures the complete table (headers + data) is written to the sheet
+        if (processed_headers and 
+            len(processed_headers) > 0 and 
+            not processed_headers[0].startswith("Column_")):  # Real headers, not auto-generated
+            
+            # Include headers as the first row, followed by the data
+            values = [[str(cell) for cell in processed_headers]]  # Headers first
+            values.extend([[str(cell) for cell in row] for row in processed_data])  # Then data
+            logger.info(f"Including detected headers in output: {processed_headers}")
+        else:
+            # No headers detected or auto-generated headers, just use the data
+            values = [[str(cell) for cell in row] for row in processed_data]
 
     # Resolve gid: format to actual sheet name if needed
     from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
