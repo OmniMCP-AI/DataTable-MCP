@@ -32,6 +32,9 @@ async def test_google_sheets_mcp(url, headers):
             #uri = 
             read_write_uri = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=265933634#gid=265933634"
             read_write_uri2 = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=1852099269#gid=1852099269"
+            read_write_uri3 = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=244346339#gid=244346339"
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             print(f"🚀 Testing Google Sheets MCP Integration")
             print(f"📋 User ID: {TEST_USER_ID}")
@@ -85,9 +88,7 @@ async def test_google_sheets_mcp(url, headers):
             
 
             # # Test 5: Update specific range using update_range function
-            print(f"\n📝 Test 5: Updating specific range")
-
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"\n📝 Test 5: Updating specific range")            
 
             # Note: data must be a list, even for single cell updates
             cell_update_res = await session.call_tool("update_range", {
@@ -137,6 +138,120 @@ async def test_google_sheets_mcp(url, headers):
                 "headers": ["Status", "Rating"]
             })
             print(f"✅ Append columns result: {append_columns_res}")
+            
+            # Test 8.1: Verify append_columns header inclusion by reading back the data
+            print(f"\n📖 Test 8.1: Verifying append_columns header inclusion")
+            
+            # Load the updated sheet to verify headers were written correctly
+            verify_load_res = await session.call_tool("load_data_table", {
+                "uri": read_write_uri
+            })
+            
+            if verify_load_res.content and verify_load_res.content[0].text:
+                verify_content = json.loads(verify_load_res.content[0].text)
+                if verify_content.get('success'):
+                    headers = verify_content.get('headers', [])
+                    print(f"   📋 Current sheet headers: {headers}")
+                    
+                    # Check if our appended headers are present
+                    expected_headers = ["Status", "Rating"]
+                    headers_found = all(header in headers for header in expected_headers)
+                    
+                    if headers_found:
+                        print(f"   ✅ PASS: Headers {expected_headers} found in sheet")
+                        # Find the positions of our headers
+                        status_pos = headers.index("Status") if "Status" in headers else -1
+                        rating_pos = headers.index("Rating") if "Rating" in headers else -1
+                        print(f"      Status at column {status_pos + 1}, Rating at column {rating_pos + 1}")
+                    else:
+                        print(f"   ❌ FAIL: Headers {expected_headers} not found in sheet headers")
+                        print(f"      Available headers: {headers}")
+                else:
+                    print(f"   ❌ Failed to load sheet for verification: {verify_content.get('message', 'Unknown error')}")
+            else:
+                print(f"   ❌ Failed to verify append_columns result")
+            
+            # Test 8.2: Test append_columns with single column and verify header placement
+            print(f"\n📝 Test 8.2: Testing single column append with header verification")
+            
+            # Create test data similar to the user's "Make.com" case
+            make_column_data = [
+                "Visual workflow automation with drag-drop interface; enterprise-focused with advanced routing.",
+                "Moderate learning curve: visual builder but requires understanding of modules, filters, and data mapping.",
+                "1000+ app integrations with webhooks, scheduled scenarios, email triggers, API polling, etc.",
+                "1000+ pre-built modules + HTTP/API requests + custom functions; visual data mapping between apps.",
+                "Primarily OpenAI integration; limited native LLM support but can connect via HTTP modules."
+            ]
+            
+            single_column_res = await session.call_tool("append_columns", {
+                "uri": read_write_uri3,
+                "data": make_column_data,
+                "headers": ["Make.com Features"]
+            })
+            print(f"✅ Single column append result: {single_column_res}")
+            
+            # Verify the single column was added with proper header
+            if single_column_res.content and single_column_res.content[0].text:
+                result_content = json.loads(single_column_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    data_shape = result_content.get('data_shape', [0, 0])
+                    range_updated = result_content.get('range', '')
+                    
+                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+                    print(f"   📍 Range updated: {range_updated}")
+                    
+                    # Expected: 6 cells (1 header + 5 data items)
+                    expected_cells = len(make_column_data) + 1  # +1 for header
+                    if updated_cells == expected_cells:
+                        print(f"   ✅ PASS: Correct number of cells updated (header + data)")
+                        
+                        # Extract column letter from range (e.g., "H1:H6" -> "H")
+                        if ':' in range_updated:
+                            start_cell = range_updated.split(':')[0]
+                            column_letter = ''.join(filter(str.isalpha, start_cell))
+                            row_number = ''.join(filter(str.isdigit, start_cell))
+                            
+                            if row_number == "1":
+                                print(f"   ✅ PASS: Header placed at {column_letter}1 (correct position)")
+                                print(f"   📝 Expected: '{column_letter}1' contains 'Make.com Features'")
+                                print(f"   📝 Expected: '{column_letter}2' contains first data item")
+                            else:
+                                print(f"   ❌ FAIL: Header not at row 1, found at {start_cell}")
+                        else:
+                            print(f"   ⚠️  WARNING: Could not parse range format: {range_updated}")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+                else:
+                    print(f"   ❌ Single column append failed: {result_content.get('message', 'Unknown error')}")
+            
+            # Read back the sheet one more time to verify the final state
+            print(f"\n📖 Final verification: Reading updated sheet")
+            final_verify_res = await session.call_tool("load_data_table", {
+                "uri": read_write_uri
+            })
+            
+            if final_verify_res.content and final_verify_res.content[0].text:
+                final_content = json.loads(final_verify_res.content[0].text)
+                if final_content.get('success'):
+                    final_headers = final_content.get('headers', [])
+                    final_shape = final_content.get('shape', [0, 0])
+                    
+                    print(f"   📋 Final headers: {final_headers}")
+                    print(f"   📊 Final shape: {final_shape[0]} rows × {final_shape[1]} columns")
+                    
+                    # Check for our test headers
+                    test_headers = ["Status", "Rating", "Make.com Features"]
+                    found_headers = [h for h in test_headers if h in final_headers]
+                    
+                    if len(found_headers) == len(test_headers):
+                        print(f"   ✅ SUCCESS: All test headers found: {found_headers}")
+                    else:
+                        print(f"   ⚠️  PARTIAL: Found {len(found_headers)}/{len(test_headers)} headers: {found_headers}")
+                        missing = [h for h in test_headers if h not in final_headers]
+                        print(f"      Missing: {missing}")
+                else:
+                    print(f"   ❌ Failed final verification: {final_content.get('message', 'Unknown error')}")
 
             # Test 9: Create new sheet (New functionality)
             print(f"\n📝 Test 9: Creating a new Google Sheets spreadsheet")
