@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Any
 import logging
+from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
 from datatable_tools.range_operations import range_operations
@@ -11,9 +12,9 @@ logger = logging.getLogger(__name__)
 @mcp.tool
 async def write_new_sheet(
     ctx: Context,
-    data: list[Any],
-    headers: Optional[List[str]] = None,
-    sheet_name: Optional[str] = None
+    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
+    headers: Optional[List[str]] = Field(default=None, description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"),
+    sheet_name: Optional[str] = Field(default=None, description="Optional name for the new spreadsheet (default: 'New DataTable')")
 ) -> SpreadsheetResponse:
     """
     Create a new Google Sheets spreadsheet with the provided data.
@@ -21,9 +22,6 @@ async def write_new_sheet(
     Args:
         data: Data in pandas-like formats. Accepts:
               - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
                 extracted from the first row.
@@ -120,22 +118,17 @@ async def write_new_sheet(
 @mcp.tool
 async def append_rows(
     ctx: Context,
-    uri: str,
-    data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
+    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
+    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)")
 ) -> Dict[str, Any]:
     """
     Append data as new rows below existing data in Google Sheets.
     Automatically detects the last row and appends below it starting from column A.
 
     Args:
-        uri: Google Sheets URI. Supports:
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - spreadsheet ID
-        data: Data in pandas-like formats. Accepts:
+        uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
+        data: Data Accepts:
               - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
 
     Returns:
         Dict containing update results and file/spreadsheet information
@@ -169,23 +162,18 @@ async def append_rows(
 @mcp.tool
 async def append_columns(
     ctx: Context,
-    uri: str,
-    data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    headers: Optional[List[str]] = None
+    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
+    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
+    headers: Optional[List[str]] = Field(default=None, description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content")
 ) -> Dict[str, Any]:
     """
     Append data as new columns to the right of existing data in Google Sheets.
     Automatically detects the last column and appends to its right starting from row 1.
 
     Args:
-        uri: Google Sheets URI. Supports:
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - spreadsheet ID
-        data: Data in pandas-like formats. Accepts:
+        uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
+        data: Data Accepts:
               - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
                 extracted from the first row.
@@ -217,22 +205,17 @@ async def append_columns(
 @mcp.tool
 async def update_range(
     ctx: Context,
-    uri: str,
-    data: list[Any],  # Union[List[List[Any]], Dict[str, List], List[Dict], pd.DataFrame]
-    range_address: str
+    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
+    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
+    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range will auto-expand if data exceeds it")
 ) -> Dict[str, Any]:
     """
     Update data in Google Sheets with precise range placement and automatic header detection.
 
     Args:
-        uri: Google Sheets URI. Supports:
-             - https://docs.google.com/spreadsheets/d/{id}/edit
-             - spreadsheet ID
-        data: Data in pandas-like formats. Accepts:
+        uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
+        data: Data Accepts:
               - List[List[Any]]: 2D array of table data (rows x columns)
-              - Dict[str, List]: Dictionary with column names as keys and column data as values
-              - List[Dict]: List of dictionaries (records format)
-              - pd.DataFrame: Existing DataFrame
         range_address: Range in A1 notation (required):
                       - Single cell: "B5"
                       - Row range: "A1:E1" or "1:1"

@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any
 from typing_extensions import TypedDict
 import logging
+from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
 from datatable_tools.table_manager import table_manager
@@ -110,24 +111,23 @@ async def create_table(
 @mcp.tool
 async def load_data_table(
     ctx: Context,
-    uri: str
+    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}) ")
 ) -> TableResponse:
     """
     Load a table from Google Sheets using URI-based auto-detection
 
     Args:
         uri: Google Sheets URI. Supports:
-             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
 
     Returns:
         Dict containing table_id and loaded Google Sheets table information
 
     Examples:
         # Google Sheets URL
-        uri = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+        uri = "https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0#gid=0"
 
-        # Google Sheets ID
-        uri = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+       
     """
     from datatable_tools.utils import parse_google_sheets_url
 

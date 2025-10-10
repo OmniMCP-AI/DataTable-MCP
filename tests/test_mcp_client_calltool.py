@@ -55,6 +55,19 @@ async def test_basic_operations(url, headers):
             print(f"✅ Found {len(tools.tools)} available tools:")
             for i, tool in enumerate(tools.tools, 1):
                 print(f"   {i:2d}. {tool.name}: {tool.description[:80]}...")
+            
+            # Display Field descriptions for a sample tool
+            print(f"\n📝 Sample Tool Schema (update_range):")
+            for tool in tools.tools:
+                if tool.name == "update_range":
+                    if hasattr(tool, 'inputSchema') and tool.inputSchema:
+                        schema = tool.inputSchema
+                        properties = schema.get('properties', {}) if isinstance(schema, dict) else {}
+                        for param_name, param_info in properties.items():
+                            if isinstance(param_info, dict):
+                                desc = param_info.get('description', 'No description')
+                                print(f"   • {param_name}: {desc}")
+                    break
             print()
 
             # Test 1: Load table from Google Sheets using URI-based approach
