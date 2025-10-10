@@ -7,7 +7,7 @@ from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
-# @mcp.tool
+
 async def get_table_data(
     ctx: Context,
     table_id: str,
@@ -90,7 +90,7 @@ async def get_table_data(
             "message": f"Failed to get data from table {table_id}"
         }
 
-# @mcp.tool
+
 async def filter_rows(
     ctx: Context,
     table_id: str,
@@ -190,7 +190,7 @@ async def filter_rows(
             "message": f"Failed to filter table {table_id}"
         }
 
-# @mcp.tool
+
 async def sort_table(
     ctx: Context,
     table_id: str,
@@ -284,7 +284,7 @@ async def sort_table(
             "message": f"Failed to sort table {table_id}"
         }
 
-# @mcp.tool
+
 async def filter_table(
     ctx: Context,
     table_id: str,

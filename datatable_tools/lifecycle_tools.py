@@ -32,7 +32,7 @@ class SpreadsheetResponse(TypedDict):
     error: Optional[str]
     message: str
 
-# @mcp.tool
+
 async def create_table(
     ctx: Context,
     data: Any,
@@ -212,7 +212,7 @@ async def _load_google_sheets(service, ctx: Context, source_info: dict) -> Table
     }
 
 
-# @mcp.tool
+
 async def clone_table(
     ctx: Context,
     source_table_id: str,
@@ -259,7 +259,7 @@ async def clone_table(
             "message": f"Failed to clone table {source_table_id}"
         }
 
-# @mcp.tool
+
 async def list_tables(ctx: Context) -> Dict[str, Any]:
     """
     Get inventory of all tables in the current session.

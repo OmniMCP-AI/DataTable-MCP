@@ -728,7 +728,7 @@ async def _export_data_file(processed_data: List[List[Any]], processed_headers: 
         "message": f"Exported data ({len(processed_data)} rows) to {export_type}: {file_path}"
     }
 
-# @mcp.tool
+
 async def export_table_to_range(
     ctx: Context,
     table_id: str,
