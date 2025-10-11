@@ -92,17 +92,66 @@ class GoogleSheetsService:
     @require_google_service("sheets", "sheets_write")
     async def update_range(service, ctx: Context, spreadsheet_id: str, range_notation: str, values: List[List[str]]) -> bool:
         """Update values in a specific range"""
+        from googleapiclient.errors import HttpError
+
         body = {
             'values': values
         }
-        service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=range_notation,
-            valueInputOption='RAW',
-            body=body
-        ).execute()
 
-        return True
+        try:
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_notation,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+            return True
+
+        except HttpError as e:
+            # Check if it's a 400 error related to invalid worksheet/range
+            if e.resp.status == 400 and "Unable to parse range" in str(e):
+                # Extract worksheet name from range_notation (e.g., "Sheet30!A1:E12" -> "Sheet30")
+                worksheet_name = None
+                if '!' in range_notation:
+                    worksheet_name = range_notation.split('!')[0].strip("'\"")
+
+                # Get available worksheets
+                try:
+                    spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+                    available_sheets = [sheet['properties']['title'] for sheet in spreadsheet.get('sheets', [])]
+                except HttpError as fetch_error:
+                    # If we can't fetch worksheets, keep original error with additional context
+                    if worksheet_name:
+                        raise UserError(
+                            f"{str(e)}\n\n"
+                            f"Additional context: Worksheet '{worksheet_name}' not found in spreadsheet. "
+                            f"Unable to retrieve available worksheets: {fetch_error}"
+                        ) from e
+                    else:
+                        raise UserError(f"{str(e)}") from e
+
+                # Build enhanced error message with original error + available worksheets
+                if worksheet_name and available_sheets:
+                    error_msg = (
+                        f"{str(e)}\n\n"
+                        f"Worksheet '{worksheet_name}' not found in spreadsheet. "
+                        f"Available worksheets: {', '.join(repr(s) for s in available_sheets)}. "
+                        f"Please use one of these worksheet names in your range."
+                    )
+                elif available_sheets:
+                    error_msg = (
+                        f"{str(e)}\n\n"
+                        f"Invalid range format: {range_notation}. "
+                        f"Available worksheets: {', '.join(repr(s) for s in available_sheets)}. "
+                        f"Use format: 'WorksheetName!A1:B2' or just 'A1:B2' for the first sheet."
+                    )
+                else:
+                    error_msg = f"{str(e)}\n\nThe spreadsheet has no worksheets."
+
+                raise UserError(error_msg) from e
+            else:
+                # Re-raise other HTTP errors
+                raise
 
     @staticmethod
     @require_google_service("sheets", "sheets_write")
