@@ -260,7 +260,47 @@ async def test_write_operations(url, headers):
                         print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
                 else:
                     print(f"   ❌ Single column append failed: {result_content.get('message', 'Unknown error')}")
-            
+
+            # Test 7: Test worksheet-prefixed range address (Sheet1!A1:J6 format)
+            print(f"\n📝 Test 7: Testing worksheet-prefixed range address format")
+
+            # This test verifies the robustness enhancement to handle range addresses like "Sheet1!A1:J6"
+            worksheet_prefixed_data = [
+                ["ProductID", "ProductName", "Category", "Price", "Stock"],
+                ["001", "Laptop", "Electronics", 999.99, 15],
+                ["002", "Mouse", "Electronics", 25.99, 50]
+            ]
+
+            # Use a worksheet-prefixed range address
+            worksheet_range_res = await session.call_tool("update_range", {
+                "uri": READ_WRITE_URI3,
+                "data": worksheet_prefixed_data,
+                "range_address": "Sheet3!A10:E12"  # Specify worksheet in range_address
+            })
+            print(f"✅ Worksheet-prefixed range result: {worksheet_range_res}")
+
+            # Verify the result
+            if worksheet_range_res.content and worksheet_range_res.content[0].text:
+                result_content = json.loads(worksheet_range_res.content[0].text)
+                if result_content.get('success'):
+                    worksheet_name = result_content.get('worksheet', '')
+                    range_updated = result_content.get('range', '')
+                    updated_cells = result_content.get('updated_cells', 0)
+
+                    print(f"   📊 Worksheet: {worksheet_name}")
+                    print(f"   📍 Range: {range_updated}")
+                    print(f"   📝 Updated cells: {updated_cells}")
+
+                    # Expected: 15 cells (3 rows × 5 columns), range should be A10:E12
+                    expected_cells = 3 * 5
+                    if updated_cells == expected_cells and range_updated == "A10:E12":
+                        print(f"   ✅ PASS: Worksheet-prefixed range correctly parsed and applied")
+                        print(f"   ✅ PASS: Worksheet extracted from range_address: {worksheet_name}")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells at A10:E12, got {updated_cells} at {range_updated}")
+                else:
+                    print(f"   ❌ Worksheet-prefixed range update failed: {result_content.get('message', 'Unknown error')}")
+
             print(f"\n✅ Write operations test completed!")
 
 async def test_advanced_operations(url, headers):
