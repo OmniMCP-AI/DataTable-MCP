@@ -135,11 +135,11 @@ async def append_rows(
 
     Examples:
         # Append new records to Google Sheets
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                    data=[["John", 25], ["Jane", 30]])
 
         # Append with auto-detected headers (first row = headers if long content follows)
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                    data=[["name", "description"],
                          ["Item1", "This is a long description that will trigger header detection"]])
     """
@@ -183,7 +183,7 @@ async def append_columns(
 
     Examples:
         # Append new columns to Google Sheets
-        append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+        append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                       data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
     """
     try:
@@ -207,7 +207,7 @@ async def update_range(
     ctx: Context,
     uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
     data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
-    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range will auto-expand if data exceeds it")
+    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3', with worksheet 'Sheet1!A1:J6'. Range will auto-expand if data exceeds it")
 ) -> Dict[str, Any]:
     """
     Update data in Google Sheets with precise range placement and automatic header detection.
@@ -221,6 +221,7 @@ async def update_range(
                       - Row range: "A1:E1" or "1:1"
                       - Column range: "B:B" or "B1:B10"
                       - 2D range: "A1:C3"
+                      - With worksheet: "Sheet1!A1:J6" or "MySheet!B5"
                       If the data dimensions exceed the range, the range will be automatically expanded.
 
     Header Detection:
@@ -235,25 +236,25 @@ async def update_range(
 
     Examples:
         # Update specific range in Google Sheets
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "B5")
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}", data, "B5")
 
         # Update entire sheet from A1
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", data, "A1")
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}", data, "A1")
 
         # Automatic header detection (first row = headers if pattern matches)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                     data=[["name", "description"],
                           ["Item1", "This is a long description that will trigger header detection"]],
                     range_address="A1")
 
         # Works with comparison tables (like Agent Kit vs n8n)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit",
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                     data=[["Dimension", "Agent Kit", "n8n"],
                           ["Primary Purpose", "Fast, visual agents...", "Workflow automation..."]],
                     range_address="A1")
 
         # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit", large_data, "A1:B2")
+        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}", large_data, "A1:B2")
     """
     try:
         from datatable_tools.utils import parse_google_sheets_url
@@ -459,6 +460,14 @@ async def _handle_google_sheets_update(
     if range_address:
         # Range-specific update with auto-expansion if data doesn't fit
         import re
+
+        # Parse worksheet name from range_address if present (e.g., "Sheet1!A1:J6")
+        worksheet_from_range = None
+        if '!' in range_address:
+            worksheet_from_range, range_address = range_address.split('!', 1)
+            logger.info(f"Parsed worksheet '{worksheet_from_range}' from range_address")
+            # Override the final_worksheet if specified in range_address
+            final_worksheet = worksheet_from_range
 
         # Parse the range to understand its dimensions
         def parse_range(range_str):
@@ -728,7 +737,7 @@ async def export_table_to_range(
     Args:
         table_id: DataTable ID to export
         uri: URI for the export destination. Supports:
-             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit or spreadsheet ID
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid} or spreadsheet ID
              - CSV files: /path/to/file.csv
              - Excel files: /path/to/file.xlsx
              - JSON files: /path/to/file.json
