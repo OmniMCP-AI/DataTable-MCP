@@ -302,50 +302,137 @@ async def test_write_operations(url, headers):
                 else:
                     print(f"   ❌ Worksheet-prefixed range update failed: {result_content.get('message', 'Unknown error')}")
 
-            # Test 8: Test error handling for non-existent worksheet
-            print(f"\n📝 Test 8: Testing error handling for non-existent worksheet")
+            # Test 8: Test worksheet validation with fallback behavior
+            print(f"\n📝 Test 8: Testing worksheet validation with fallback to URI worksheet")
 
-            # This test verifies the enhanced error handling that lists available worksheets
-            worksheet_error_test_data = [
-                ["Test", "Data", "For", "Error", "Case"],
-                ["Row1", "Col1", "Col2", "Col3", "Col4"],
+            # This test verifies that when range_address contains a non-existent worksheet,
+            # the system falls back to using the worksheet from the URI
+            fallback_test_data = [
+                ["Fallback", "Test", "Data", "Sheet30", "Case"],
+                ["This", "Should", "Work", "Using", "Sheet3"],
+                ["From", "URI", "Instead", "Of", "Sheet30"]
             ]
 
-            # Try to use a non-existent worksheet name
-            error_test_res = await session.call_tool("update_range", {
-                "uri": READ_WRITE_URI3,
-                "data": worksheet_error_test_data,
-                "range_address": "Sheet30!A1:E2"  # Sheet30 doesn't exist
+            # READ_WRITE_URI3 points to a specific worksheet via gid parameter
+            # We'll try to use "Sheet30!A1:E3" in range_address (Sheet30 doesn't exist)
+            # Expected: System should fall back to the worksheet from URI (determined by gid)
+            fallback_test_res = await session.call_tool("update_range", {
+                "uri": READ_WRITE_URI3,  # Points to a specific worksheet via gid
+                "data": fallback_test_data,
+                "range_address": "Sheet30!A1:E3"  # Sheet30 doesn't exist - should fallback
             })
-            print(f"Result: {error_test_res}")
+            print(f"Fallback test result: {fallback_test_res}")
 
-            # Verify we got an error with helpful information
-            if error_test_res.isError:
-                print(f"   ✅ PASS: Error correctly returned (isError=True)")
+            # Verify the result
+            if fallback_test_res.content and fallback_test_res.content[0].text:
+                result_content = json.loads(fallback_test_res.content[0].text)
+                if result_content.get('success'):
+                    worksheet_name = result_content.get('worksheet', '')
+                    range_updated = result_content.get('range', '')
+                    updated_cells = result_content.get('updated_cells', 0)
 
-                if error_test_res.content and error_test_res.content[0].text:
-                    error_text = error_test_res.content[0].text
+                    print(f"   📊 Worksheet used: {worksheet_name}")
+                    print(f"   📍 Range: {range_updated}")
+                    print(f"   📝 Updated cells: {updated_cells}")
 
-                    # Check if error contains the key information
-                    has_http_error = "HttpError 400" in error_text
-                    has_sheet_name = "Sheet30" in error_text
-                    has_available_worksheets = "Available worksheets:" in error_text
-
-                    print(f"   Error message analysis:")
-                    print(f"      - Contains HttpError 400: {has_http_error} {'✅' if has_http_error else '❌'}")
-                    print(f"      - Mentions worksheet 'Sheet30': {has_sheet_name} {'✅' if has_sheet_name else '❌'}")
-                    print(f"      - Lists available worksheets: {has_available_worksheets} {'✅' if has_available_worksheets else '❌'}")
-
-                    if has_http_error and has_sheet_name and has_available_worksheets:
-                        print(f"   ✅ PASS: Error message contains all expected information")
-                        print(f"\n   📋 Full error message:")
-                        print(f"   {error_text}")
+                    # Expected: Should use the worksheet from URI, not Sheet30 from range_address
+                    expected_cells = 3 * 5  # 15 cells
+                    if updated_cells == expected_cells and range_updated == "A1:E3":
+                        print(f"   ✅ PASS: System correctly fell back to URI worksheet ({worksheet_name})")
+                        print(f"   ✅ PASS: Ignored non-existent worksheet 'Sheet30' from range_address")
+                        print(f"   ✅ PASS: Applied range A1:E3 to the correct worksheet")
                     else:
-                        print(f"   ❌ FAIL: Error message missing some expected information")
-                        print(f"   📋 Actual error: {error_text}")
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells at A1:E3")
+                        print(f"   ❌ FAIL: Got {updated_cells} cells at {range_updated}")
+                else:
+                    print(f"   ❌ FAIL: Operation failed: {result_content.get('message', 'Unknown error')}")
+                    print(f"   Note: With fallback logic, this should succeed")
             else:
-                print(f"   ❌ FAIL: Expected isError=True, but got isError=False")
-                print(f"   Result: {error_test_res}")
+                print(f"   ❌ FAIL: No response content received")
+
+            # Test 9: Test worksheet validation with another non-existent worksheet
+            print(f"\n📝 Test 9: Testing worksheet validation with different non-existent worksheet")
+
+            # Similar test but with a different non-existent worksheet name
+            fallback_test_data2 = [
+                ["NonExistent", "Test", "Data"],
+                ["Should", "Use", "Sheet3"],
+                ["Not", "NonExistentSheet", "!!!"]
+            ]
+
+            # READ_WRITE_URI3 points to a specific worksheet via gid parameter
+            # We'll try to use "NonExistentSheet!A5:C7" in range_address
+            # Expected: System should fall back to the worksheet from URI (determined by gid)
+            fallback_test_res2 = await session.call_tool("update_range", {
+                "uri": READ_WRITE_URI3,  # Points to a specific worksheet via gid
+                "data": fallback_test_data2,
+                "range_address": "NonExistentSheet!A5:C7"  # Invalid worksheet
+            })
+            print(f"Fallback test 2 result: {fallback_test_res2}")
+
+            # Verify the result
+            if fallback_test_res2.content and fallback_test_res2.content[0].text:
+                result_content = json.loads(fallback_test_res2.content[0].text)
+                if result_content.get('success'):
+                    worksheet_name = result_content.get('worksheet', '')
+                    range_updated = result_content.get('range', '')
+                    updated_cells = result_content.get('updated_cells', 0)
+
+                    print(f"   📊 Worksheet used: {worksheet_name}")
+                    print(f"   📍 Range: {range_updated}")
+                    print(f"   📝 Updated cells: {updated_cells}")
+
+                    # Expected: Should use the worksheet from URI (any valid worksheet)
+                    expected_cells = 3 * 3  # 9 cells
+                    if updated_cells == expected_cells:
+                        print(f"   ✅ PASS: System correctly fell back to URI worksheet ({worksheet_name})")
+                        print(f"   ✅ PASS: Ignored non-existent worksheet 'NonExistentSheet' from range_address")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells} cells")
+                else:
+                    print(f"   ⚠️  Operation failed: {result_content.get('message', 'Unknown error')}")
+
+            # Test 10: Test worksheet validation with valid worksheet in range_address
+            print(f"\n📝 Test 10: Testing worksheet validation with valid worksheet in range_address")
+
+            # This test verifies that when range_address contains a valid worksheet,
+            # the system uses it even if URI points to a different worksheet
+            valid_worksheet_data = [
+                ["Valid", "Worksheet", "Test"],
+                ["test-write", "Explicitly", "Specified"]
+            ]
+
+            # Use READ_WRITE_URI (points to test-write sheet via gid)
+            # Specify "test-write" explicitly in range_address to verify it validates and uses it
+            # Expected: System should validate and use test-write from range_address
+            valid_worksheet_res = await session.call_tool("update_range", {
+                "uri": READ_WRITE_URI,  # Points to test-write sheet via gid
+                "data": valid_worksheet_data,
+                "range_address": "test-write!A15:C16"  # Valid worksheet in range_address
+            })
+            print(f"Valid worksheet test result: {valid_worksheet_res}")
+
+            # Verify the result
+            if valid_worksheet_res.content and valid_worksheet_res.content[0].text:
+                result_content = json.loads(valid_worksheet_res.content[0].text)
+                if result_content.get('success'):
+                    worksheet_name = result_content.get('worksheet', '')
+                    range_updated = result_content.get('range', '')
+                    updated_cells = result_content.get('updated_cells', 0)
+
+                    print(f"   📊 Worksheet used: {worksheet_name}")
+                    print(f"   📍 Range: {range_updated}")
+                    print(f"   📝 Updated cells: {updated_cells}")
+
+                    # Expected: Should use test-write from range_address
+                    expected_cells = 2 * 3  # 6 cells
+                    if worksheet_name == "test-write" and updated_cells == expected_cells:
+                        print(f"   ✅ PASS: System correctly validated and used worksheet from range_address (test-write)")
+                        print(f"   ✅ PASS: Worksheet name matches both URI and range_address")
+                    else:
+                        print(f"   ❌ FAIL: Expected test-write with {expected_cells} cells, got {worksheet_name} with {updated_cells} cells")
+                else:
+                    print(f"   ❌ FAIL: Operation failed: {result_content.get('message', 'Unknown error')}")
 
             print(f"\n✅ Write operations test completed!")
 

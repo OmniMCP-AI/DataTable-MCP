@@ -461,11 +461,28 @@ async def _handle_google_sheets_update(
         import re
 
         # Parse worksheet name from range_address if present (e.g., "Sheet1!A1:J6")
+        worksheet_from_range = None
         if '!' in range_address:
             worksheet_from_range, range_address = range_address.split('!', 1)
             logger.info(f"Parsed worksheet '{worksheet_from_range}' from range_address")
-            # Override the final_worksheet if specified in range_address
-            final_worksheet = worksheet_from_range
+
+            # Validate if worksheet_from_range exists in the spreadsheet
+            try:
+                service_result = await GoogleSheetsService.get_worksheet_info(
+                    ctx=ctx,
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_name=worksheet_from_range
+                )
+                # Worksheet exists, use it
+                final_worksheet = service_result["title"]
+                logger.info(f"Validated worksheet '{worksheet_from_range}' exists in spreadsheet")
+            except Exception as e:
+                # Worksheet doesn't exist, fall back to URI worksheet
+                logger.warning(
+                    f"Worksheet '{worksheet_from_range}' from range_address not found. "
+                    f"Falling back to worksheet from URI: '{final_worksheet}'. Error: {e}"
+                )
+                # Keep final_worksheet as is (from URI)
 
         # Parse the range to understand its dimensions
         def parse_range(range_str):
