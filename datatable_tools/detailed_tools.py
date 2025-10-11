@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 @mcp.tool
 async def write_new_sheet(
     ctx: Context,
-    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
+    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"),
     headers: Optional[List[str]] = Field(default=None, description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"),
     sheet_name: Optional[str] = Field(default=None, description="Optional name for the new spreadsheet (default: 'New DataTable')")
 ) -> SpreadsheetResponse:
@@ -21,7 +21,7 @@ async def write_new_sheet(
 
     Args:
         data: Data in pandas-like formats. Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
+              - List[List[int| str |float| bool | None]]: 2D array of table data (rows x columns)
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
                 extracted from the first row.
@@ -119,7 +119,7 @@ async def write_new_sheet(
 async def append_rows(
     ctx: Context,
     uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)")
+    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)")
 ) -> Dict[str, Any]:
     """
     Append data as new rows below existing data in Google Sheets.
@@ -128,7 +128,7 @@ async def append_rows(
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
         data: Data Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
+              - List[List[int| str |float| bool | None]]: 2D array of table data (rows x columns)
 
     Returns:
         Dict containing update results and file/spreadsheet information
@@ -163,7 +163,7 @@ async def append_rows(
 async def append_columns(
     ctx: Context,
     uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
+    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"),
     headers: Optional[List[str]] = Field(default=None, description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content")
 ) -> Dict[str, Any]:
     """
@@ -173,7 +173,7 @@ async def append_columns(
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
         data: Data Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
+              - List[List[int| str |float| bool | None]]: 2D array of table data (rows x columns)
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
                 extracted from the first row.
@@ -206,8 +206,8 @@ async def append_columns(
 async def update_range(
     ctx: Context,
     uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[Any] = Field(description="Data Accepts: List[List[Any]] (2D array)"),
-    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3', with worksheet 'Sheet1!A1:J6'. Range will auto-expand if data exceeds it")
+    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"),
+    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3' ")
 ) -> Dict[str, Any]:
     """
     Update data in Google Sheets with precise range placement and automatic header detection.
@@ -215,13 +215,12 @@ async def update_range(
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
         data: Data Accepts:
-              - List[List[Any]]: 2D array of table data (rows x columns)
+              - List[List[int| str |float| None]]: 2D array of table data (rows x columns)
         range_address: Range in A1 notation (required):
                       - Single cell: "B5"
                       - Row range: "A1:E1" or "1:1"
                       - Column range: "B:B" or "B1:B10"
                       - 2D range: "A1:C3"
-                      - With worksheet: "Sheet1!A1:J6" or "MySheet!B5"
                       If the data dimensions exceed the range, the range will be automatically expanded.
 
     Header Detection:
@@ -462,7 +461,6 @@ async def _handle_google_sheets_update(
         import re
 
         # Parse worksheet name from range_address if present (e.g., "Sheet1!A1:J6")
-        worksheet_from_range = None
         if '!' in range_address:
             worksheet_from_range, range_address = range_address.split('!', 1)
             logger.info(f"Parsed worksheet '{worksheet_from_range}' from range_address")

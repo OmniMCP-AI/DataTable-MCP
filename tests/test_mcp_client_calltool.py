@@ -209,14 +209,15 @@ async def test_write_operations(url, headers):
             
             # Test 6: Test append_columns with single column and verify header placement
             print(f"\n📝 Test 6: Testing single column append with header verification")
-            
+
             # Create test data similar to the user's "Make.com" case
+            # Note: Each row must be a list, even for single column data
             make_column_data = [
-                "Visual workflow automation with drag-drop interface; enterprise-focused with advanced routing.",
-                "Moderate learning curve: visual builder but requires understanding of modules, filters, and data mapping.",
-                "1000+ app integrations with webhooks, scheduled scenarios, email triggers, API polling, etc.",
-                "1000+ pre-built modules + HTTP/API requests + custom functions; visual data mapping between apps.",
-                "Primarily OpenAI integration; limited native LLM support but can connect via HTTP modules."
+                ["Visual workflow automation with drag-drop interface; enterprise-focused with advanced routing."],
+                ["Moderate learning curve: visual builder but requires understanding of modules, filters, and data mapping."],
+                ["1000+ app integrations with webhooks, scheduled scenarios, email triggers, API polling, etc."],
+                ["1000+ pre-built modules + HTTP/API requests + custom functions; visual data mapping between apps."],
+                ["Primarily OpenAI integration; limited native LLM support but can connect via HTTP modules."]
             ]
             
             single_column_res = await session.call_tool("append_columns", {
