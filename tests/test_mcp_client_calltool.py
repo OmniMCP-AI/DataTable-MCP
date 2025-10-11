@@ -302,6 +302,51 @@ async def test_write_operations(url, headers):
                 else:
                     print(f"   ❌ Worksheet-prefixed range update failed: {result_content.get('message', 'Unknown error')}")
 
+            # Test 8: Test error handling for non-existent worksheet
+            print(f"\n📝 Test 8: Testing error handling for non-existent worksheet")
+
+            # This test verifies the enhanced error handling that lists available worksheets
+            worksheet_error_test_data = [
+                ["Test", "Data", "For", "Error", "Case"],
+                ["Row1", "Col1", "Col2", "Col3", "Col4"],
+            ]
+
+            # Try to use a non-existent worksheet name
+            error_test_res = await session.call_tool("update_range", {
+                "uri": READ_WRITE_URI3,
+                "data": worksheet_error_test_data,
+                "range_address": "Sheet30!A1:E2"  # Sheet30 doesn't exist
+            })
+            print(f"Result: {error_test_res}")
+
+            # Verify we got an error with helpful information
+            if error_test_res.isError:
+                print(f"   ✅ PASS: Error correctly returned (isError=True)")
+
+                if error_test_res.content and error_test_res.content[0].text:
+                    error_text = error_test_res.content[0].text
+
+                    # Check if error contains the key information
+                    has_http_error = "HttpError 400" in error_text
+                    has_sheet_name = "Sheet30" in error_text
+                    has_available_worksheets = "Available worksheets:" in error_text
+
+                    print(f"   Error message analysis:")
+                    print(f"      - Contains HttpError 400: {has_http_error} {'✅' if has_http_error else '❌'}")
+                    print(f"      - Mentions worksheet 'Sheet30': {has_sheet_name} {'✅' if has_sheet_name else '❌'}")
+                    print(f"      - Lists available worksheets: {has_available_worksheets} {'✅' if has_available_worksheets else '❌'}")
+
+                    if has_http_error and has_sheet_name and has_available_worksheets:
+                        print(f"   ✅ PASS: Error message contains all expected information")
+                        print(f"\n   📋 Full error message:")
+                        print(f"   {error_text}")
+                    else:
+                        print(f"   ❌ FAIL: Error message missing some expected information")
+                        print(f"   📋 Actual error: {error_text}")
+            else:
+                print(f"   ❌ FAIL: Expected isError=True, but got isError=False")
+                print(f"   Result: {error_test_res}")
+
             print(f"\n✅ Write operations test completed!")
 
 async def test_advanced_operations(url, headers):
