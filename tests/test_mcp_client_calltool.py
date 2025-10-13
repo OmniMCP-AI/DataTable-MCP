@@ -506,7 +506,7 @@ async def test_advanced_operations(url, headers):
 
             # Test 3: Automatic header detection with embedded headers (like comparison tables)
             print(f"\n📝 Test 3: Automatic header detection with embedded headers")
-            
+
             # This simulates the exact scenario from your log where headers are in the data
             # and the LLM doesn't pass a separate headers parameter
             comparison_table_data = [
@@ -523,7 +523,7 @@ async def test_advanced_operations(url, headers):
                 "range_address": "A1:D3"  # Place it below existing data
             })
             print(f"✅ Automatic header detection result: {header_detection_res}")
-            
+
             # Verify the result
             if header_detection_res.content and header_detection_res.content[0].text:
                 result_content = json.loads(header_detection_res.content[0].text)
@@ -533,8 +533,44 @@ async def test_advanced_operations(url, headers):
                     print(f"      Data shape: {result_content.get('data_shape')}")
                     print(f"      Updated cells: {result_content.get('updated_cells')}")
 
+            # Test 4: Test update_range with dict cells (comment data structure)
+            print(f"\n📝 Test 4: Testing update_range with dict[str, Any] cells")
+
+           
+            comment_data = [
+                [{"comment_content": "Great product!", "is_op_comment": "true"}],
+                [{"comment_content": "Thanks for sharing.", "is_op_comment": "true"}],
+                [{"comment_content": "I think this is helpful.", "is_op_comment": "true"}],
+                [{"comment_content": "Thanks for the info.", "is_op_comment": "true"}],
+                [{"comment_content": "Sir, great work!", "is_op_comment": None}]
+            ]
+
+            dict_cells_res = await session.call_tool("update_range", {
+                "uri": READ_WRITE_URI2,
+                "data": comment_data,
+                "range_address": "A5:B9"
+            })
+            print(f"✅ Dict cells update result: {dict_cells_res}")
+
+            # Verify the result
+            if dict_cells_res.content and dict_cells_res.content[0].text:
+                result_content = json.loads(dict_cells_res.content[0].text)
+                if result_content.get('success'):
+                    print(f"   ✅ Dict cells successfully written!")
+                    print(f"      Range updated: {result_content.get('range')}")
+                    print(f"      Data shape: {result_content.get('data_shape')}")
+                    print(f"      Updated cells: {result_content.get('updated_cells')}")
+
+                    # Expected: 5 cells with dict values converted to strings
+                    expected_cells = 5
+                    if result_content.get('updated_cells') == expected_cells:
+                        print(f"   ✅ PASS: Correct number of cells updated ({expected_cells})")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {result_content.get('updated_cells')}")
+                else:
+                    print(f"   ❌ FAIL: Dict cells update failed: {result_content.get('message', 'Unknown error')}")
+
             print(f"\n✅ Advanced operations test completed!")
-            return new_spreadsheet_url
 
 async def run_all_tests(url, headers):
     """Run all test suites in sequence"""
