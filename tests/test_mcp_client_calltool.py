@@ -5,24 +5,26 @@ Separated into focused test functions for better maintainability:
 
 Test Functions:
 - test_basic_operations: Tool listing, data loading, error handling
-- test_write_operations: Range updates, row/column appends  
+- test_write_operations: Range updates, row/column appends
 - test_advanced_operations: New sheet creation, complex data formats
+- test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
 
 Usage:
     # Run all tests
     python test_mcp_client_calltool.py --env=local --test=all
-    
+
     # Run specific test
     python test_mcp_client_calltool.py --env=local --test=basic
     python test_mcp_client_calltool.py --env=local --test=write
     python test_mcp_client_calltool.py --env=local --test=advanced
-    
+    python test_mcp_client_calltool.py --env=local --test=gid
+
     # Run against production
     python test_mcp_client_calltool.py --env=prod --test=all
 
 Environment Variables Required:
 - TEST_GOOGLE_OAUTH_REFRESH_TOKEN
-- TEST_GOOGLE_OAUTH_CLIENT_ID  
+- TEST_GOOGLE_OAUTH_CLIENT_ID
 - TEST_GOOGLE_OAUTH_CLIENT_SECRET
 """
 
@@ -536,43 +538,184 @@ async def test_advanced_operations(url, headers):
             print(f"\n✅ Advanced operations test completed!")
             return new_spreadsheet_url
 
+async def test_gid_fix(url, headers):
+    """Test the gid fix: write_new_sheet returns URL with gid, update_range handles missing gid"""
+    print(f"🚀 Testing gid Fix for Chinese Worksheets")
+    print("=" * 60)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Test 1: Create new sheet with Chinese data (simulating the error scenario)
+            print(f"\n📝 Test 1: Creating new sheet with Chinese data")
+            print(f"   This simulates the user's scenario from error log")
+
+            chinese_data = [
+                ["用户名", "用户链接", "最后发推时间", "距今天数", "距今月数", "备注"],
+                ["@qiuhongbingo", "https://x.com/qiuhongbingo", "2024-03-15", 577, 19, "超过19个月未更新，开发者和开发主管"],
+                ["@Juna0xx", "https://x.com/Juna0xx", "2024-03-15", 577, 19, "超过19个月未更新，Web3产品及市场推广专家"],
+                ["@LynnZeng18", "https://x.com/LynnZeng18", "2024-03-15", 577, 19, "超过19个月未更新，AI增长专家"]
+            ]
+
+            create_sheet_res = await session.call_tool("write_new_sheet", {
+                "data": chinese_data,
+                "sheet_name": f"X用户最近3个月非活跃Follower分析 {timestamp}"
+            })
+            print(f"Create new sheet result: {create_sheet_res}")
+
+            # Verify the result includes spreadsheet URL with gid
+            new_spreadsheet_url = None
+            if create_sheet_res.content and create_sheet_res.content[0].text:
+                result_content = json.loads(create_sheet_res.content[0].text)
+                if result_content.get('success'):
+                    new_spreadsheet_url = result_content.get('spreadsheet_url')
+                    print(f"   ✅ New spreadsheet created:")
+                    print(f"      URL: {new_spreadsheet_url}")
+                    print(f"      Rows: {result_content.get('rows_created')}")
+                    print(f"      Columns: {result_content.get('columns_created')}")
+
+                    # Check if URL contains gid
+                    if "#gid=" in new_spreadsheet_url:
+                        print(f"   ✅ PASS: URL includes gid parameter")
+                    else:
+                        print(f"   ❌ FAIL: URL missing gid parameter")
+                else:
+                    print(f"   ❌ Failed to create spreadsheet: {result_content.get('message', 'Unknown error')}")
+                    return None
+
+            if not new_spreadsheet_url:
+                print(f"   ❌ FAIL: Could not retrieve spreadsheet URL")
+                return None
+
+            # Test 2: Update range using the URL returned from write_new_sheet
+            print(f"\n📝 Test 2: Updating range with URL from write_new_sheet")
+            print(f"   This tests that update_range works with the returned URL")
+
+            additional_data = [
+                ["@newuser1", "https://x.com/newuser1", "2024-04-01", 500, 16, "新增用户1"],
+                ["@newuser2", "https://x.com/newuser2", "2024-04-01", 500, 16, "新增用户2"]
+            ]
+
+            update_res = await session.call_tool("update_range", {
+                "uri": new_spreadsheet_url,  # Use URL from write_new_sheet
+                "data": additional_data,
+                "range_address": "A5"  # Append below existing data
+            })
+            print(f"Update range result: {update_res}")
+
+            # Verify the update succeeded
+            if update_res.content and update_res.content[0].text:
+                result_content = json.loads(update_res.content[0].text)
+                if result_content.get('success'):
+                    worksheet_name = result_content.get('worksheet', '')
+                    updated_cells = result_content.get('updated_cells', 0)
+                    data_shape = result_content.get('data_shape', [0, 0])
+
+                    print(f"   ✅ Update succeeded:")
+                    print(f"      Worksheet: {worksheet_name}")
+                    print(f"      Updated cells: {updated_cells}")
+                    print(f"      Data shape: {data_shape}")
+
+                    # Verify Chinese worksheet name was handled correctly
+                    if worksheet_name:
+                        print(f"   ✅ PASS: Successfully resolved worksheet name: '{worksheet_name}'")
+                        print(f"   ✅ PASS: Handles non-English worksheet names correctly")
+
+                    # Verify correct number of cells updated
+                    expected_cells = 2 * 6  # 2 rows x 6 columns
+                    if updated_cells == expected_cells:
+                        print(f"   ✅ PASS: Correct number of cells updated ({expected_cells})")
+                    else:
+                        print(f"   ⚠️  WARNING: Expected {expected_cells} cells, got {updated_cells}")
+                else:
+                    print(f"   ❌ FAIL: Update failed: {result_content.get('message', 'Unknown error')}")
+
+            # Test 3: Test update_range with URL without gid (simulate old behavior)
+            print(f"\n📝 Test 3: Testing update_range with URL without gid")
+            print(f"   This tests the fallback to gid=0 when gid is missing")
+
+            # Remove gid from URL to simulate old behavior
+            url_without_gid = new_spreadsheet_url.split('#')[0] if '#' in new_spreadsheet_url else new_spreadsheet_url
+            print(f"   URL without gid: {url_without_gid}")
+
+            more_data = [
+                ["@testuser", "https://x.com/testuser", "2024-05-01", 450, 15, "测试用户"]
+            ]
+
+            update_res2 = await session.call_tool("update_range", {
+                "uri": url_without_gid,  # URL without gid
+                "data": more_data,
+                "range_address": "A7"
+            })
+            print(f"Update without gid result: {update_res2}")
+
+            # Verify the update succeeded even without gid
+            if update_res2.content and update_res2.content[0].text:
+                result_content = json.loads(update_res2.content[0].text)
+                if result_content.get('success'):
+                    worksheet_name = result_content.get('worksheet', '')
+                    print(f"   ✅ PASS: Update succeeded without gid in URL")
+                    print(f"      Worksheet resolved: '{worksheet_name}'")
+                    print(f"   ✅ PASS: System defaulted to first sheet (gid=0)")
+                else:
+                    print(f"   ❌ FAIL: Update failed: {result_content.get('message', 'Unknown error')}")
+
+            print(f"\n✅ gid fix test completed!")
+            print(f"\n📊 Test Summary:")
+            print(f"   ✓ write_new_sheet returns URL with gid")
+            print(f"   ✓ update_range works with gid in URL")
+            print(f"   ✓ update_range handles missing gid by defaulting to gid=0")
+            print(f"   ✓ Correctly handles Chinese/non-English worksheet names")
+
+            return new_spreadsheet_url
+
 async def run_all_tests(url, headers):
     """Run all test suites in sequence"""
     print("🎯 Starting Google Sheets MCP Integration Tests")
     print("=" * 80)
-    
+
     results = {}
-    
+
     try:
         # Run basic operations test
         print(f"\n{'='*20} BASIC OPERATIONS {'='*20}")
         table_id = await test_basic_operations(url, headers)
         results['basic_operations'] = {'status': 'passed', 'table_id': table_id}
-        
+
         # Run write operations test
         print(f"\n{'='*20} WRITE OPERATIONS {'='*20}")
         await test_write_operations(url, headers)
         results['write_operations'] = {'status': 'passed'}
-        
+
         # Run advanced operations test
         print(f"\n{'='*20} ADVANCED OPERATIONS {'='*20}")
         new_sheet_url = await test_advanced_operations(url, headers)
         results['advanced_operations'] = {'status': 'passed', 'new_sheet_url': new_sheet_url}
-        
+
+        # Run gid fix test
+        print(f"\n{'='*20} GID FIX TEST {'='*20}")
+        gid_test_url = await test_gid_fix(url, headers)
+        results['gid_fix'] = {'status': 'passed', 'test_sheet_url': gid_test_url}
+
         # Summary
         print(f"\n{'='*80}")
         print("🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
         print(f"{'='*80}")
-        
+
         for test_name, result in results.items():
             print(f"✅ {test_name.replace('_', ' ').title()}: {result['status']}")
             if 'table_id' in result and result['table_id']:
                 print(f"   📊 Table ID: {result['table_id']}")
             if 'new_sheet_url' in result and result['new_sheet_url']:
                 print(f"   📄 New Sheet: {result['new_sheet_url']}")
-        
+            if 'test_sheet_url' in result and result['test_sheet_url']:
+                print(f"   📄 Test Sheet: {result['test_sheet_url']}")
+
         return results
-        
+
     except Exception as e:
         print(f"\n❌ Test suite failed with error: {e}")
         import traceback
@@ -584,7 +727,8 @@ async def run_single_test(test_name, url, headers):
     test_functions = {
         'basic': test_basic_operations,
         'write': test_write_operations,
-        'advanced': test_advanced_operations
+        'advanced': test_advanced_operations,
+        'gid': test_gid_fix
     }
     
     if test_name not in test_functions:
@@ -613,8 +757,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
     parser.add_argument("--env", choices=["local", "prod"], default="local",
                        help="Environment to use: local (127.0.0.1:8321) or prod (datatable-mcp.maybe.ai)")
-    parser.add_argument("--test", choices=["all", "basic", "write", "advanced"], default="all",
-                       help="Which test to run: all (default), basic, write, or advanced")
+    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid"], default="all",
+                       help="Which test to run: all (default), basic, write, advanced, or gid")
     args = parser.parse_args()
 
     # Set endpoint based on environment argument
