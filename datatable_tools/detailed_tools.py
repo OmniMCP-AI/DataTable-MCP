@@ -79,7 +79,9 @@ async def write_new_sheet(
 
         if result.get('success'):
             spreadsheet_id = result.get('spreadsheet_id', '')
-            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+            sheet_id = result.get('sheet_id', 0)
+            # Include gid in URL so subsequent update_range calls can identify the worksheet
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
 
             return SpreadsheetResponse(
                 success=True,
@@ -453,8 +455,21 @@ async def _handle_google_sheets_update(
                 "error": str(e),
                 "message": f"Failed to resolve sheet identifier: {sheet_name}"
             }
+    elif not sheet_name:
+        # No sheet specified, default to first sheet (gid=0) to handle different locales
+        try:
+            worksheet_info = await GoogleSheetsService.get_worksheet_info(
+                ctx=ctx,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name="gid:0"
+            )
+            final_worksheet = worksheet_info["title"]
+            logger.info(f"No sheet specified, using first sheet: '{final_worksheet}'")
+        except Exception as e:
+            logger.warning(f"Failed to get first sheet info, falling back to 'Sheet1': {e}")
+            final_worksheet = "Sheet1"
     else:
-        final_worksheet = sheet_name or "Sheet1"
+        final_worksheet = sheet_name
 
     if range_address:
         # Range-specific update with auto-expansion if data doesn't fit
