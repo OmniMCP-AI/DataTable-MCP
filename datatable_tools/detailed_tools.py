@@ -63,7 +63,7 @@ async def write_new_sheet(
             # Convert all values to strings for Google Sheets API
             values = [[str(cell) for cell in row] for row in processed_data]
 
-        # Convert headers to strings
+        # Convert headers to strings (empty list if no headers)
         headers_strings = [str(header) for header in processed_headers] if processed_headers else []
 
         # Use default sheet name if not provided
