@@ -1,19 +1,77 @@
 """
-MCP Tools - Detailed Operations
+MCP Tools - All Core Operations
 
 Thin wrapper layer that delegates to GoogleSheetDataTable implementation.
 These @mcp.tool functions serve as the API entry points for MCP clients.
+
+Contains all 5 core MCP tools:
+- load_data_table: Load data from Google Sheets
+- write_new_sheet: Create new Google Sheets spreadsheet
+- append_rows: Append rows to existing sheet
+- append_columns: Append columns to existing sheet
+- update_range: Update specific cell range
 """
 
 from typing import Dict, List, Optional, Any
+from typing_extensions import TypedDict
 import logging
 from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
-from datatable_tools.lifecycle_tools import SpreadsheetResponse
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 
 logger = logging.getLogger(__name__)
+
+
+# Response type definitions
+class TableResponse(TypedDict):
+    """Response type for Google Sheets table operations"""
+    success: bool
+    table_id: Optional[str]
+    name: Optional[str]
+    shape: Optional[tuple[int, int]]
+    headers: Optional[List[str]]
+    data: Optional[List[List[Any]]]
+    source_info: Optional[Dict[str, Any]]
+    error: Optional[str]
+    message: str
+
+
+class SpreadsheetResponse(TypedDict):
+    """Response type for creating new Google Sheets spreadsheet"""
+    success: bool
+    spreadsheet_url: str
+    rows_created: int
+    columns_created: int
+    data_shape: tuple[int, int]
+    error: Optional[str]
+    message: str
+
+
+# MCP Tools
+@mcp.tool
+async def load_data_table(
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    )
+) -> TableResponse:
+    """
+    Load a table from Google Sheets using URI-based auto-detection
+
+    Args:
+        uri: Google Sheets URI. Supports:
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
+
+    Returns:
+        Dict containing table_id and loaded Google Sheets table information
+
+    Examples:
+        # Google Sheets URL
+        uri = "https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0#gid=0"
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.load_data_table(ctx, uri)
 
 
 @mcp.tool
