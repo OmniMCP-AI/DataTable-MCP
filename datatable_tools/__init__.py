@@ -1,9 +1,13 @@
 # DataTable MCP Server
+# Stage 1 Refactoring: Import only essential tool modules
 
-# Import all tool modules to register them
-from . import lifecycle_tools
-from . import manipulation_tools
-from . import query_tools
-from . import export_tools
-from . import advanced_tools
-from . import session_tools
+# These modules contain the 5 core MCP tools
+from . import lifecycle_tools   # load_data_table
+from . import detailed_tools    # write_new_sheet, append_rows, append_columns, update_range
+
+# Old tool modules moved to temp/old_code/:
+# - manipulation_tools
+# - query_tools
+# - export_tools
+# - advanced_tools
+# - session_tools
