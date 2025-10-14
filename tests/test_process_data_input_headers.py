@@ -21,7 +21,7 @@ from pathlib import Path
 # Add parent directory to path to import the module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from datatable_tools.lifecycle_tools import _process_data_input
+from datatable_tools.utils import _process_data_input
 
 
 # Test case definition structure
