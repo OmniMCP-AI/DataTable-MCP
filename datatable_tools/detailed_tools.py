@@ -208,54 +208,38 @@ async def append_columns(
 async def update_range(
     ctx: Context,
     uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"),
-    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3' ")
+    data: list[list[int| str |float| bool | None]] = Field(
+        description="2D array of cell values (rows × columns). CRITICAL: Must be a nested list/array structure [[row1_col1, row1_col2], [row2_col1, row2_col2]], NOT a string. Each inner list represents one row. Accepts int, str, float, bool, or None values."
+    ),
+    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range.")
 ) -> Dict[str, Any]:
     """
-    Update data in Google Sheets with precise range placement and automatic header detection.
+    Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
+
+    <description>Overwrites cell values in a specified range with provided 2D array data. Replaces existing content completely - does not merge or append. Auto-expands range when data dimensions exceed specified range.</description>
+
+    <use_case>Use for bulk data updates, replacing table contents, writing processed results, or updating structured data blocks with precise placement control.</use_case>
+
+    <limitation>Cannot update non-contiguous ranges. Overwrites existing formulas and cell formatting.</limitation>
+
+    <failure_cases>Fails if range_address is invalid A1 notation, expanded range exceeds sheet bounds, or data parameter is not a proper 2D array structure (common error: passing string instead of nested lists). Data truncation on cells >50,000 characters.</failure_cases>
 
     Args:
-        uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
-        data: Data Accepts:
-              - List[List[int| str |float| None]]: 2D array of table data (rows x columns)
-        range_address: Range in A1 notation (required):
-                      - Single cell: "B5"
-                      - Row range: "A1:E1" or "1:1"
-                      - Column range: "B:B" or "B1:B10"
-                      - 2D range: "A1:C3"
-                      If the data dimensions exceed the range, the range will be automatically expanded.
-
-    Header Detection:
-        Headers are automatically detected when the first row contains short strings (typically
-        column names) followed by rows with longer content. The system uses multiple heuristics:
-        - Length analysis: First row shorter than subsequent rows
-        - Content patterns: Headers typically have few words, no sentence endings
-        - Statistical comparison: Significant length differences between rows
+        uri: Google Sheets URI (supports full URL pattern)
+        data: 2D array [[row1_col1, row1_col2], [row2_col1, row2_col2]]. 
+              CRITICAL: Must be nested list structure, NOT a string.
+              Values: int, str, float, bool, or None.
+        range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
 
     Returns:
         Dict containing update results and spreadsheet information
 
     Examples:
-        # Update specific range in Google Sheets
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}", data, "B5")
+        # Update at specific position
+        update_range(ctx, uri, data=[["Value1", "Value2"]], range_address="B5")
 
-        # Update entire sheet from A1
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}", data, "A1")
-
-        # Automatic header detection (first row = headers if pattern matches)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
-                    data=[["name", "description"],
-                          ["Item1", "This is a long description that will trigger header detection"]],
-                    range_address="A1")
-
-        # Works with comparison tables (like Agent Kit vs n8n)
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
-                    data=[["Dimension", "Agent Kit", "n8n"],
-                          ["Primary Purpose", "Fast, visual agents...", "Workflow automation..."]],
-                    range_address="A1")
-
-        # Range auto-expansion: data (2x3) in range A1:B2 will expand to A1:C3
-        update_range(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}", large_data, "A1:B2")
+        # Write table from A1 with auto-expansion
+        update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
     """
     try:
         from datatable_tools.utils import parse_google_sheets_url
