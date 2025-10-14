@@ -9,6 +9,74 @@ from datatable_tools.lifecycle_tools import _process_data_input, SpreadsheetResp
 
 logger = logging.getLogger(__name__)
 
+
+def _col_letter_to_num(col: str) -> int:
+    """Convert column letter to number (A=1, Z=26, AA=27)"""
+    num = 0
+    for char in col:
+        num = num * 26 + (ord(char) - ord('A') + 1)
+    return num
+
+
+def _col_num_to_letter(num: int) -> str:
+    """Convert column number to letter (1=A, 26=Z, 27=AA)"""
+    letter = ''
+    while num > 0:
+        num -= 1
+        letter = chr(num % 26 + ord('A')) + letter
+        num //= 26
+    return letter
+
+
+def _auto_expand_range(range_address: str, data: list[list]) -> str:
+    """
+    Auto-expand single cell range to full range based on data dimensions.
+
+    Args:
+        range_address: Range in A1 notation (e.g., "A23", "B5:D10")
+        data: 2D array of data to be written
+
+    Returns:
+        Expanded range address if single cell provided, otherwise original range
+
+    Examples:
+        >>> _auto_expand_range("A23", [[1, 2], [3, 4]])
+        "A23:B24"
+        >>> _auto_expand_range("A1:B2", [[1, 2], [3, 4]])
+        "A1:B2"
+    """
+    # If already a range (contains ':'), return as-is
+    if ':' in range_address:
+        return range_address
+
+    # Calculate data dimensions
+    rows = len(data)
+    cols = max(len(row) for row in data) if data else 0
+
+    # If no data or single cell with single value, return as-is
+    if rows == 0 or cols == 0:
+        return range_address
+
+    # Parse start cell (e.g., "A23" -> col="A", row=23)
+    import re
+    match = re.match(r'^([A-Z]+)(\d+)$', range_address)
+    if not match:
+        return range_address
+
+    start_col = match.group(1)
+    start_row = int(match.group(2))
+
+    # Calculate end cell
+    end_col_num = _col_letter_to_num(start_col) + cols - 1
+    end_col = _col_num_to_letter(end_col_num)
+    end_row = start_row + rows - 1
+
+    # Return expanded range
+    expanded_range = f"{start_col}{start_row}:{end_col}{end_row}"
+    logger.info(f"Auto-expanded range from '{range_address}' to '{expanded_range}' for data shape ({rows}x{cols})")
+    return expanded_range
+
+
 @mcp.tool
 async def write_new_sheet(
     ctx: Context,
@@ -483,67 +551,8 @@ async def _handle_google_sheets_update(
                 )
                 # Keep final_worksheet as is (from URI)
 
-        # Parse the range to understand its dimensions
-        def parse_range(range_str):
-            """Parse range like A1:B2 to get start and end cells"""
-            if ':' in range_str:
-                start_cell, end_cell = range_str.split(':')
-            else:
-                start_cell = end_cell = range_str
-            return start_cell, end_cell
-
-        def cell_to_indices(cell):
-            """Convert cell like A1 to (0, 0) (row, col)"""
-            match = re.match(r'([A-Z]+)(\d+)', cell)
-            if not match:
-                raise ValueError(f"Invalid cell format: {cell}")
-            col_str, row_str = match.groups()
-
-            # Convert column letters to index
-            col_index = 0
-            for i, char in enumerate(reversed(col_str)):
-                col_index += (ord(char) - ord('A') + 1) * (26 ** i)
-            col_index -= 1  # Convert to 0-based
-
-            row_index = int(row_str) - 1  # Convert to 0-based
-            return row_index, col_index
-
-        def indices_to_cell(row_index, col_index):
-            """Convert (row, col) indices to cell like A1"""
-            # Convert column index to letters
-            col_str = ""
-            col_index += 1  # Convert to 1-based
-            while col_index > 0:
-                col_index -= 1
-                col_str = chr(65 + col_index % 26) + col_str
-                col_index //= 26
-
-            row_str = str(row_index + 1)  # Convert to 1-based
-            return col_str + row_str
-
-        try:
-            start_cell, end_cell = parse_range(range_address)
-            start_row, start_col = cell_to_indices(start_cell)
-            end_row, end_col = cell_to_indices(end_cell)
-
-            # Calculate current range dimensions
-            range_rows = end_row - start_row + 1
-            range_cols = end_col - start_col + 1
-
-            # Calculate data dimensions
-            data_rows = len(values)
-            data_cols = len(values[0]) if values else 0
-
-            # Expand range if data is larger
-            if data_rows > range_rows or data_cols > range_cols:
-                new_end_row = start_row + max(data_rows, range_rows) - 1
-                new_end_col = start_col + max(data_cols, range_cols) - 1
-                new_end_cell = indices_to_cell(new_end_row, new_end_col)
-                range_address = f"{start_cell}:{new_end_cell}"
-                logger.info(f"Expanded range to {range_address} to fit data dimensions ({data_rows}, {data_cols})")
-
-        except Exception as e:
-            logger.warning(f"Failed to parse/expand range {range_address}: {e}. Using original range.")
+        # Auto-expand range if single cell provided
+        range_address = _auto_expand_range(range_address, values)
 
         # Determine if it's a single cell update
         single_cell_pattern = r'^[A-Z]+\d+$'
