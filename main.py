@@ -6,7 +6,8 @@ from importlib import metadata
 
 # Local imports
 from core.server import mcp
-from datatable_tools.table_manager import cleanup_expired_tables
+# cleanup_expired_tables moved to temp/old_code/session_tools.py
+# from datatable_tools.table_manager import cleanup_expired_tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,13 +43,9 @@ def main():
     print("")
 
     # Import datatable tools to register them with the MCP server
-    import datatable_tools.lifecycle_tools
-    import datatable_tools.manipulation_tools
-    import datatable_tools.query_tools
-    import datatable_tools.export_tools
-    import datatable_tools.advanced_tools
-    import datatable_tools.session_tools
-    import datatable_tools.detailed_tools
+    # Stage 1 Refactoring: Keep only 5 essential MCP tools
+    import datatable_tools.lifecycle_tools   # load_data_table
+    import datatable_tools.detailed_tools    # write_new_sheet, append_rows, append_columns, update_range
 
    
 
@@ -66,7 +63,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n👋 Server shutdown requested")
-        cleanup_expired_tables()
+        # cleanup_expired_tables() - removed in Stage 1 refactoring
         sys.exit(0)
     except Exception as e:
         print(f"\n❌ Server error: {e}")
