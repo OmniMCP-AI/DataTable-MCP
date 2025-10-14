@@ -1,88 +1,35 @@
+"""
+MCP Tools - Detailed Operations
+
+Thin wrapper layer that delegates to GoogleSheetDataTable implementation.
+These @mcp.tool functions serve as the API entry points for MCP clients.
+"""
+
 from typing import Dict, List, Optional, Any
 import logging
 from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
-from datatable_tools.range_operations import range_operations
-from datatable_tools.utils import parse_google_sheets_url
-from datatable_tools.lifecycle_tools import _process_data_input, SpreadsheetResponse
+from datatable_tools.lifecycle_tools import SpreadsheetResponse
+from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 
 logger = logging.getLogger(__name__)
-
-
-def _col_letter_to_num(col: str) -> int:
-    """Convert column letter to number (A=1, Z=26, AA=27)"""
-    num = 0
-    for char in col:
-        num = num * 26 + (ord(char) - ord('A') + 1)
-    return num
-
-
-def _col_num_to_letter(num: int) -> str:
-    """Convert column number to letter (1=A, 26=Z, 27=AA)"""
-    letter = ''
-    while num > 0:
-        num -= 1
-        letter = chr(num % 26 + ord('A')) + letter
-        num //= 26
-    return letter
-
-
-def _auto_expand_range(range_address: str, data: list[list]) -> str:
-    """
-    Auto-expand single cell range to full range based on data dimensions.
-
-    Args:
-        range_address: Range in A1 notation (e.g., "A23", "B5:D10")
-        data: 2D array of data to be written
-
-    Returns:
-        Expanded range address if single cell provided, otherwise original range
-
-    Examples:
-        >>> _auto_expand_range("A23", [[1, 2], [3, 4]])
-        "A23:B24"
-        >>> _auto_expand_range("A1:B2", [[1, 2], [3, 4]])
-        "A1:B2"
-    """
-    # If already a range (contains ':'), return as-is
-    if ':' in range_address:
-        return range_address
-
-    # Calculate data dimensions
-    rows = len(data)
-    cols = max(len(row) for row in data) if data else 0
-
-    # If no data or single cell with single value, return as-is
-    if rows == 0 or cols == 0:
-        return range_address
-
-    # Parse start cell (e.g., "A23" -> col="A", row=23)
-    import re
-    match = re.match(r'^([A-Z]+)(\d+)$', range_address)
-    if not match:
-        return range_address
-
-    start_col = match.group(1)
-    start_row = int(match.group(2))
-
-    # Calculate end cell
-    end_col_num = _col_letter_to_num(start_col) + cols - 1
-    end_col = _col_num_to_letter(end_col_num)
-    end_row = start_row + rows - 1
-
-    # Return expanded range
-    expanded_range = f"{start_col}{start_row}:{end_col}{end_row}"
-    logger.info(f"Auto-expanded range from '{range_address}' to '{expanded_range}' for data shape ({rows}x{cols})")
-    return expanded_range
 
 
 @mcp.tool
 async def write_new_sheet(
     ctx: Context,
-    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"),
-    headers: Optional[List[str]] = Field(default=None, description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"),
-    sheet_name: Optional[str] = Field(default=None, description="Optional name for the new spreadsheet (default: 'New DataTable')")
+    data: list[list[int | str | float | bool | None]] = Field(
+        description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
+    ),
+    headers: Optional[List[str]] = Field(
+        default=None,
+        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"
+    ),
+    sheet_name: Optional[str] = Field(
+        default=None,
+        description="Optional name for the new spreadsheet (default: 'New DataTable')"
+    )
 ) -> SpreadsheetResponse:
     """
     Create a new Google Sheets spreadsheet with the provided data.
@@ -118,78 +65,19 @@ async def write_new_sheet(
         write_new_sheet(ctx, data=[["name", "description"],
                                    ["Item1", "This is a long description"]])
     """
-    try:
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-
-        # Process data input using the same logic as other tools
-        processed_data, processed_headers = _process_data_input(data, headers)
-
-        # Convert processed data to Google Sheets format
-        if not processed_data:
-            values = [[""]]  # Empty cell
-        else:
-            # Convert all values to strings for Google Sheets API
-            values = [[str(cell) for cell in row] for row in processed_data]
-
-        # Convert headers to strings (empty list if no headers)
-        headers_strings = [str(header) for header in processed_headers] if processed_headers else []
-
-        # Use default sheet name if not provided
-        final_sheet_name = sheet_name or "New DataTable"
-
-        # Create new spreadsheet
-        result = await GoogleSheetsService.create_new_spreadsheet(
-            ctx=ctx,
-            title=final_sheet_name,
-            data=values,
-            headers=headers_strings
-        )
-
-        if result.get('success'):
-            spreadsheet_id = result.get('spreadsheet_id', '')
-            sheet_id = result.get('sheet_id', 0)
-            # Include gid in URL so subsequent update_range calls can identify the worksheet
-            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
-
-            return SpreadsheetResponse(
-                success=True,
-                spreadsheet_url=spreadsheet_url,
-                rows_created=len(values),
-                columns_created=len(values[0]) if values else 0,
-                data_shape=(len(values), len(values[0]) if values else 0),
-                error=None,
-                message=f"Successfully created new spreadsheet '{final_sheet_name}' with {len(values)} rows"
-            )
-        else:
-            error_msg = result.get('error', 'Unknown error')
-            return SpreadsheetResponse(
-                success=False,
-                spreadsheet_url='',
-                rows_created=0,
-                columns_created=0,
-                data_shape=(0, 0),
-                error=error_msg,
-                message=f"Failed to create new spreadsheet: {error_msg}"
-            )
-
-    except Exception as e:
-        logger.error(f"Error creating new spreadsheet: {e}")
-        return SpreadsheetResponse(
-            success=False,
-            spreadsheet_url='',
-            rows_created=0,
-            columns_created=0,
-            data_shape=(0, 0),
-            error=str(e),
-            message=f"Failed to create new spreadsheet: {str(e)}"
-        )
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.write_new_sheet(ctx, data, headers, sheet_name)
 
 
 @mcp.tool
 async def append_rows(
     ctx: Context,
-    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)")
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    data: list[list[int | str | float | bool | None]] = Field(
+        description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
+    )
 ) -> Dict[str, Any]:
     """
     Append data as new rows below existing data in Google Sheets.
@@ -213,28 +101,23 @@ async def append_rows(
                    data=[["name", "description"],
                          ["Item1", "This is a long description that will trigger header detection"]])
     """
-    try:
-        from datatable_tools.utils import parse_google_sheets_url
-
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-        if not spreadsheet_id:
-            raise ValueError(f"Invalid Google Sheets URI: {uri}")
-
-        return await _handle_google_sheets_append(
-            ctx, uri, data, None, spreadsheet_id, sheet_name, append_mode="rows"
-        )
-
-    except Exception as e:
-        logger.error(f"Error appending rows to {uri}: {e}")
-        raise
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.append_rows(ctx, uri, data)
 
 
 @mcp.tool
 async def append_columns(
     ctx: Context,
-    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[list[int| str |float| bool | None]] = Field(description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"),
-    headers: Optional[List[str]] = Field(default=None, description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content")
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    data: list[list[int | str | float | bool | None]] = Field(
+        description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
+    ),
+    headers: Optional[List[str]] = Field(
+        default=None,
+        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"
+    )
 ) -> Dict[str, Any]:
     """
     Append data as new columns to the right of existing data in Google Sheets.
@@ -256,30 +139,22 @@ async def append_columns(
         append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                       data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
     """
-    try:
-        from datatable_tools.utils import parse_google_sheets_url
-
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-        if not spreadsheet_id:
-            raise ValueError(f"Invalid Google Sheets URI: {uri}")
-
-        return await _handle_google_sheets_append(
-            ctx, uri, data, headers, spreadsheet_id, sheet_name, append_mode="columns"
-        )
-
-    except Exception as e:
-        logger.error(f"Error appending columns to {uri}: {e}")
-        raise
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.append_columns(ctx, uri, data, headers)
 
 
 @mcp.tool
 async def update_range(
     ctx: Context,
-    uri: str = Field(description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"),
-    data: list[list[int| str |float| bool | None]] = Field(
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    data: list[list[int | str | float | bool | None]] = Field(
         description="2D array of cell values (rows × columns). CRITICAL: Must be a nested list/array structure [[row1_col1, row1_col2], [row2_col1, row2_col2]], NOT a string. Each inner list represents one row. Accepts int, str, float, bool, or None values."
     ),
-    range_address: str = Field(description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range.")
+    range_address: str = Field(
+        description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
+    )
 ) -> Dict[str, Any]:
     """
     Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
@@ -294,7 +169,7 @@ async def update_range(
 
     Args:
         uri: Google Sheets URI (supports full URL pattern)
-        data: 2D array [[row1_col1, row1_col2], [row2_col1, row2_col2]]. 
+        data: 2D array [[row1_col1, row1_col2], [row2_col1, row2_col2]].
               CRITICAL: Must be nested list structure, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
@@ -309,635 +184,5 @@ async def update_range(
         # Write table from A1 with auto-expansion
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
     """
-    try:
-        from datatable_tools.utils import parse_google_sheets_url
-
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-        if not spreadsheet_id:
-            raise ValueError(f"Invalid Google Sheets URI: {uri}")
-
-        return await _handle_google_sheets_update(
-            ctx, uri, data, range_address, None, spreadsheet_id, sheet_name
-        )
-
-    except Exception as e:
-        logger.error(f"Error updating data to {uri}: {e}")
-        raise
-
-
-async def _handle_google_sheets_append(
-    ctx: Context,
-    uri: str,
-    data: Any,
-    headers: Optional[List[str]],
-    spreadsheet_id: str,
-    sheet_name: Optional[str],
-    append_mode: str  # "rows" or "columns"
-) -> Dict[str, Any]:
-    """Handle Google Sheets append operations (rows or columns)"""
-    if not spreadsheet_id:
-        return {
-            "success": False,
-            "error": "Invalid Google Sheets URI",
-            "message": f"Could not parse spreadsheet ID from URI: {uri}"
-        }
-
-    # Process data input using the same logic as create_table
-    processed_data, processed_headers = _process_data_input(data, headers)
-
-    # Convert processed data to Google Sheets format
-    if not processed_data:
-        values = [[""]]  # Empty cell
-    else:
-        # If headers were provided or detected, include them in the output
-        # This ensures the complete data (headers + content) is written to the sheet
-        if (processed_headers and 
-            len(processed_headers) > 0 and 
-            not processed_headers[0].startswith("Column_") and
-            headers is not None):  # Only include headers if they were explicitly provided
-            
-            # Include headers as the first row, followed by the data
-            values = [[str(cell) for cell in processed_headers]]  # Headers first
-            values.extend([[str(cell) for cell in row] for row in processed_data])  # Then data
-            logger.info(f"Including provided headers in append output: {processed_headers}")
-        else:
-            # No headers provided or auto-generated headers, just use the data
-            values = [[str(cell) for cell in row] for row in processed_data]
-
-    from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-    try:
-        # Get current worksheet info to determine used range
-        # This will also resolve gid: format to actual sheet name
-        worksheet_info = await GoogleSheetsService.get_worksheet_info(
-            ctx=ctx,
-            spreadsheet_id=spreadsheet_id,
-            sheet_name=sheet_name
-        )
-
-        # Use the resolved sheet title from worksheet_info
-        final_worksheet = worksheet_info["title"]
-
-        # Calculate append position based on mode
-        if append_mode == "rows":
-            # Append below the last row, starting from column A
-            start_row = worksheet_info["row_count"] + 1
-            start_col_index = 0
-        elif append_mode == "columns":
-            # Append to the right of the last column, starting from row 1
-            start_row = 1
-            start_col_index = worksheet_info["col_count"]
-        else:
-            # Fallback to A1
-            start_row = 1
-            start_col_index = 0
-
-        # Convert column index to letter (A=0, B=1, ..., Z=25, AA=26, etc.)
-        def col_index_to_letter(index):
-            result = ""
-            while index >= 0:
-                result = chr(65 + index % 26) + result
-                index = index // 26 - 1
-                if index < 0:
-                    break
-            return result
-
-        start_col = col_index_to_letter(start_col_index)
-
-        # Calculate end position based on data size
-        end_row = start_row + len(values) - 1
-        end_col_index = start_col_index + (len(values[0]) if values else 1) - 1
-        end_col = col_index_to_letter(end_col_index)
-
-        # Create the range address
-        range_address = f"{start_col}{start_row}:{end_col}{end_row}"
-
-    except Exception as e:
-        logger.error(f"Failed to auto-detect append position: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to determine append position for {append_mode}"
-        }
-
-    # Use the range update logic
-    full_range = f"{final_worksheet}!{range_address}"
-
-    # Use the GoogleSheetsService directly
-    success = await range_operations.google_sheets_service.update_range(
-        ctx=ctx,
-        spreadsheet_id=spreadsheet_id,
-        range_notation=full_range,
-        values=values
-    )
-
-    if success:
-        return {
-            "success": True,
-            "spreadsheet_id": spreadsheet_id,
-            "worksheet": final_worksheet,
-            "range": range_address,
-            "append_mode": append_mode,
-            "updated_cells": sum(len(row) for row in values),
-            "data_shape": (len(values), len(values[0]) if values else 0),
-            "message": f"Successfully appended {append_mode} at {range_address} in worksheet '{final_worksheet}'"
-        }
-    else:
-        # todo should raise an erorr instead
-        return {
-            "success": False,
-            "error": "Failed to append data",
-            "message": f"Failed to append {append_mode} at {range_address} in worksheet '{final_worksheet}'"
-        }
-
-
-async def _handle_google_sheets_update(
-    ctx: Context,
-    uri: str,
-    data: Any,
-    range_address: Optional[str],
-    headers: Optional[List[str]],
-    spreadsheet_id: str,
-    sheet_name: Optional[str]
-) -> Dict[str, Any]:
-    """Handle Google Sheets updates with range support"""
-    if not spreadsheet_id:
-        return {
-            "success": False,
-            "error": "Invalid Google Sheets URI",
-            "message": f"Could not parse spreadsheet ID from URI: {uri}"
-        }
-
-    # Process data input with automatic header detection
-    processed_data, processed_headers = _process_data_input(data, headers=None)
-    logger.info(f"_process_data_input in update_range: processed_headers = {processed_headers}")
-
-    # Convert processed data to Google Sheets format
-    if not processed_data:
-        values = [[""]]  # Empty cell
-    else:
-        # If headers were detected and extracted, include them back in the output
-        # This ensures the complete table (headers + data) is written to the sheet
-        if (processed_headers and 
-            len(processed_headers) > 0 and 
-            not processed_headers[0].startswith("Column_")):  # Real headers, not auto-generated
-            
-            # Include headers as the first row, followed by the data
-            values = [[str(cell) for cell in processed_headers]]  # Headers first
-            values.extend([[str(cell) for cell in row] for row in processed_data])  # Then data
-            logger.info(f"Including detected headers in output: {processed_headers}")
-        else:
-            # No headers detected or auto-generated headers, just use the data
-            values = [[str(cell) for cell in row] for row in processed_data]
-
-    # Resolve gid: format to actual sheet name if needed
-    from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-    if sheet_name and sheet_name.startswith("gid:"):
-        try:
-            # Get worksheet info to resolve the gid to sheet name
-            worksheet_info = await GoogleSheetsService.get_worksheet_info(
-                ctx=ctx,
-                spreadsheet_id=spreadsheet_id,
-                sheet_name=sheet_name
-            )
-            final_worksheet = worksheet_info["title"]
-        except Exception as e:
-            logger.error(f"Failed to resolve sheet gid: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Failed to resolve sheet identifier: {sheet_name}"
-            }
-    elif not sheet_name:
-        # No sheet specified, default to first sheet (gid=0) to handle different locales
-        try:
-            worksheet_info = await GoogleSheetsService.get_worksheet_info(
-                ctx=ctx,
-                spreadsheet_id=spreadsheet_id,
-                sheet_name="gid:0"
-            )
-            final_worksheet = worksheet_info["title"]
-            logger.info(f"No sheet specified, using first sheet: '{final_worksheet}'")
-        except Exception as e:
-            logger.warning(f"Failed to get first sheet info, falling back to 'Sheet1': {e}")
-            final_worksheet = "Sheet1"
-    else:
-        final_worksheet = sheet_name
-
-    if range_address:
-        # Range-specific update with auto-expansion if data doesn't fit
-        import re
-
-        # Parse worksheet name from range_address if present (e.g., "Sheet1!A1:J6")
-        worksheet_from_range = None
-        if '!' in range_address:
-            worksheet_from_range, range_address = range_address.split('!', 1)
-            logger.info(f"Parsed worksheet '{worksheet_from_range}' from range_address")
-
-            # Validate if worksheet_from_range exists in the spreadsheet
-            try:
-                service_result = await GoogleSheetsService.get_worksheet_info(
-                    ctx=ctx,
-                    spreadsheet_id=spreadsheet_id,
-                    sheet_name=worksheet_from_range
-                )
-                # Worksheet exists, use it
-                final_worksheet = service_result["title"]
-                logger.info(f"Validated worksheet '{worksheet_from_range}' exists in spreadsheet")
-            except Exception as e:
-                # Worksheet doesn't exist, fall back to URI worksheet
-                logger.warning(
-                    f"Worksheet '{worksheet_from_range}' from range_address not found. "
-                    f"Falling back to worksheet from URI: '{final_worksheet}'. Error: {e}"
-                )
-                # Keep final_worksheet as is (from URI)
-
-        # Auto-expand range if single cell provided
-        range_address = _auto_expand_range(range_address, values)
-
-        # Determine if it's a single cell update
-        single_cell_pattern = r'^[A-Z]+\d+$'
-
-        if re.match(single_cell_pattern, range_address) and len(values) == 1 and len(values[0]) == 1:
-            # Single cell update
-            return await range_operations.update_cell(
-                ctx=ctx,
-                spreadsheet_id=spreadsheet_id,
-                worksheet=final_worksheet,
-                cell_address=range_address,
-                value=values[0][0],
-                user_id=""
-            )
-
-        # For ranges, use the GoogleSheetsService directly
-        full_range = f"{final_worksheet}!{range_address}"
-
-        # Use the GoogleSheetsService directly
-        success = await range_operations.google_sheets_service.update_range(
-            ctx=ctx,
-            spreadsheet_id=spreadsheet_id,
-            range_notation=full_range,
-            values=values
-        )
-
-        if success:
-            return {
-                "success": True,
-                "spreadsheet_id": spreadsheet_id,
-                "worksheet": final_worksheet,
-                "range": range_address,
-                "updated_cells": sum(len(row) for row in values),
-                "data_shape": (len(values), len(values[0]) if values else 0),
-                "message": f"Successfully updated range {range_address} in worksheet '{final_worksheet}'"
-            }
-        else:
-            return {
-                "success": False,
-                "error": "Failed to update range",
-                "message": f"Failed to update range {range_address} in worksheet '{final_worksheet}'"
-            }
-    else:
-        # Full sheet replacement using export_data functionality
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-
-        # Convert all values to strings for Google Sheets
-        data_strings = [[str(cell) for cell in row] for row in values]
-        headers_strings = [str(header) for header in processed_headers] if processed_headers else []
-
-        # Use the write_sheet_structured method
-        result = await GoogleSheetsService.write_sheet_structured(
-            ctx=ctx,
-            spreadsheet_identifier=spreadsheet_id,
-            data=data_strings,
-            headers=headers_strings,
-            sheet_name=final_worksheet
-        )
-
-        # Add metadata to the result
-        result.update({
-            "export_type": "google_sheets",
-            "rows_exported": len(data_strings),
-            "columns_exported": len(headers_strings) if headers_strings else (len(data_strings[0]) if data_strings else 0),
-            "original_uri": uri
-        })
-
-        return result
-
-
-async def _handle_file_export(
-    ctx: Context,
-    uri: str,
-    data: Any,
-    headers: Optional[List[str]],
-    encoding: Optional[str],
-    delimiter: Optional[str]
-) -> Dict[str, Any]:
-    """Handle file-based exports"""
-    from datatable_tools.utils import parse_export_uri
-    from datatable_tools.lifecycle_tools import _process_data_input
-
-    # Process data into standardized format
-    processed_data, processed_headers = _process_data_input(data, headers)
-
-    # Parse the URI to determine export type and parameters
-    export_info = parse_export_uri(uri)
-    export_type = export_info["export_type"]
-
-    logger.info(f"Exporting data to {export_type}: {uri}")
-
-    # Handle Google Sheets export without range (shouldn't reach here, but for safety)
-    if export_type == "google_sheets":
-        return await _export_data_google_sheets_full(ctx, processed_data, processed_headers, export_info)
-
-    # Handle file-based exports
-    return await _export_data_file(processed_data, processed_headers, export_info, encoding, delimiter)
-
-
-async def _export_data_google_sheets_full(ctx: Context, processed_data: List[List[Any]], processed_headers: List[str], export_info: dict) -> Dict[str, Any]:
-    """Internal function to export processed data to Google Sheets with authentication."""
-    try:
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-
-        # Convert all values to strings for Google Sheets
-        data = [[str(cell) for cell in row] for row in processed_data]
-        headers = [str(header) for header in processed_headers]
-
-        # Extract parameters from export_info
-        spreadsheet_id = export_info.get("spreadsheet_id")
-        sheet_name = export_info.get("sheet_name")
-
-        # Use the write_sheet_structured method
-        result = await GoogleSheetsService.write_sheet_structured(
-            ctx=ctx,
-            spreadsheet_identifier=spreadsheet_id,
-            data=data,
-            headers=headers,
-            sheet_name=sheet_name
-        )
-
-        # Add data metadata to the result
-        result.update({
-            "export_type": "google_sheets",
-            "rows_exported": len(data),
-            "columns_exported": len(headers),
-            "original_uri": export_info["original_uri"]
-        })
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Error exporting data to Google Sheets: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to export data to Google Sheets: {str(e)}"
-        }
-
-
-async def _export_data_file(processed_data: List[List[Any]], processed_headers: List[str], export_info: dict, encoding: Optional[str], delimiter: Optional[str]) -> Dict[str, Any]:
-    """Internal function to export processed data to file-based formats."""
-    import pandas as pd
-    import os
-
-    export_type = export_info["export_type"]
-    file_path = export_info["file_path"]
-
-    # Create DataFrame from processed data
-    df = pd.DataFrame(processed_data, columns=processed_headers)
-
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else ".", exist_ok=True)
-
-    # Export based on format
-    if export_type == "csv":
-        csv_params = {"index": False}
-        if encoding:
-            csv_params["encoding"] = encoding
-        if delimiter:
-            csv_params["sep"] = delimiter
-        df.to_csv(file_path, **csv_params)
-
-    elif export_type == "excel":
-        df.to_excel(file_path, index=False)
-
-    elif export_type == "json":
-        df.to_json(file_path, orient='records', indent=2)
-
-    elif export_type == "parquet":
-        df.to_parquet(file_path, index=False)
-
-    else:
-        # Generic file export as CSV
-        df.to_csv(file_path, index=False)
-
-    # Get file info
-    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-
-    return {
-        "success": True,
-        "export_type": export_type,
-        "file_path": file_path,
-        "file_size": file_size,
-        "rows_exported": len(processed_data),
-        "columns_exported": len(processed_headers),
-        "original_uri": export_info["original_uri"],
-        "message": f"Exported data ({len(processed_data)} rows) to {export_type}: {file_path}"
-    }
-
-
-async def export_table_to_range(
-    ctx: Context,
-    table_id: str,
-    uri: str,
-    start_cell: Optional[str] = "A1",
-    include_headers: bool = True,
-    encoding: Optional[str] = None,
-    delimiter: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Export DataTable content to various formats using URI-based auto-detection.
-    For Google Sheets, supports precise range placement. For other formats, exports entire table.
-
-    Args:
-        table_id: DataTable ID to export
-        uri: URI for the export destination. Supports:
-             - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid} or spreadsheet ID
-             - CSV files: /path/to/file.csv
-             - Excel files: /path/to/file.xlsx
-             - JSON files: /path/to/file.json
-             - Parquet files: /path/to/file.parquet
-        start_cell: Starting cell for Google Sheets data (e.g., "A1", "B5"). Only used for Google Sheets.
-        include_headers: Whether to include table headers (default True)
-        encoding: File encoding for CSV files (optional)
-        delimiter: Delimiter for CSV files (optional)
-
-    Returns:
-        Dict containing export results and file/spreadsheet information
-
-    Examples:
-        # Export to specific range in Google Sheets
-        export_table_to_range(ctx, "table1", "https://docs.google.com/spreadsheets/d/{id}/edit", "B5")
-
-        # Export to CSV file
-        export_table_to_range(ctx, "table1", "/path/to/data.csv")
-
-        # Export to Excel file
-        export_table_to_range(ctx, "table1", "/path/to/workbook.xlsx")
-    """
-    try:
-        from datatable_tools.utils import parse_export_uri, parse_google_sheets_url
-        from datatable_tools.table_manager import table_manager
-
-        # Get the table
-        table = table_manager.get_table(table_id)
-        if not table:
-            return {
-                "success": False,
-                "error": f"Table {table_id} not found",
-                "message": "Source table does not exist"
-            }
-
-        # Check if it's a Google Sheets URL first (for range-specific export)
-        spreadsheet_id, sheet_name = parse_google_sheets_url(uri)
-        if spreadsheet_id and start_cell:
-            # Google Sheets range-specific export
-            final_worksheet = sheet_name or "Sheet1"
-            return await range_operations.update_table_range(
-                table_id=table_id,
-                spreadsheet_id=spreadsheet_id,
-                worksheet=final_worksheet,
-                start_cell=start_cell,
-                user_id="",
-                include_headers=include_headers,
-                ctx=ctx
-            )
-
-        # General export using parse_export_uri for other formats
-        export_info = parse_export_uri(uri)
-        export_type = export_info["export_type"]
-
-        logger.info(f"Exporting table {table_id} to {export_type}: {uri}")
-
-        # Handle Google Sheets export without range (entire sheet replacement)
-        if export_type == "google_sheets":
-            return await _export_google_sheets_full(ctx, table, export_info, include_headers)
-
-        # Handle file-based exports
-        return await _export_file_with_headers(table, export_info, encoding, delimiter, include_headers)
-
-    except Exception as e:
-        logger.error(f"Error exporting table {table_id} to {uri}: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to export table {table_id} to {uri}"
-        }
-
-
-async def _export_google_sheets_full(ctx: Context, table, export_info: dict, include_headers: bool) -> Dict[str, Any]:
-    """
-    Internal function to export entire table to Google Sheets with authentication.
-    """
-    try:
-        from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-
-        # Get table data
-        df = table.df
-
-        # Convert to lists for Google Sheets
-        data = df.values.tolist()
-
-        if include_headers:
-            headers = df.columns.tolist()
-        else:
-            headers = []
-
-        # Convert all values to strings for Google Sheets
-        data = [[str(cell) for cell in row] for row in data]
-
-        # Extract parameters from export_info
-        spreadsheet_id = export_info.get("spreadsheet_id")
-        sheet_name = export_info.get("sheet_name")
-
-        # Use the write_sheet_structured method
-        result = await GoogleSheetsService.write_sheet_structured(
-            ctx=ctx,
-            spreadsheet_identifier=spreadsheet_id,
-            data=data,
-            headers=[str(h) for h in headers] if headers else [],
-            sheet_name=sheet_name
-        )
-
-        # Add table metadata to the result
-        result.update({
-            "table_id": table.table_id,
-            "table_name": table.metadata.name,
-            "export_type": "google_sheets",
-            "rows_exported": len(data),
-            "columns_exported": len(df.columns),
-            "original_uri": export_info["original_uri"],
-            "include_headers": include_headers
-        })
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Error exporting to Google Sheets: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to export table to Google Sheets: {str(e)}"
-        }
-
-
-async def _export_file_with_headers(table, export_info: dict, encoding: Optional[str], delimiter: Optional[str], include_headers: bool) -> Dict[str, Any]:
-    """
-    Internal function to export to file-based formats with header control.
-    """
-    import pandas as pd
-    import os
-
-    export_type = export_info["export_type"]
-    file_path = export_info["file_path"]
-    df = table.df
-
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else ".", exist_ok=True)
-
-    # Export based on format
-    if export_type == "csv":
-        csv_params = {"index": False, "header": include_headers}
-        if encoding:
-            csv_params["encoding"] = encoding
-        if delimiter:
-            csv_params["sep"] = delimiter
-        df.to_csv(file_path, **csv_params)
-
-    elif export_type == "excel":
-        df.to_excel(file_path, index=False, header=include_headers)
-
-    elif export_type == "json":
-        df.to_json(file_path, orient='records', indent=2)
-
-    elif export_type == "parquet":
-        df.to_parquet(file_path, index=False)
-
-    else:
-        # Generic file export as CSV
-        df.to_csv(file_path, index=False, header=include_headers)
-
-    # Get file info
-    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-
-    return {
-        "success": True,
-        "table_id": table.table_id,
-        "export_type": export_type,
-        "file_path": file_path,
-        "file_size": file_size,
-        "rows_exported": len(df),
-        "columns_exported": len(df.columns),
-        "table_name": table.metadata.name,
-        "original_uri": export_info["original_uri"],
-        "include_headers": include_headers,
-        "message": f"Exported table '{table.metadata.name}' ({len(df)} rows) to {export_type}: {file_path}"
-    }
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.update_range(ctx, uri, data, range_address)

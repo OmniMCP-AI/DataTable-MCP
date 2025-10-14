@@ -3,8 +3,11 @@ Utility functions for DataTable MCP tools
 """
 import re
 import os
-from typing import Optional, Tuple
+import logging
+from typing import Optional, Tuple, List, Any
 from urllib.parse import urlparse, parse_qs
+
+logger = logging.getLogger(__name__)
 
 
 def detect_export_type(uri: str) -> str:
@@ -281,4 +284,168 @@ def format_google_sheets_url(spreadsheet_id: str, sheet_name: Optional[str] = No
         # This is more for display purposes
         base_url += f"#sheet={sheet_name}"
 
-    return base_url
+    return base_url# Helper Functions (kept for use by GoogleSheetDataTable)
+# ============================================================================
+
+def _process_data_input(data: Any, headers: Optional[List[str]] = None) -> tuple[List[List[Any]], List[str]]:
+    """
+    Process various data input formats into standardized format for table creation.
+
+    Args:
+        data: Input data in various formats
+        headers: Optional headers
+
+    Returns:
+        Tuple of (processed_data, processed_headers)
+    """
+    import pandas as pd
+    import numpy as np
+
+    # Handle pandas DataFrame
+    if isinstance(data, pd.DataFrame):
+        processed_headers = headers or list(data.columns)
+        processed_data = data.values.tolist()
+        return processed_data, processed_headers
+
+    # Handle pandas Series
+    if isinstance(data, pd.Series):
+        processed_headers = headers or [data.name or "Series"]
+        processed_data = [[value] for value in data.tolist()]
+        return processed_data, processed_headers
+
+    # Handle numpy arrays
+    if isinstance(data, np.ndarray):
+        if data.ndim == 1:
+            # 1D array - single column
+            processed_headers = headers if headers else []
+            processed_data = [[value] for value in data.tolist()]
+        elif data.ndim == 2:
+            # 2D array - multiple columns
+            processed_headers = headers if headers else []
+            processed_data = data.tolist()
+        else:
+            raise ValueError(f"Unsupported numpy array dimension: {data.ndim}")
+        return processed_data, processed_headers
+
+    # Handle dictionary formats
+    if isinstance(data, dict):
+        if not data:
+            # Empty dict
+            processed_headers = headers or []
+            processed_data = []
+            return processed_data, processed_headers
+
+        # Check if it's column-oriented data (dict of lists/arrays)
+        first_key = next(iter(data.keys()))
+        first_value = data[first_key]
+
+        if isinstance(first_value, (list, tuple, np.ndarray, pd.Series)):
+            # Column-oriented: {"col1": [1,2,3], "col2": [4,5,6]}
+            processed_headers = headers or list(data.keys())
+
+            # Get the length of data (assume all columns have same length)
+            lengths = [len(v) if hasattr(v, '__len__') else 1 for v in data.values()]
+            if len(set(lengths)) > 1:
+                raise ValueError("All columns must have the same length")
+
+            num_rows = lengths[0] if lengths else 0
+            processed_data = []
+
+            for i in range(num_rows):
+                row = []
+                for col_name in processed_headers:
+                    if col_name in data:
+                        col_data = data[col_name]
+                        if hasattr(col_data, '__getitem__'):
+                            row.append(col_data[i])
+                        else:
+                            row.append(col_data)  # scalar value
+                    else:
+                        row.append(None)  # missing column
+                processed_data.append(row)
+
+        else:
+            # Single row: {"col1": 1, "col2": 2}
+            processed_headers = headers or list(data.keys())
+            processed_data = [[data.get(col, None) for col in processed_headers]]
+
+        return processed_data, processed_headers
+
+    # Handle list of dictionaries (records format)
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        # Records format: [{"col1": 1, "col2": 2}, {"col1": 3, "col2": 4}]
+        all_keys = set()
+        for record in data:
+            if isinstance(record, dict):
+                all_keys.update(record.keys())
+
+        processed_headers = headers or sorted(list(all_keys))
+        processed_data = []
+
+        for record in data:
+            if isinstance(record, dict):
+                row = [record.get(col, None) for col in processed_headers]
+                processed_data.append(row)
+
+        return processed_data, processed_headers
+
+    # Handle 2D list (traditional format)
+    if isinstance(data, list) and data and isinstance(data[0], (list, tuple)):
+        # 2D list: [[1,2], [3,4]]
+        processed_data = [list(row) for row in data]
+        num_cols = len(processed_data[0]) if processed_data else 0
+
+        # Auto-detect headers if not provided
+        if headers is None and len(processed_data) >= 2:
+            first_row = processed_data[0]
+
+            # Check if first row contains potential headers
+            # Headers are typically short strings while data rows contain longer content
+            if all(isinstance(cell, str) for cell in first_row):
+                # Check if subsequent rows have longer content
+                has_long_content_after = any(
+                    any(isinstance(cell, str) and len(cell) > 50 for cell in row)
+                    for row in processed_data[1:]
+                )
+
+                if has_long_content_after or all(len(str(cell)) < 30 for cell in first_row):
+                    # First row looks like headers
+                    processed_headers = [str(cell) for cell in first_row]
+                    processed_data = processed_data[1:]  # Remove header row from data
+                    logger.info(f"Auto-detected headers from first row: {processed_headers}")
+                    return processed_data, processed_headers
+
+        # No headers detected or provided
+        processed_headers = headers if headers else [f"Column_{i+1}" for i in range(num_cols)]
+        return processed_data, processed_headers
+
+    # Handle 1D list (single row or column)
+    if isinstance(data, list):
+        if headers:
+            # If headers provided, treat as single row
+            if len(data) == len(headers):
+                processed_data = [data]
+                processed_headers = headers
+            else:
+                # Mismatch, use as column
+                processed_data = [[value] for value in data]
+                processed_headers = headers[:1] if headers else ["Column_1"]
+        else:
+            # No headers, treat as single column
+            processed_data = [[value] for value in data]
+            processed_headers = ["Column_1"]
+        return processed_data, processed_headers
+
+    # Handle scalar value
+    if not isinstance(data, (list, dict, pd.DataFrame, pd.Series, np.ndarray)):
+        processed_headers = headers if headers else ["Value"]
+        processed_data = [[data]]
+        return processed_data, processed_headers
+
+    # Fallback: try to convert to list
+    try:
+        processed_data = [[data]]
+        processed_headers = headers if headers else ["Column_1"]
+        return processed_data, processed_headers
+    except Exception as e:
+        raise ValueError(f"Unsupported data format: {type(data)}. Error: {e}")

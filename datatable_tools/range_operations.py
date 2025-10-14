@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional, Any
 import logging
 from datatable_tools.third_party.google_sheets.service import GoogleSheetsService
-from datatable_tools.table_manager import table_manager
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +238,7 @@ class DataTableRangeOperations:
         ctx: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
+        DEPRECATED: This method relied on table_manager which has been removed.
         Update spreadsheet with entire DataTable content using range update
 
         Args:
@@ -251,6 +251,10 @@ class DataTableRangeOperations:
 
         Returns:
             Dict with operation results
+        """
+        raise NotImplementedError("update_table_range is deprecated - table_manager has been removed. Use update_range directly instead.")
+
+        # OLD CODE - kept for reference but not functional
         """
         try:
             table = table_manager.get_table(table_id)
@@ -338,6 +342,7 @@ class DataTableRangeOperations:
                 "error": str(e),
                 "message": f"Failed to update table range for table {table_id}"
             }
+        """
 
 
 # Global instance
