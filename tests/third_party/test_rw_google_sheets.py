@@ -310,7 +310,7 @@ async def test_append_functionality(spreadsheet_id, client):
 
     Note: These tests demonstrate the append behavior using the direct Google Sheets client
     rather than the MCP update_range function to avoid authentication complexities in testing.
-    The actual append logic is implemented in the update_range function in detailed_tools.py.
+    The actual append logic is implemented in the update_range function in mcp_tools.py.
     """
     if not spreadsheet_id or not client:
         print("\n⏭️  Skipping append test - no spreadsheet or client available")
@@ -442,7 +442,7 @@ async def test_range_expansion(spreadsheet_id, client):
     Test the range auto-expansion functionality concept.
 
     Note: This test demonstrates the concept of range expansion using the direct Google Sheets client.
-    The actual auto-expansion logic is implemented in the update_range function in detailed_tools.py.
+    The actual auto-expansion logic is implemented in the update_range function in mcp_tools.py.
     """
     if not spreadsheet_id or not client:
         print("\n⏭️  Skipping range expansion test - no spreadsheet or client available")
