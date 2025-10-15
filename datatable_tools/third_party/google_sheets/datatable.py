@@ -78,22 +78,32 @@ class GoogleSheetDataTable(DataTableInterface):
 
         # Process headers and data (first row = headers)
         headers = []
-        data = []
+        data_rows = []
 
         if all_data:
             headers = all_data[0] if all_data else []
-            data = all_data[1:] if len(all_data) > 1 else []
+            data_rows = all_data[1:] if len(all_data) > 1 else []
 
             # Ensure consistent column count
             if headers:
                 max_cols = len(headers)
-                for row in data:
+                for row in data_rows:
                     # Pad short rows
                     while len(row) < max_cols:
                         row.append("")
                     # Truncate long rows
                     if len(row) > max_cols:
                         row[:] = row[:max_cols]
+
+        # Convert data from list of lists to list of dicts
+        data = []
+        if headers and data_rows:
+            for row in data_rows:
+                row_dict = {}
+                for i, header in enumerate(headers):
+                    # Use the header as key, and the corresponding cell value
+                    row_dict[header] = row[i] if i < len(row) else ""
+                data.append(row_dict)
 
         # Build metadata
         metadata = {

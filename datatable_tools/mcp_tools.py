@@ -32,7 +32,7 @@ class TableResponse(TypedDict):
     name: Optional[str]
     shape: Optional[tuple[int, int]]
     headers: Optional[List[str]]
-    data: Optional[List[List[Any]]]
+    data: List[Dict[str, Any]] 
     source_info: Optional[Dict[str, Any]]
     error: Optional[str]
     message: str

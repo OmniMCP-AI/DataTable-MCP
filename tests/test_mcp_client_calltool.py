@@ -108,6 +108,54 @@ async def test_basic_operations(url, headers):
                     print(f"   Error message: {invalid_load_res.content[0].text}")
             else:
                 print(f"❌ Expected isError = True, but got isError = False")
+
+            # Test 3: Verify data format is list of dictionaries
+            print(f"\n📘 Test 3: Verifying data format is list of dictionaries")
+            print(f"   Testing improved data structure from TableResponse")
+            
+            load_format_res = await session.call_tool("load_data_table", {
+                "uri": READ_ONLY_URI,
+            })
+            print()
+            print(f"load_format_res, {load_format_res}")
+            if not load_format_res.isError and load_format_res.content and load_format_res.content[0].text:
+                content = json.loads(load_format_res.content[0].text)
+                if content.get('success'):
+                    data = content.get('data', [])
+                    headers = content.get('headers', [])
+                    
+                    print(f"   📊 Headers: {headers}")
+                    print(f"   📊 Data rows: {len(data)}")
+                    
+                    # Verify data is list of dicts
+                    if data and len(data) > 0:
+                        first_row = data[0]
+                        
+                        # Check if first row is a dictionary
+                        if isinstance(first_row, dict):
+                            print(f"   ✅ PASS: Data is list of dictionaries")
+                            print(f"   📝 First row type: {type(first_row).__name__}")
+                            print(f"   📝 First row keys: {list(first_row.keys())}")
+                            print(f"   📝 Sample row: {first_row}")
+                            
+                            # Verify keys match headers
+                            row_keys = list(first_row.keys())
+                            if row_keys == headers:
+                                print(f"   ✅ PASS: Dictionary keys match headers exactly")
+                            else:
+                                print(f"   ⚠️  WARNING: Keys don't match headers")
+                                print(f"      Expected: {headers}")
+                                print(f"      Got: {row_keys}")
+                        else:
+                            print(f"   ❌ FAIL: Data is not list of dictionaries")
+                            print(f"      Expected: dict, Got: {type(first_row).__name__}")
+                            print(f"      First row: {first_row}")
+                    else:
+                        print(f"   ⚠️  WARNING: No data rows to verify")
+                else:
+                    print(f"   ❌ Failed to load data: {content.get('message', 'Unknown error')}")
+            else:
+                print(f"   ❌ Failed to get valid response")
                 
             print(f"\n✅ Basic operations test completed!")
             return table_id
@@ -763,7 +811,9 @@ if __name__ == "__main__":
     if args.env == "local":
         endpoint = "http://127.0.0.1:8321"
     else:
-        endpoint = "https://datatable-mcp.maybe.ai"
+        endpoint = "https://datatable-mcp-test.maybe.ai"
+        # endpoint = "https://datatable-mcp.maybe.ai"
+        
 
     print(f"🔗 Using {args.env} environment: {endpoint}")
     print(f"💡 Use --env=local for local development or --env=prod for production")
