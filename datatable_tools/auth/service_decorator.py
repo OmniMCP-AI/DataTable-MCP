@@ -204,16 +204,25 @@ def require_google_service(
         original_sig = inspect.signature(func)
         params = list(original_sig.parameters.values())
 
-        # The decorated function must have 'service' as its first parameter.
-        if not params or params[0].name != 'service':
+        # Determine if this is an instance method (has 'self') or static/function
+        is_instance_method = params and params[0].name == 'self'
+
+        # For instance methods, 'service' should be second parameter (after 'self')
+        # For static methods/functions, 'service' should be first parameter
+        service_param_index = 1 if is_instance_method else 0
+
+        if len(params) <= service_param_index or params[service_param_index].name != 'service':
             raise TypeError(
                 f"Function '{func.__name__}' decorated with @require_google_service "
-                "must have 'service' as its first parameter."
+                f"must have 'service' as its {'second' if is_instance_method else 'first'} parameter "
+                f"({'after self' if is_instance_method else ''})."
             )
 
         # Create a new signature for the wrapper that excludes the 'service' parameter.
         # This is the signature that FastMCP will see.
-        wrapper_sig = original_sig.replace(parameters=params[1:])
+        # Keep 'self' if it's an instance method, but remove 'service'
+        params_without_service = params[:service_param_index] + params[service_param_index + 1:]
+        wrapper_sig = original_sig.replace(parameters=params_without_service)
 
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -296,8 +305,15 @@ def require_google_service(
 
             # --- Call the original function with the service object injected ---
             try:
-                # Prepend the fetched service object to the original arguments
-                return await func(service, *args, **kwargs)
+                # Inject service at the correct position
+                # For instance methods: func(self, service, ctx, ...)
+                # For static/functions: func(service, ctx, ...)
+                if is_instance_method:
+                    # args[0] is 'self', insert service after it
+                    return await func(args[0], service, *args[1:], **kwargs)
+                else:
+                    # No 'self', insert service as first argument
+                    return await func(service, *args, **kwargs)
             except RefreshError as e:
                 # error_message = _handle_token_refresh_error(e, service_name)
                 raise Exception(f"refresh error") from e
