@@ -12,7 +12,7 @@ Contains all 5 core MCP tools:
 - update_range: Update specific cell range
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from typing_extensions import TypedDict
 import logging
 from pydantic import Field
@@ -82,12 +82,12 @@ async def load_data_table(
 async def write_new_sheet(
     service,  # Injected by @require_google_service
     ctx: Context,
-    data: list[list[int | str | float | bool | None]] = Field(
-        description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
+    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+        description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     ),
     headers: Optional[List[str]] = Field(
         default=None,
-        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"
+        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts, headers are automatically extracted from dict keys."
     ),
     sheet_name: Optional[str] = Field(
         default=None,
@@ -99,10 +99,11 @@ async def write_new_sheet(
 
     Args:
         data: Data in pandas-like formats. Accepts:
-              - List[List[int| str |float| bool | None]]: 2D array of table data (rows x columns)
+              - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
+              - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
+                extracted from the first row. For list of dicts, headers are automatically extracted from dict keys.
         sheet_name: Optional name for the new spreadsheet (default: "New DataTable")
 
     Returns:
@@ -116,9 +117,12 @@ async def write_new_sheet(
             - message: Human-readable result message
 
     Examples:
-        # Create new spreadsheet with data
+        # Create new spreadsheet with 2D array data
         write_new_sheet(ctx, data=[["John", 25], ["Jane", 30]],
                         headers=["name", "age"])
+
+        # Create with list of dicts (DataFrame-like)
+        write_new_sheet(ctx, data=[{"name": "John", "age": 25}, {"name": "Jane", "age": 30}])
 
         # Create with custom name
         write_new_sheet(ctx, data=[["Product", "Price"], ["Widget", 9.99]],
@@ -140,8 +144,8 @@ async def append_rows(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: list[list[int | str | float | bool | None]] = Field(
-        description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
+    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+        description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     )
 ) -> Dict[str, Any]:
     """
@@ -150,16 +154,21 @@ async def append_rows(
 
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
-        data: Data Accepts:
-              - List[List[int| str |float| bool | None]]: 2D array of table data (rows x columns)
+        data: Data in pandas-like formats. Accepts:
+              - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
+              - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
 
     Returns:
         Dict containing update results and file/spreadsheet information
 
     Examples:
-        # Append new records to Google Sheets
+        # Append new records to Google Sheets (2D array)
         append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                    data=[["John", 25], ["Jane", 30]])
+
+        # Append with list of dicts (DataFrame-like)
+        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
+                   data=[{"name": "John", "age": 25}, {"name": "Jane", "age": 30}])
 
         # Append with auto-detected headers (first row = headers if long content follows)
         append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
@@ -178,12 +187,12 @@ async def append_columns(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: list[list[int | str | float | bool | None]] = Field(
-        description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
+    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+        description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     ),
     headers: Optional[List[str]] = Field(
         default=None,
-        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content"
+        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts, headers are automatically extracted from dict keys."
     )
 ) -> Dict[str, Any]:
     """
@@ -192,19 +201,24 @@ async def append_columns(
 
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
-        data: Data Accepts:
-              - List[List[int| str |float| bool | None]]: 2D array of table data (rows x columns)
+        data: Data in pandas-like formats. Accepts:
+              - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
+              - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
         headers: Optional column headers. If None and first row contains short strings followed
                 by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row.
+                extracted from the first row. For list of dicts, headers are automatically extracted from dict keys.
 
     Returns:
         Dict containing update results and file/spreadsheet information
 
     Examples:
-        # Append new columns to Google Sheets
+        # Append new columns to Google Sheets (2D array)
         append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                       data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
+
+        # Append with list of dicts (DataFrame-like)
+        append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
+                      data=[{"new_col": "Value1"}, {"new_col": "Value2"}])
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.append_columns(service, uri, data, headers)
@@ -218,8 +232,8 @@ async def update_range(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: list[list[int | str | float | bool | None]] = Field(
-        description="2D array of cell values (rows × columns). CRITICAL: Must be a nested list/array structure [[row1_col1, row1_col2], [row2_col1, row2_col2]], NOT a string. Each inner list represents one row. Accepts int, str, float, bool, or None values."
+    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+        description="2D array of cell values (rows × columns) or list of dicts (DataFrame-like). CRITICAL: Must be a nested list/array structure [[row1_col1, row1_col2], [row2_col1, row2_col2]] or list of dicts, NOT a string. Each inner list represents one row. Accepts int, str, float, bool, or None values."
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
@@ -228,18 +242,18 @@ async def update_range(
     """
     Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
 
-    <description>Overwrites cell values in a specified range with provided 2D array data. Replaces existing content completely - does not merge or append. Auto-expands range when data dimensions exceed specified range.</description>
+    <description>Overwrites cell values in a specified range with provided 2D array data or list of dicts. Replaces existing content completely - does not merge or append. Auto-expands range when data dimensions exceed specified range.</description>
 
     <use_case>Use for bulk data updates, replacing table contents, writing processed results, or updating structured data blocks with precise placement control.</use_case>
 
     <limitation>Cannot update non-contiguous ranges. Overwrites existing formulas and cell formatting.</limitation>
 
-    <failure_cases>Fails if range_address is invalid A1 notation, expanded range exceeds sheet bounds, or data parameter is not a proper 2D array structure (common error: passing string instead of nested lists). Data truncation on cells >50,000 characters.</failure_cases>
+    <failure_cases>Fails if range_address is invalid A1 notation, expanded range exceeds sheet bounds, or data parameter is not a proper 2D array structure or list of dicts (common error: passing string instead of nested lists). Data truncation on cells >50,000 characters.</failure_cases>
 
     Args:
         uri: Google Sheets URI (supports full URL pattern)
-        data: 2D array [[row1_col1, row1_col2], [row2_col1, row2_col2]].
-              CRITICAL: Must be nested list structure, NOT a string.
+        data: 2D array [[row1_col1, row1_col2], [row2_col1, row2_col2]] or list of dicts (DataFrame-like).
+              CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
 
@@ -247,8 +261,11 @@ async def update_range(
         Dict containing update results and spreadsheet information
 
     Examples:
-        # Update at specific position
+        # Update at specific position (2D array)
         update_range(ctx, uri, data=[["Value1", "Value2"]], range_address="B5")
+
+        # Update with list of dicts (DataFrame-like)
+        update_range(ctx, uri, data=[{"col1": "Value1", "col2": "Value2"}], range_address="A1")
 
         # Write table from A1 with auto-expansion
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")

@@ -227,3 +227,56 @@ def column_letter_to_index(letter: str) -> int:
     for i, char in enumerate(reversed(letter)):
         index += (ord(char) - ord('A') + 1) * (26 ** i)
     return index - 1
+
+
+def process_data_input(data: list) -> Tuple[Optional[list[str]], list[list]]:
+    """
+    Process data input that can be either list of lists or list of dicts.
+
+    Supports pandas DataFrame-like list of dict format where each dict represents a row.
+
+    Args:
+        data: Either List[List[Any]] (2D array) or List[Dict[str, Any]] (list of dicts)
+
+    Returns:
+        (headers, data_rows) tuple:
+            - headers: List of column names (None if 2D array input)
+            - data_rows: 2D array of data values
+
+    Example:
+        >>> # List of dicts (DataFrame-like)
+        >>> data = [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]
+        >>> headers, rows = process_data_input(data)
+        >>> headers
+        ['name', 'age']
+        >>> rows
+        [['Alice', 30], ['Bob', 25]]
+
+        >>> # 2D array
+        >>> data = [["Alice", 30], ["Bob", 25]]
+        >>> headers, rows = process_data_input(data)
+        >>> headers
+        None
+        >>> rows
+        [['Alice', 30], ['Bob', 25]]
+    """
+    if not data:
+        return None, []
+
+    # Check if data is list of dicts
+    if isinstance(data[0], dict):
+        # Extract headers from first dict keys
+        headers = list(data[0].keys())
+
+        # Convert list of dicts to 2D array
+        data_rows = []
+        for row_dict in data:
+            # Ensure all rows use the same column order
+            row = [row_dict.get(key, None) for key in headers]
+            data_rows.append(row)
+
+        logger.debug(f"Converted list of dicts to 2D array. Headers: {headers}, Rows: {len(data_rows)}")
+        return headers, data_rows
+
+    # Already a 2D array (list of lists)
+    return None, data

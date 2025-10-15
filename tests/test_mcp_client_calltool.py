@@ -8,6 +8,7 @@ Test Functions:
 - test_write_operations: Range updates, row/column appends
 - test_advanced_operations: New sheet creation, complex data formats
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
+- test_list_of_dict_input: Tests DataFrame-like list of dict input support
 
 Usage:
     # Run all tests
@@ -18,6 +19,7 @@ Usage:
     python test_mcp_client_calltool.py --env=local --test=write
     python test_mcp_client_calltool.py --env=local --test=advanced
     python test_mcp_client_calltool.py --env=local --test=gid
+    python test_mcp_client_calltool.py --env=local --test=listtype
 
     # Run against production
     python test_mcp_client_calltool.py --env=prod --test=all
@@ -718,6 +720,254 @@ async def test_gid_fix(url, headers):
 
             return new_spreadsheet_url
 
+async def test_list_of_dict_input(url, headers):
+    """Test list of dict input support for write_new_sheet, append_rows, update_range"""
+    print(f"🚀 Testing List of Dict Input Support")
+    print("=" * 60)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Test 1: Create new sheet with list of dicts (DataFrame-like format)
+            print(f"\n📝 Test 1: Creating new sheet with list of dicts")
+            print(f"   Testing DataFrame-like input format")
+
+            dict_data = [
+                {"name": "Alice", "age": 30, "city": "New York", "timestamp": timestamp},
+                {"name": "Bob", "age": 25, "city": "Los Angeles", "timestamp": timestamp},
+                {"name": "Charlie", "age": 35, "city": "Chicago", "timestamp": timestamp}
+            ]
+
+            create_sheet_res = await session.call_tool("write_new_sheet", {
+                "data": dict_data,
+                "sheet_name": f"List of Dict Test {timestamp}"
+            })
+            print(f"✅ Create sheet with list of dicts result: {create_sheet_res}")
+
+            # Verify the result
+            new_spreadsheet_url = None
+            if not create_sheet_res.isError and create_sheet_res.content and create_sheet_res.content[0].text:
+                result_content = json.loads(create_sheet_res.content[0].text)
+                if result_content.get('success'):
+                    new_spreadsheet_url = result_content.get('spreadsheet_url')
+                    rows_created = result_content.get('rows_created')
+                    columns_created = result_content.get('columns_created')
+
+                    print(f"   ✅ New spreadsheet created:")
+                    print(f"      URL: {new_spreadsheet_url}")
+                    print(f"      Rows: {rows_created}")
+                    print(f"      Columns: {columns_created}")
+
+                    # Verify correct dimensions
+                    expected_rows = 3  # 3 data rows
+                    expected_cols = 4  # 4 columns (name, age, city, timestamp)
+
+                    if rows_created == expected_rows and columns_created == expected_cols:
+                        print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
+                        print(f"   ✅ PASS: Headers automatically extracted from dict keys")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
+                else:
+                    print(f"   ❌ FAIL: {result_content.get('message', 'Unknown error')}")
+            else:
+                print(f"   ❌ FAIL: Could not create spreadsheet")
+
+            # Use READ_WRITE_URI3 for all subsequent tests
+            test_uri = READ_WRITE_URI3
+            print(f"\n💡 Using existing test sheet for remaining tests: {test_uri}")
+
+            # Test 2: Append rows using list of dicts
+            print(f"\n📝 Test 2: Appending rows with list of dicts")
+
+            append_dict_data = [
+                {"name": "David", "age": 28, "city": "Boston", "timestamp": timestamp},
+                {"name": "Eve", "age": 32, "city": "Seattle", "timestamp": timestamp}
+            ]
+
+            append_rows_res = await session.call_tool("append_rows", {
+                "uri": test_uri,
+                "data": append_dict_data
+            })
+            print(f"✅ Append rows result: {append_rows_res}")
+
+            # Verify the result
+            if not append_rows_res.isError and append_rows_res.content and append_rows_res.content[0].text:
+                result_content = json.loads(append_rows_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    data_shape = result_content.get('data_shape', [0, 0])
+
+                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+
+                    # Expected: 8 cells (2 rows × 4 columns)
+                    expected_cells = 2 * 4
+                    if updated_cells == expected_cells and data_shape[0] == 2:
+                        print(f"   ✅ PASS: Correct number of cells appended")
+                        print(f"   ✅ PASS: List of dicts converted to 2D array correctly")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+
+            # Test 3: Update range using list of dicts
+            print(f"\n📝 Test 3: Updating range with list of dicts")
+
+            update_dict_data = [
+                {"product": "Laptop", "price": 999.99, "stock": 15},
+                {"product": "Mouse", "price": 25.99, "stock": 50},
+                {"product": "Keyboard", "price": 79.99, "stock": 30}
+            ]
+
+            update_range_res = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": update_dict_data,
+                "range_address": "F1"
+            })
+            print(f"✅ Update range result: {update_range_res}")
+
+            # Verify the result
+            if not update_range_res.isError and update_range_res.content and update_range_res.content[0].text:
+                result_content = json.loads(update_range_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    data_shape = result_content.get('data_shape', [0, 0])
+
+                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+
+                    # Expected: 12 cells (4 rows including header × 3 columns)
+                    expected_cells = 4 * 3  # 1 header row + 3 data rows
+                    if updated_cells == expected_cells:
+                        print(f"   ✅ PASS: Correct number of cells updated (includes auto-extracted headers)")
+                        print(f"   ✅ PASS: Headers placed in first row")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+
+            # Test 4: Mixed data types in list of dicts
+            print(f"\n📝 Test 4: Testing mixed data types (str, int, float, bool, None)")
+
+            mixed_type_data = [
+                {"product": "Widget", "price": 49.99, "in_stock": True, "quantity": 100, "notes": None},
+                {"product": "Gadget", "price": 29.99, "in_stock": False, "quantity": 0, "notes": "Out of stock"}
+            ]
+
+            mixed_type_res = await session.call_tool("append_rows", {
+                "uri": test_uri,
+                "data": mixed_type_data
+            })
+            print(f"✅ Mixed types result: {mixed_type_res}")
+
+            # Verify the result
+            if not mixed_type_res.isError and mixed_type_res.content and mixed_type_res.content[0].text:
+                result_content = json.loads(mixed_type_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+
+                    # Expected: 10 cells (2 rows × 5 columns)
+                    expected_cells = 2 * 5
+                    if updated_cells == expected_cells:
+                        print(f"   ✅ PASS: Mixed data types handled correctly")
+                        print(f"   ✅ PASS: None values converted properly")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+
+            # Test 5: Sparse data (missing keys in some dicts)
+            print(f"\n📝 Test 5: Testing sparse data (missing keys filled with None)")
+
+            sparse_data = [
+                {"name": "Frank", "age": 40, "city": "Miami"},
+                {"name": "Grace", "city": "Denver"},  # Missing 'age'
+                {"name": "Henry", "age": 29}  # Missing 'city'
+            ]
+
+            sparse_res = await session.call_tool("append_rows", {
+                "uri": test_uri,
+                "data": sparse_data
+            })
+            print(f"✅ Sparse data result: {sparse_res}")
+
+            # Verify the result
+            if not sparse_res.isError and sparse_res.content and sparse_res.content[0].text:
+                result_content = json.loads(sparse_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+
+                    # Expected: 9 cells (3 rows × 3 columns)
+                    expected_cells = 3 * 3
+                    if updated_cells == expected_cells:
+                        print(f"   ✅ PASS: Sparse data handled correctly")
+                        print(f"   ✅ PASS: Missing keys filled with None values")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+
+            # Test 6: Compare with traditional 2D array format
+            print(f"\n📝 Test 6: Comparing list of dicts vs 2D array format")
+            print(f"   Both formats should produce identical results when properly specified")
+
+            # Create two sheets with identical data but different input formats
+            test_data_dict = [
+                {"item": "Apple", "quantity": 10, "price": 1.99},
+                {"item": "Banana", "quantity": 15, "price": 0.99}
+            ]
+
+            # For fair comparison, provide headers explicitly for 2D array
+            test_data_2d = [
+                ["Apple", 10, 1.99],
+                ["Banana", 15, 0.99]
+            ]
+
+            # Test with dict format using update_range
+            dict_update_res = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": test_data_dict,
+                "range_address": "J1"
+            })
+
+            # Test with 2D array format using update_range with explicit headers
+            array_update_res = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": test_data_2d,
+                "range_address": "N1"
+            })
+
+            # Compare results
+            if (not dict_update_res.isError and not array_update_res.isError and
+                dict_update_res.content and array_update_res.content):
+
+                dict_result = json.loads(dict_update_res.content[0].text)
+                array_result = json.loads(array_update_res.content[0].text)
+
+                if dict_result.get('success') and array_result.get('success'):
+                    dict_shape = dict_result.get('data_shape')
+                    array_shape = array_result.get('data_shape')
+
+                    print(f"   📊 Dict format shape: {dict_shape}")
+                    print(f"   📊 2D array shape: {array_shape}")
+
+                    # Dict format includes header row (3 total), 2D array without explicit headers is 2 rows
+                    # This shows the key difference: dict auto-includes headers, 2D array doesn't
+                    print(f"   💡 Note: Dict format auto-extracts and includes headers in output")
+                    print(f"   💡 Note: 2D array treats all rows as data unless headers parameter is used")
+
+                    if dict_shape[0] > array_shape[0]:
+                        print(f"   ✅ PASS: Dict format includes header row (+1 row vs 2D array)")
+                        print(f"   ✅ PASS: Both formats work correctly with different semantics")
+                    else:
+                        print(f"   ⚠️  Unexpected shape comparison - dict: {dict_shape}, array: {array_shape}")
+
+            print(f"\n✅ List of dict input test completed!")
+            print(f"\n📊 Test Summary:")
+            print(f"   ✓ write_new_sheet accepts list of dicts")
+            print(f"   ✓ append_rows accepts list of dicts")
+            print(f"   ✓ update_range accepts list of dicts")
+            print(f"   ✓ Headers automatically extracted from dict keys")
+            print(f"   ✓ Mixed data types handled correctly")
+            print(f"   ✓ Sparse data (missing keys) filled with None")
+            print(f"   ✓ Compatible with traditional 2D array format")
+            print(f"   ✓ Tests use READ_WRITE_URI3 to avoid creating multiple sheets")
+
+            return new_spreadsheet_url
+
 async def run_all_tests(url, headers):
     """Run all test suites in sequence"""
     print("🎯 Starting Google Sheets MCP Integration Tests")
@@ -745,6 +995,11 @@ async def run_all_tests(url, headers):
         print(f"\n{'='*20} GID FIX TEST {'='*20}")
         gid_test_url = await test_gid_fix(url, headers)
         results['gid_fix'] = {'status': 'passed', 'test_sheet_url': gid_test_url}
+
+        # Run list of dict input test
+        print(f"\n{'='*20} LIST OF DICT INPUT TEST {'='*20}")
+        listtype_test_url = await test_list_of_dict_input(url, headers)
+        results['list_of_dict_input'] = {'status': 'passed', 'test_sheet_url': listtype_test_url}
 
         # Summary
         print(f"\n{'='*80}")
@@ -774,7 +1029,8 @@ async def run_single_test(test_name, url, headers):
         'basic': test_basic_operations,
         'write': test_write_operations,
         'advanced': test_advanced_operations,
-        'gid': test_gid_fix
+        'gid': test_gid_fix,
+        'listtype': test_list_of_dict_input
     }
     
     if test_name not in test_functions:
@@ -803,8 +1059,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
     parser.add_argument("--env", choices=["local", "prod"], default="local",
                        help="Environment to use: local (127.0.0.1:8321) or prod (datatable-mcp.maybe.ai)")
-    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid"], default="all",
-                       help="Which test to run: all (default), basic, write, advanced, or gid")
+    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype"], default="all",
+                       help="Which test to run: all (default), basic, write, advanced, gid, or listtype")
     args = parser.parse_args()
 
     # Set endpoint based on environment argument

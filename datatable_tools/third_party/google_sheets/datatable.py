@@ -19,7 +19,8 @@ from datatable_tools.google_sheets_helpers import (
     get_sheet_by_gid,
     auto_detect_headers,
     column_index_to_letter,
-    column_letter_to_index
+    column_letter_to_index,
+    process_data_input
 )
 
 logger = logging.getLogger(__name__)
@@ -143,17 +144,25 @@ class GoogleSheetDataTable(DataTableInterface):
 
         Args:
             service: Authenticated Google Sheets API service object
-            data: 2D array of table data
+            data: 2D array of table data or list of dicts (DataFrame-like)
             headers: Optional column headers
             sheet_name: Optional name for the spreadsheet
         """
         try:
-            # Auto-detect headers if not provided
-            detected_headers, data_rows = auto_detect_headers(data)
+            # Process input data (handles both 2D array and list of dicts)
+            extracted_headers, data_rows = process_data_input(data)
 
-            # Use provided headers if given, otherwise use detected headers
-            final_headers = headers if headers is not None else detected_headers
-            final_data = data_rows if detected_headers else data
+            # If data was list of dicts and headers not explicitly provided, use extracted headers
+            if extracted_headers and headers is None:
+                final_headers = extracted_headers
+                final_data = data_rows
+            else:
+                # Auto-detect headers if not provided and data is 2D array
+                detected_headers, processed_rows = auto_detect_headers(data_rows if extracted_headers else data)
+
+                # Use provided headers if given, otherwise use detected headers
+                final_headers = headers if headers is not None else detected_headers
+                final_data = processed_rows if detected_headers else (data_rows if extracted_headers else data)
 
             # Use default sheet name if not provided
             title = sheet_name or "New DataTable"
@@ -232,7 +241,7 @@ class GoogleSheetDataTable(DataTableInterface):
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
-            data: 2D array of row data to append
+            data: 2D array of row data to append or list of dicts (DataFrame-like)
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -242,10 +251,17 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
 
-            # Auto-detect headers in data (but don't write headers when appending rows)
-            detected_headers, data_rows = auto_detect_headers(data)
-            # For append_rows, we only write data rows, not headers
-            values_to_write = data_rows if detected_headers else data
+            # Process input data (handles both 2D array and list of dicts)
+            extracted_headers, data_rows = process_data_input(data)
+
+            # If data is already processed (list of dicts), use the converted data
+            if extracted_headers:
+                values_to_write = data_rows
+            else:
+                # Auto-detect headers in data (but don't write headers when appending rows)
+                detected_headers, processed_rows = auto_detect_headers(data)
+                # For append_rows, we only write data rows, not headers
+                values_to_write = processed_rows if detected_headers else data
 
             # Convert to strings for Google Sheets API
             values = [[str(cell) if cell is not None else "" for cell in row] for row in values_to_write]
@@ -317,7 +333,7 @@ class GoogleSheetDataTable(DataTableInterface):
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
-            data: 2D array of column data to append
+            data: 2D array of column data to append or list of dicts (DataFrame-like)
             headers: Optional column headers
         """
         try:
@@ -328,22 +344,30 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
 
-            # Process headers - auto-detect if not provided
-            detected_headers, data_rows = auto_detect_headers(data)
+            # Process input data (handles both 2D array and list of dicts)
+            extracted_headers, data_rows = process_data_input(data)
 
-            # Determine final headers and data
-            if headers is not None:
-                # User provided headers explicitly
-                final_headers = headers
-                final_data = data
-            elif detected_headers:
-                # Headers auto-detected
-                final_headers = detected_headers
+            # If data was list of dicts and headers not explicitly provided, use extracted headers
+            if extracted_headers and headers is None:
+                final_headers = extracted_headers
                 final_data = data_rows
             else:
-                # No headers
-                final_headers = []
-                final_data = data
+                # Process headers - auto-detect if not provided
+                detected_headers, processed_rows = auto_detect_headers(data_rows if extracted_headers else data)
+
+                # Determine final headers and data
+                if headers is not None:
+                    # User provided headers explicitly
+                    final_headers = headers
+                    final_data = data_rows if extracted_headers else data
+                elif detected_headers:
+                    # Headers auto-detected
+                    final_headers = detected_headers
+                    final_data = processed_rows
+                else:
+                    # No headers
+                    final_headers = []
+                    final_data = data_rows if extracted_headers else data
 
             # Convert to strings for Google Sheets API
             values_only = [[str(cell) if cell is not None else "" for cell in row] for row in final_data]
@@ -423,7 +447,7 @@ class GoogleSheetDataTable(DataTableInterface):
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
-            data: 2D array of cell values
+            data: 2D array of cell values or list of dicts (DataFrame-like)
             range_address: A1 notation range address
         """
         try:
@@ -434,16 +458,25 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
 
-            # Auto-detect headers in data and include them in output
-            detected_headers, data_rows = auto_detect_headers(data)
+            # Process input data (handles both 2D array and list of dicts)
+            extracted_headers, data_rows = process_data_input(data)
 
-            # If headers were detected, include them in the output
-            if detected_headers:
-                values = [[str(h) for h in detected_headers]]
+            # If data was list of dicts, include extracted headers
+            if extracted_headers:
+                values = [[str(h) for h in extracted_headers]]
                 values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
-                logger.info(f"Including detected headers in output: {detected_headers}")
+                logger.info(f"Including extracted headers from list of dicts: {extracted_headers}")
             else:
-                values = [[str(cell) if cell is not None else "" for cell in row] for row in data]
+                # Auto-detect headers in data and include them in output
+                detected_headers, processed_rows = auto_detect_headers(data)
+
+                # If headers were detected, include them in the output
+                if detected_headers:
+                    values = [[str(h) for h in detected_headers]]
+                    values.extend([[str(cell) if cell is not None else "" for cell in row] for row in processed_rows])
+                    logger.info(f"Including detected headers in output: {detected_headers}")
+                else:
+                    values = [[str(cell) if cell is not None else "" for cell in row] for row in data]
 
             if not values:
                 values = [[""]]
