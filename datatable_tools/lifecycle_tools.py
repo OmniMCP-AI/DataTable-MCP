@@ -17,7 +17,7 @@ class TableResponse(TypedDict):
     name: Optional[str]
     shape: Optional[tuple[int, int]]
     headers: Optional[List[str]]
-    data: Optional[List[List[Any]]]  # Add the actual data
+    data: List[Dict[str, Any]]  # List of dictionaries (rows) with headers as keys
     source_info: Optional[Dict[str, Any]]
     error: Optional[str]
     message: str
@@ -198,6 +198,9 @@ async def _load_google_sheets(service, ctx: Context, source_info: dict) -> Table
         source_info=metadata
     )
 
+    # Convert data from list of lists to list of dictionaries
+    data_as_dicts = [dict(zip(headers, row)) for row in data] if headers else []
+
     table = table_manager.get_table(table_id)
     return {
         "success": True,
@@ -205,7 +208,7 @@ async def _load_google_sheets(service, ctx: Context, source_info: dict) -> Table
         "name": table.metadata.name,
         "shape": table.shape,
         "headers": table.headers,
-        "data": data,
+        "data": data_as_dicts,
         "source_info": metadata,
         "error": None,
         "message": f"Loaded table from Google Sheets with {table.shape[0]} rows and {table.shape[1]} columns"

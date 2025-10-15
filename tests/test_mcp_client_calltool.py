@@ -4,7 +4,7 @@ Google Sheets MCP Integration Tests
 Separated into focused test functions for better maintainability:
 
 Test Functions:
-- test_basic_operations: Tool listing, data loading, error handling
+- test_basic_operations: Tool listing, data loading, error handling, data format verification
 - test_write_operations: Range updates, row/column appends
 - test_advanced_operations: New sheet creation, complex data formats
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
@@ -106,6 +106,65 @@ async def test_basic_operations(url, headers):
                     print(f"   Error message: {invalid_load_res.content[0].text}")
             else:
                 print(f"❌ Expected isError = True, but got isError = False")
+
+            # Test 3: Verify data format is list of dictionaries (not list of lists)
+            print(f"\n📘 Test 3: Verifying data format is list of dictionaries")
+            print(f"   Testing improved data structure from TableResponse")
+            
+            load_format_res = await session.call_tool("load_data_table", {
+                "uri": READ_ONLY_URI,
+            })
+            print(f"load_format_res: {load_format_res}")
+            if load_format_res.content and load_format_res.content[0].text:
+                content = json.loads(load_format_res.content[0].text)
+                if content.get('success'):
+                    data = content.get('data', [])
+                    headers = content.get('headers', [])
+                    
+                    print(f"   📊 Headers: {headers}")
+                    print(f"   📊 Data rows: {len(data)}")
+                    
+                    # Verify data structure
+                    if data:
+                        first_row = data[0]
+                        print(f"   📊 First row type: {type(first_row)}")
+                        print(f"   📊 First row sample: {first_row}")
+                        
+                        # Check if first row is a dictionary
+                        if isinstance(first_row, dict):
+                            print(f"   ✅ PASS: Data is correctly formatted as list of dictionaries")
+                            
+                            # Verify all keys match headers
+                            row_keys = set(first_row.keys())
+                            header_set = set(headers)
+                            
+                            if row_keys == header_set:
+                                print(f"   ✅ PASS: Dictionary keys match headers exactly")
+                                print(f"      Keys: {list(row_keys)}")
+                            else:
+                                print(f"   ⚠️  WARNING: Dictionary keys don't match headers")
+                                print(f"      Expected keys: {headers}")
+                                print(f"      Actual keys: {list(row_keys)}")
+                            
+                            # Verify we can access data by column name
+                            if headers and len(headers) > 0:
+                                first_header = headers[0]
+                                first_value = first_row.get(first_header)
+                                print(f"   ✅ PASS: Can access data by column name")
+                                print(f"      Example: row['{first_header}'] = {first_value}")
+                        
+                        elif isinstance(first_row, list):
+                            print(f"   ❌ FAIL: Data is still in old format (list of lists)")
+                            print(f"      Expected: list of dictionaries")
+                            print(f"      Got: list of lists")
+                        else:
+                            print(f"   ❌ FAIL: Unexpected data format: {type(first_row)}")
+                    else:
+                        print(f"   ⚠️  WARNING: No data rows returned (empty sheet)")
+                else:
+                    print(f"   ❌ Failed to load data: {content.get('message', 'Unknown error')}")
+            else:
+                print(f"   ❌ Failed to get response content")
                 
             print(f"\n✅ Basic operations test completed!")
             return table_id
