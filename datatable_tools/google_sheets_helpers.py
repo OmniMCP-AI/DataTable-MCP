@@ -8,10 +8,18 @@ will be deprecated after migration is complete.
 """
 import re
 import asyncio
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union, Any
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Type checking for optional Polars import
+try:
+    import polars as pl
+    POLARS_AVAILABLE = True
+except ImportError:
+    POLARS_AVAILABLE = False
+    pl = None
 
 
 def parse_google_sheets_uri(uri: str) -> Tuple[str, Optional[str]]:
@@ -229,21 +237,39 @@ def column_letter_to_index(letter: str) -> int:
     return index - 1
 
 
-def process_data_input(data: list) -> Tuple[Optional[list[str]], list[list]]:
+def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], list[list]]:
     """
-    Process data input that can be either list of lists or list of dicts.
+    Process data input supporting multiple formats including Polars DataFrames.
 
-    Supports pandas DataFrame-like list of dict format where each dict represents a row.
+    Supports:
+    - List[List[Any]]: 2D array (traditional format)
+    - List[Dict[str, Any]]: List of dicts (pandas DataFrame-like)
+    - pl.DataFrame: Polars DataFrame (NEW in Stage 5)
 
     Args:
-        data: Either List[List[Any]] (2D array) or List[Dict[str, Any]] (list of dicts)
+        data: One of the supported data formats:
+              - List[List[Any]]: 2D array
+              - List[Dict[str, Any]]: List of dicts
+              - pl.DataFrame: Polars DataFrame (if polars is installed)
 
     Returns:
         (headers, data_rows) tuple:
-            - headers: List of column names (None if 2D array input)
+            - headers: List of column names (None if 2D array without headers)
             - data_rows: 2D array of data values
 
-    Example:
+    Raises:
+        ValueError: If Polars DataFrame is passed but polars is not installed
+
+    Examples:
+        >>> # Polars DataFrame (NEW)
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"name": ["Alice", "Bob"], "age": [30, 25]})
+        >>> headers, rows = process_data_input(df)
+        >>> headers
+        ['name', 'age']
+        >>> rows
+        [['Alice', 30], ['Bob', 25]]
+
         >>> # List of dicts (DataFrame-like)
         >>> data = [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]
         >>> headers, rows = process_data_input(data)
@@ -260,6 +286,25 @@ def process_data_input(data: list) -> Tuple[Optional[list[str]], list[list]]:
         >>> rows
         [['Alice', 30], ['Bob', 25]]
     """
+    # NEW: Handle Polars DataFrame
+    if POLARS_AVAILABLE and isinstance(data, pl.DataFrame):
+        # Extract headers from column names
+        headers = data.columns  # Returns List[str]
+
+        # Convert DataFrame to 2D array using .rows()
+        data_rows = data.rows()  # Returns List[Tuple], convert to List[List]
+        data_rows = [list(row) for row in data_rows]
+
+        logger.debug(f"Converted Polars DataFrame to 2D array. Headers: {headers}, Rows: {len(data_rows)}")
+        return headers, data_rows
+
+    # Check if polars DataFrame was passed but polars not installed
+    if not POLARS_AVAILABLE and hasattr(data, 'columns') and hasattr(data, 'rows'):
+        raise ValueError(
+            "Polars DataFrame detected but polars library is not installed. "
+            "Install polars with: pip install polars"
+        )
+
     if not data:
         return None, []
 

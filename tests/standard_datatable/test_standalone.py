@@ -17,10 +17,9 @@ Environment Variables Required:
 import asyncio
 import os
 from datetime import datetime
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
+from datatable_tools.auth.service_factory import create_google_service_from_env
 
 
 # Test URIs (same as MCP tests for consistency)
@@ -30,33 +29,8 @@ READ_WRITE_URI = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod
 
 def create_google_service():
     """Create Google Sheets service using OAuth credentials (no FastMCP)"""
-
-    # Get OAuth credentials from environment
-    refresh_token = os.getenv("TEST_GOOGLE_OAUTH_REFRESH_TOKEN")
-    client_id = os.getenv("TEST_GOOGLE_OAUTH_CLIENT_ID")
-    client_secret = os.getenv("TEST_GOOGLE_OAUTH_CLIENT_SECRET")
-
-    if not all([refresh_token, client_id, client_secret]):
-        raise ValueError(
-            "Missing OAuth credentials. Please set:\n"
-            "- TEST_GOOGLE_OAUTH_REFRESH_TOKEN\n"
-            "- TEST_GOOGLE_OAUTH_CLIENT_ID\n"
-            "- TEST_GOOGLE_OAUTH_CLIENT_SECRET"
-        )
-
-    # Create credentials using standard Google OAuth library
-    creds = Credentials(
-        token=None,  # Access token (will be auto-refreshed)
-        refresh_token=refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=client_id,
-        client_secret=client_secret
-    )
-
-    # Build Google Sheets service (standard Google API)
-    service = build('sheets', 'v4', credentials=creds)
-
-    return service
+    # Use the new service factory
+    return create_google_service_from_env(env_prefix="TEST_GOOGLE_OAUTH")
 
 
 async def test_case_1_load_data():
@@ -77,16 +51,15 @@ async def test_case_1_load_data():
         uri=READ_ONLY_URI
     )
 
-    # Verify result
-    if result.get('success'):
+    # Verify result (result is a Pydantic model)
+    if result.success:
         print(f"✅ Successfully loaded table")
-        print(f"   Table ID: {result.get('table_id')}")
-        print(f"   Shape: {result.get('shape')}")
-        print(f"   Headers: {result.get('headers')}")
-        print(f"   Data rows: {len(result.get('data', []))}")
+        print(f"   Table ID: {result.table_id}")
+        print(f"   Shape: {result.shape}")
+        print(f"   Data rows: {len(result.data)}")
         return True
     else:
-        print(f"❌ Failed to load table: {result.get('error')}")
+        print(f"❌ Failed to load table: {result.error}")
         return False
 
 
@@ -112,15 +85,15 @@ async def test_case_2_update_range():
         range_address="F1"
     )
 
-    # Verify result
-    if result.get('success'):
+    # Verify result (result is a Pydantic model)
+    if result.success:
         print(f"✅ Successfully updated range")
-        print(f"   Worksheet: {result.get('worksheet')}")
-        print(f"   Range: {result.get('range')}")
-        print(f"   Updated cells: {result.get('updated_cells')}")
+        print(f"   Worksheet: {result.worksheet}")
+        print(f"   Range: {result.range}")
+        print(f"   Updated cells: {result.updated_cells}")
         return True
     else:
-        print(f"❌ Failed to update range: {result.get('error')}")
+        print(f"❌ Failed to update range: {result.error}")
         return False
 
 
@@ -151,15 +124,15 @@ async def test_case_3_create_new_sheet():
         sheet_name=f"Standalone Test {timestamp}"
     )
 
-    # Verify result
-    if result.get('success'):
+    # Verify result (result is a Pydantic model)
+    if result.success:
         print(f"✅ Successfully created new spreadsheet")
-        print(f"   URL: {result.get('spreadsheet_url')}")
-        print(f"   Rows created: {result.get('rows_created')}")
-        print(f"   Columns created: {result.get('columns_created')}")
+        print(f"   URL: {result.spreadsheet_url}")
+        print(f"   Rows created: {result.rows_created}")
+        print(f"   Columns created: {result.columns_created}")
         return True
     else:
-        print(f"❌ Failed to create spreadsheet: {result.get('error')}")
+        print(f"❌ Failed to create spreadsheet: {result.error}")
         return False
 
 
