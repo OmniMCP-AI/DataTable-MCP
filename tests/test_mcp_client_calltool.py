@@ -124,9 +124,9 @@ async def test_basic_operations(url, headers):
                 content = json.loads(load_format_res.content[0].text)
                 if content.get('success'):
                     data = content.get('data', [])
-                    headers = content.get('headers', [])
+                    shape = content.get('shape', '(0,0)')
                     
-                    print(f"   📊 Headers: {headers}")
+                    print(f"   📊 Shape: {shape}")
                     print(f"   📊 Data rows: {len(data)}")
                     
                     # Verify data is list of dicts
@@ -137,17 +137,9 @@ async def test_basic_operations(url, headers):
                         if isinstance(first_row, dict):
                             print(f"   ✅ PASS: Data is list of dictionaries")
                             print(f"   📝 First row type: {type(first_row).__name__}")
-                            print(f"   📝 First row keys: {list(first_row.keys())}")
+                            print(f"   📝 First row keys (these are the headers): {list(first_row.keys())}")
                             print(f"   📝 Sample row: {first_row}")
-                            
-                            # Verify keys match headers
-                            row_keys = list(first_row.keys())
-                            if row_keys == headers:
-                                print(f"   ✅ PASS: Dictionary keys match headers exactly")
-                            else:
-                                print(f"   ⚠️  WARNING: Keys don't match headers")
-                                print(f"      Expected: {headers}")
-                                print(f"      Got: {row_keys}")
+                            print(f"   ✅ PASS: Headers are embedded as dictionary keys")
                         else:
                             print(f"   ❌ FAIL: Data is not list of dictionaries")
                             print(f"      Expected: dict, Got: {type(first_row).__name__}")
@@ -236,78 +228,76 @@ async def test_write_operations(url, headers):
                 result_content = json.loads(append_columns_res.content[0].text)
                 if result_content.get('success'):
                     updated_cells = result_content.get('updated_cells', 0)
-                    data_shape = result_content.get('data_shape', [0, 0])
+                    shape = result_content.get('shape', '(0,0)')
                     range_updated = result_content.get('range', '')
 
-                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
                     print(f"   📍 Range updated: {range_updated}")
 
                     # Expected: 12 cells (6 rows: 1 header + 5 data, × 2 columns)
                     expected_cells = 6 * 2  # 6 rows × 2 columns
-                    if updated_cells == expected_cells and data_shape[1] == 2:
+                    expected_shape = "(6,2)"
+                    if updated_cells == expected_cells and shape == expected_shape:
                         print(f"   ✅ PASS: Correct number of cells updated (includes headers)")
                         print(f"   ✅ PASS: Headers 'Status' and 'Rating' written to first row")
                     else:
-                        print(f"   ❌ FAIL: Expected {expected_cells} cells with 2 columns, got {updated_cells} cells {data_shape}")
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} cells with shape {shape}")
                 else:
                     print(f"   ❌ Failed to append columns: {result_content.get('message', 'Unknown error')}")
             else:
                 print(f"   ❌ Failed to verify append_columns result")
             
-            # Test 6: Test append_columns with single column and verify header placement
-            print(f"\n📝 Test 6: Testing single column append with header verification")
+            # Test 6: Test single column update with header verification
+            print(f"\n📝 Test 6: Testing single column write with header verification")
+            print(f"   Using update_range to write to a safe column location (H1)")
 
             # Create test data similar to the user's "Make.com" case
-            # Note: Each row must be a list, even for single column data
+            # Using list of dicts format which auto-extracts headers
             make_column_data = [
-                ["Visual workflow automation with drag-drop interface; enterprise-focused with advanced routing."],
-                ["Moderate learning curve: visual builder but requires understanding of modules, filters, and data mapping."],
-                ["1000+ app integrations with webhooks, scheduled scenarios, email triggers, API polling, etc."],
-                ["1000+ pre-built modules + HTTP/API requests + custom functions; visual data mapping between apps."],
-                ["Primarily OpenAI integration; limited native LLM support but can connect via HTTP modules."]
+                {"Make.com Features": "Visual workflow automation with drag-drop interface; enterprise-focused with advanced routing."},
+                {"Make.com Features": "Moderate learning curve: visual builder but requires understanding of modules, filters, and data mapping."},
+                {"Make.com Features": "1000+ app integrations with webhooks, scheduled scenarios, email triggers, API polling, etc."},
+                {"Make.com Features": "1000+ pre-built modules + HTTP/API requests + custom functions; visual data mapping between apps."},
+                {"Make.com Features": "Primarily OpenAI integration; limited native LLM support but can connect via HTTP modules."}
             ]
             
-            single_column_res = await session.call_tool("append_columns", {
+            # Use update_range with specific column to avoid grid limit issues
+            single_column_res = await session.call_tool("update_range", {
                 "uri": READ_WRITE_URI3,
                 "data": make_column_data,
-                "headers": ["Make.com Features"]
+                "range_address": "H1"  # Write to column H starting at row 1
             })
-            print(f"✅ Single column append result: {single_column_res}")
+            print(f"✅ Single column update result: {single_column_res}")
             
             # Verify the single column was added with proper header
             if not single_column_res.isError and single_column_res.content and single_column_res.content[0].text:
                 result_content = json.loads(single_column_res.content[0].text)
                 if result_content.get('success'):
                     updated_cells = result_content.get('updated_cells', 0)
-                    data_shape = result_content.get('data_shape', [0, 0])
+                    shape = result_content.get('shape', '(0,0)')
                     range_updated = result_content.get('range', '')
                     
-                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
                     print(f"   📍 Range updated: {range_updated}")
                     
                     # Expected: 6 cells (1 header + 5 data items)
                     expected_cells = len(make_column_data) + 1  # +1 for header
-                    if updated_cells == expected_cells:
+                    expected_shape = "(6,1)"  # 6 rows (1 header + 5 data), 1 column
+                    if updated_cells == expected_cells and shape == expected_shape:
                         print(f"   ✅ PASS: Correct number of cells updated (header + data)")
+                        print(f"   ✅ PASS: Shape is correct: {shape}")
                         
-                        # Extract column letter from range (e.g., "H1:H6" -> "H")
-                        if ':' in range_updated:
-                            start_cell = range_updated.split(':')[0]
-                            column_letter = ''.join(filter(str.isalpha, start_cell))
-                            row_number = ''.join(filter(str.isdigit, start_cell))
-                            
-                            if row_number == "1":
-                                print(f"   ✅ PASS: Header placed at {column_letter}1 (correct position)")
-                                print(f"   📝 Expected: '{column_letter}1' contains 'Make.com Features'")
-                                print(f"   📝 Expected: '{column_letter}2' contains first data item")
-                            else:
-                                print(f"   ❌ FAIL: Header not at row 1, found at {start_cell}")
+                        # Verify range starts at H1
+                        if range_updated.startswith("H1"):
+                            print(f"   ✅ PASS: Data written to column H starting at row 1")
+                            print(f"   📝 Expected: 'H1' contains 'Make.com Features' (header)")
+                            print(f"   📝 Expected: 'H2' through 'H6' contain data items")
                         else:
-                            print(f"   ⚠️  WARNING: Could not parse range format: {range_updated}")
+                            print(f"   ⚠️  WARNING: Expected range to start with H1, got: {range_updated}")
                     else:
-                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} with shape {shape}")
                 else:
-                    print(f"   ❌ Single column append failed: {result_content.get('message', 'Unknown error')}")
+                    print(f"   ❌ Single column write failed: {result_content.get('message', 'Unknown error')}")
 
             # Test 7: Test worksheet-prefixed range address (Sheet1!A1:J6 format)
             print(f"\n📝 Test 7: Testing worksheet-prefixed range address format")
@@ -543,16 +533,16 @@ async def test_advanced_operations(url, headers):
                 result_content = json.loads(complex_data_res.content[0].text)
                 if result_content.get('success'):
                     updated_cells = result_content.get('updated_cells', 0)
-                    data_shape = result_content.get('data_shape', [0, 0])
-                    print(f"   ✅ Updated {updated_cells} cells with shape {data_shape}")
+                    shape = result_content.get('shape', '(0,0)')
+                    print(f"   ✅ Updated {updated_cells} cells with shape {shape}")
                     print(f"   Expected: 15 cells (3 rows × 5 columns, all rows appended)")
 
                     # append_rows appends all rows without header detection
-                    if updated_cells == 15 and data_shape == [3, 5]:
+                    if updated_cells == 15 and shape == "(3,5)":
                         print(f"   ✅ PASS: Data correctly formatted as list[list]")
                         print(f"   ✅ PASS: All rows appended correctly (no header auto-detection in append mode)")
                     else:
-                        print(f"   ❌ FAIL: Expected 15 cells [3, 5], got {updated_cells} cells {data_shape}")
+                        print(f"   ❌ FAIL: Expected 15 cells with shape (3,5), got {updated_cells} cells with shape {shape}")
 
             # Test 3: Automatic header detection with embedded headers (like comparison tables)
             print(f"\n📝 Test 3: Automatic header detection with embedded headers")
@@ -580,7 +570,7 @@ async def test_advanced_operations(url, headers):
                 if result_content.get('success'):
                     print(f"   ✅ Headers automatically detected and processed!")
                     print(f"      Range updated: {result_content.get('range')}")
-                    print(f"      Data shape: {result_content.get('data_shape')}")
+                    print(f"      Shape: {result_content.get('shape')}")
                     print(f"      Updated cells: {result_content.get('updated_cells')}")
 
             print(f"\n✅ Advanced operations test completed!")
@@ -660,12 +650,12 @@ async def test_gid_fix(url, headers):
                 if result_content.get('success'):
                     worksheet_name = result_content.get('worksheet', '')
                     updated_cells = result_content.get('updated_cells', 0)
-                    data_shape = result_content.get('data_shape', [0, 0])
+                    shape = result_content.get('shape', '(0,0)')
 
                     print(f"   ✅ Update succeeded:")
                     print(f"      Worksheet: {worksheet_name}")
                     print(f"      Updated cells: {updated_cells}")
-                    print(f"      Data shape: {data_shape}")
+                    print(f"      Shape: {shape}")
 
                     # Verify Chinese worksheet name was handled correctly
                     if worksheet_name:
@@ -798,17 +788,18 @@ async def test_list_of_dict_input(url, headers):
                 result_content = json.loads(append_rows_res.content[0].text)
                 if result_content.get('success'):
                     updated_cells = result_content.get('updated_cells', 0)
-                    data_shape = result_content.get('data_shape', [0, 0])
+                    shape = result_content.get('shape', '(0,0)')
 
-                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
 
                     # Expected: 8 cells (2 rows × 4 columns)
                     expected_cells = 2 * 4
-                    if updated_cells == expected_cells and data_shape[0] == 2:
+                    expected_shape = "(2,4)"
+                    if updated_cells == expected_cells and shape == expected_shape:
                         print(f"   ✅ PASS: Correct number of cells appended")
                         print(f"   ✅ PASS: List of dicts converted to 2D array correctly")
                     else:
-                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} with shape {shape}")
 
             # Test 3: Update range using list of dicts
             print(f"\n📝 Test 3: Updating range with list of dicts")
@@ -831,17 +822,18 @@ async def test_list_of_dict_input(url, headers):
                 result_content = json.loads(update_range_res.content[0].text)
                 if result_content.get('success'):
                     updated_cells = result_content.get('updated_cells', 0)
-                    data_shape = result_content.get('data_shape', [0, 0])
+                    shape = result_content.get('shape', '(0,0)')
 
-                    print(f"   📊 Updated {updated_cells} cells with shape {data_shape}")
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
 
                     # Expected: 12 cells (4 rows including header × 3 columns)
                     expected_cells = 4 * 3  # 1 header row + 3 data rows
-                    if updated_cells == expected_cells:
+                    expected_shape = "(4,3)"
+                    if updated_cells == expected_cells and shape == expected_shape:
                         print(f"   ✅ PASS: Correct number of cells updated (includes auto-extracted headers)")
                         print(f"   ✅ PASS: Headers placed in first row")
                     else:
-                        print(f"   ❌ FAIL: Expected {expected_cells} cells, got {updated_cells}")
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} with shape {shape}")
 
             # Test 4: Mixed data types in list of dicts
             print(f"\n📝 Test 4: Testing mixed data types (str, int, float, bool, None)")
@@ -938,8 +930,8 @@ async def test_list_of_dict_input(url, headers):
                 array_result = json.loads(array_update_res.content[0].text)
 
                 if dict_result.get('success') and array_result.get('success'):
-                    dict_shape = dict_result.get('data_shape')
-                    array_shape = array_result.get('data_shape')
+                    dict_shape = dict_result.get('shape', '(0,0)')
+                    array_shape = array_result.get('shape', '(0,0)')
 
                     print(f"   📊 Dict format shape: {dict_shape}")
                     print(f"   📊 2D array shape: {array_shape}")
@@ -949,7 +941,11 @@ async def test_list_of_dict_input(url, headers):
                     print(f"   💡 Note: Dict format auto-extracts and includes headers in output")
                     print(f"   💡 Note: 2D array treats all rows as data unless headers parameter is used")
 
-                    if dict_shape[0] > array_shape[0]:
+                    # Extract rows from shape strings "(rows,cols)"
+                    dict_rows = int(dict_shape.strip('()').split(',')[0])
+                    array_rows = int(array_shape.strip('()').split(',')[0])
+
+                    if dict_rows > array_rows:
                         print(f"   ✅ PASS: Dict format includes header row (+1 row vs 2D array)")
                         print(f"   ✅ PASS: Both formats work correctly with different semantics")
                     else:
