@@ -5,7 +5,7 @@ This module provides the Google Sheets-specific implementation of the DataTableI
 All Google Sheets operations go through this class, which inherits from DataTableInterface.
 
 Stage 4.2: Framework-agnostic implementation with NO FastMCP dependency.
-Decorators moved to MCP layer (detailed_tools.py).
+Decorators moved to MCP layer (mcp_tools.py).
 """
 
 from typing import Dict, List, Optional, Any

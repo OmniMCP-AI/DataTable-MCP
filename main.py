@@ -43,8 +43,8 @@ def main():
     print("")
 
     # Import datatable tools to register them with the MCP server
-    # All 5 essential MCP tools are in detailed_tools.py
-    import datatable_tools.detailed_tools  # All 5 core tools
+    # All 5 essential MCP tools are in mcp_tools.py
+    import datatable_tools.mcp_tools  # All 5 core tools
 
    
 
