@@ -35,8 +35,7 @@ class TableResponse(TypedDict):
     success: bool
     table_id: Optional[str]
     name: Optional[str]
-    shape: Optional[tuple[int, int]]
-    headers: Optional[List[str]]
+    shape: Optional[str]
     data: List[Dict[str, Any]] 
     source_info: Optional[Dict[str, Any]]
     error: Optional[str]
