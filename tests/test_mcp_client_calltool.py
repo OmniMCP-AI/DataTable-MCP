@@ -475,7 +475,7 @@ async def test_advanced_operations(url, headers):
             print(f"\n📝 Test 2: Verifying correct list[list] format for complex data")
 
             # This test verifies the bug fix where data should be list[list[Any]] not a JSON string
-            # Note: First row will be auto-detected as headers and removed from data
+            # Note: append_rows appends all rows including headers (no auto-detection for append operations)
             complex_data = [
                 ["Username", "Display Name", "Followers", "Published At", "Content"],
                 ["elonmusk", "Elon Musk", "226889664", "2025-09-30 05:45:44", "RT @mazemoore: Test tweet"],
@@ -495,14 +495,14 @@ async def test_advanced_operations(url, headers):
                     updated_cells = result_content.get('updated_cells', 0)
                     data_shape = result_content.get('data_shape', [0, 0])
                     print(f"   ✅ Updated {updated_cells} cells with shape {data_shape}")
-                    print(f"   Expected: 10 cells (2 data rows × 5 columns, header auto-detected)")
+                    print(f"   Expected: 15 cells (3 rows × 5 columns, all rows appended)")
 
-                    # Header row is auto-detected and removed, so only 2 data rows written
-                    if updated_cells == 10 and data_shape == [2, 5]:
+                    # append_rows appends all rows without header detection
+                    if updated_cells == 15 and data_shape == [3, 5]:
                         print(f"   ✅ PASS: Data correctly formatted as list[list]")
-                        print(f"   ✅ PASS: Header auto-detection working (first row detected as header)")
+                        print(f"   ✅ PASS: All rows appended correctly (no header auto-detection in append mode)")
                     else:
-                        print(f"   ❌ FAIL: Expected 10 cells [2, 5], got {updated_cells} cells {data_shape}")
+                        print(f"   ❌ FAIL: Expected 15 cells [3, 5], got {updated_cells} cells {data_shape}")
 
             # Test 3: Automatic header detection with embedded headers (like comparison tables)
             print(f"\n📝 Test 3: Automatic header detection with embedded headers")
