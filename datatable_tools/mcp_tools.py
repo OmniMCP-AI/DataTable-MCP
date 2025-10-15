@@ -24,6 +24,11 @@ from datatable_tools.auth.service_decorator import require_google_service
 logger = logging.getLogger(__name__)
 
 
+# Type aliases for cleaner, more maintainable type annotations
+PrimitiveValue = int | str | float | bool | None
+TableData = Union[list[list[PrimitiveValue]], list[dict[str, PrimitiveValue]]]
+
+
 # Response type definitions
 class TableResponse(TypedDict):
     """Response type for Google Sheets table operations"""
@@ -82,7 +87,7 @@ async def load_data_table(
 async def write_new_sheet(
     service,  # Injected by @require_google_service
     ctx: Context,
-    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+    data: TableData = Field(
         description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     ),
     headers: Optional[List[str]] = Field(
@@ -144,7 +149,7 @@ async def append_rows(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+    data: TableData = Field(
         description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     )
 ) -> Dict[str, Any]:
@@ -187,7 +192,7 @@ async def append_columns(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+    data: TableData = Field(
         description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     ),
     headers: Optional[List[str]] = Field(
@@ -232,7 +237,7 @@ async def update_range(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: Union[list[list[int | str | float | bool | None]], list[dict[str, int | str | float | bool | None]]] = Field(
+    data: TableData = Field(
         description="2D array of cell values (rows × columns) or list of dicts (DataFrame-like). CRITICAL: Must be a nested list/array structure [[row1_col1, row1_col2], [row2_col1, row2_col2]] or list of dicts, NOT a string. Each inner list represents one row. Accepts int, str, float, bool, or None values."
     ),
     range_address: str = Field(
