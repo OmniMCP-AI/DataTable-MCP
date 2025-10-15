@@ -12,7 +12,7 @@ Contains all 5 core MCP tools:
 - update_range: Update specific cell range
 """
 
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Any
 import logging
 from pydantic import Field
 from fastmcp import Context
@@ -21,11 +21,22 @@ from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataT
 from datatable_tools.auth.service_decorator import require_google_service
 from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse
 
+# Optional Polars import for type hints
+try:
+    import polars as pl
+    POLARS_AVAILABLE = True
+except ImportError:
+    POLARS_AVAILABLE = False
+    pl = None
+
 logger = logging.getLogger(__name__)
 
 
 # Type aliases for cleaner, more maintainable type annotations
 PrimitiveValue = int | str | float | bool | None
+
+# MCP-compatible type (cannot include pl.DataFrame in actual type for Pydantic)
+# DataFrame support is advertised via Field descriptions only
 TableData = Union[list[list[PrimitiveValue]], list[dict[str, PrimitiveValue]]]
 
 
@@ -63,11 +74,16 @@ async def write_new_sheet(
     service,  # Injected by @require_google_service
     ctx: Context,
     data: TableData = Field(
-        description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
+        description=(
+            "Data in pandas-like formats. Accepts:\n"
+            "- List[List[int|str|float|bool|None]]: 2D array\n"
+            "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
+        )
     ),
     headers: Optional[List[str]] = Field(
         default=None,
-        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts, headers are automatically extracted from dict keys."
+        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts or DataFrames, headers are automatically extracted."
     ),
     sheet_name: Optional[str] = Field(
         default=None,
@@ -81,9 +97,9 @@ async def write_new_sheet(
         data: Data in pandas-like formats. Accepts:
               - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
               - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row. For list of dicts, headers are automatically extracted from dict keys.
+              - polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)
+        headers: Optional column headers. If None, headers will be auto-detected.
+                For list of dicts or DataFrames, headers are automatically extracted.
         sheet_name: Optional name for the new spreadsheet (default: "New DataTable")
 
     Returns:
@@ -104,13 +120,19 @@ async def write_new_sheet(
         # Create with list of dicts (DataFrame-like)
         write_new_sheet(ctx, data=[{"name": "John", "age": 25}, {"name": "Jane", "age": 30}])
 
+        # Create with Polars DataFrame (via MCPPlus bridge)
+        import polars as pl
+        df = pl.DataFrame({"name": ["John", "Jane"], "age": [25, 30]})
+        result = await call_tool_by_sse(
+            sse_url=SSE_URL,
+            tool_name="google_sheets__write_new_sheet",
+            direct_call=True,
+            args={"data": df, "sheet_name": "My Data"}
+        )
+
         # Create with custom name
         write_new_sheet(ctx, data=[["Product", "Price"], ["Widget", 9.99]],
                         sheet_name="Product Catalog")
-
-        # Create with auto-detected headers
-        write_new_sheet(ctx, data=[["name", "description"],
-                                   ["Item1", "This is a long description"]])
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.write_new_sheet(service, data, headers, sheet_name)
@@ -125,7 +147,12 @@ async def append_rows(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
     data: TableData = Field(
-        description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
+        description=(
+            "Data to append as rows. Accepts:\n"
+            "- List[List[int|str|float|bool|None]]: 2D array\n"
+            "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
+        )
     )
 ) -> UpdateResponse:
     """
@@ -134,21 +161,13 @@ async def append_rows(
 
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
-        data: Data in pandas-like formats. Accepts:
+        data: Data to append. Accepts:
               - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
               - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
+              - polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)
 
     Returns:
-        UpdateResponse containing:
-            - success: Whether the operation succeeded
-            - spreadsheet_url: Full URL to the spreadsheet with gid
-            - spreadsheet_id: The spreadsheet ID
-            - worksheet: The worksheet name
-            - range: The range where data was appended
-            - updated_cells: Number of cells updated
-            - shape: String of "(rows,columns)"
-            - error: Error message if failed, None otherwise
-            - message: Human-readable result message
+        UpdateResponse containing success status, range, updated cells, shape, etc.
 
     Examples:
         # Append new records to Google Sheets (2D array)
@@ -159,10 +178,15 @@ async def append_rows(
         append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                    data=[{"name": "John", "age": 25}, {"name": "Jane", "age": 30}])
 
-        # Append with auto-detected headers (first row = headers if long content follows)
-        append_rows(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
-                   data=[["name", "description"],
-                         ["Item1", "This is a long description that will trigger header detection"]])
+        # Append with Polars DataFrame (via MCPPlus bridge)
+        import polars as pl
+        df = pl.DataFrame({"name": ["John", "Jane"], "age": [25, 30]})
+        result = await call_tool_by_sse(
+            sse_url=SSE_URL,
+            tool_name="google_sheets__append_rows",
+            direct_call=True,
+            args={"uri": uri, "data": df}
+        )
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.append_rows(service, uri, data)
@@ -177,11 +201,16 @@ async def append_columns(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
     data: TableData = Field(
-        description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
+        description=(
+            "Data to append as columns. Accepts:\n"
+            "- List[List[int|str|float|bool|None]]: 2D array\n"
+            "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
+        )
     ),
     headers: Optional[List[str]] = Field(
         default=None,
-        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts, headers are automatically extracted from dict keys."
+        description="Optional column headers. If None, headers will be auto-detected. For list of dicts or DataFrames, headers are automatically extracted."
     )
 ) -> UpdateResponse:
     """
@@ -231,7 +260,13 @@ async def update_range(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
     data: TableData = Field(
-        description="2D array of cell values (rows × columns) or list of dicts (DataFrame-like). CRITICAL: Must be a nested list/array structure [[row1_col1, row1_col2], [row2_col1, row2_col2]] or list of dicts, NOT a string. Each inner list represents one row. Accepts int, str, float, bool, or None values."
+        description=(
+            "Data to write to range. Accepts:\n"
+            "- List[List[int|str|float|bool|None]]: 2D array of cell values (rows × columns)\n"
+            "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)\n"
+            "CRITICAL: Must be proper data structure, NOT a string. Each inner list represents one row."
+        )
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
