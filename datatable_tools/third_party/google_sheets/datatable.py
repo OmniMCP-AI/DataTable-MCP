@@ -14,6 +14,7 @@ import asyncio
 import re
 
 from datatable_tools.interfaces.datatable import DataTableInterface
+from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse
 from datatable_tools.google_sheets_helpers import (
     parse_google_sheets_uri,
     get_sheet_by_gid,
@@ -118,16 +119,16 @@ class GoogleSheetDataTable(DataTableInterface):
             "column_count": col_count
         }
 
-        return {
-            "success": True,
-            "table_id": f"gs_{spreadsheet_id}_{gid or '0'}",
-            "name": f"Sheet: {sheet_title}",
-            "shape": f"({len(data)},{len(headers)})",
-            "data": data,
-            "source_info": metadata,
-            "error": None,
-            "message": f"Loaded table from Google Sheets with {len(data)} rows and {len(headers)} columns"
-        }
+        return TableResponse(
+            success=True,
+            table_id=f"gs_{spreadsheet_id}_{gid or '0'}",
+            name=f"Sheet: {sheet_title}",
+            shape=f"({len(data)},{len(headers)})",
+            data=data,
+            source_info=metadata,
+            error=None,
+            message=f"Loaded table from Google Sheets with {len(data)} rows and {len(headers)} columns"
+        )
 
     async def write_new_sheet(
         self,
@@ -204,27 +205,27 @@ class GoogleSheetDataTable(DataTableInterface):
 
             total_cols = len(write_data[0]) if write_data else 0
 
-            return {
-                "success": True,
-                "spreadsheet_url": spreadsheet_url_with_gid,
-                "rows_created": len(values),
-                "columns_created": total_cols,
-                "data_shape": (len(values), total_cols),
-                "error": None,
-                "message": f"Successfully created new spreadsheet '{title}' with {len(values)} rows"
-            }
+            return SpreadsheetResponse(
+                success=True,
+                spreadsheet_url=spreadsheet_url_with_gid,
+                rows_created=len(values),
+                columns_created=total_cols,
+                shape=f"({len(values)},{total_cols})",
+                error=None,
+                message=f"Successfully created new spreadsheet '{title}' with {len(values)} rows"
+            )
 
         except Exception as e:
             logger.error(f"Error creating new spreadsheet: {e}")
-            return {
-                "success": False,
-                "spreadsheet_url": '',
-                "rows_created": 0,
-                "columns_created": 0,
-                "data_shape": (0, 0),
-                "error": str(e),
-                "message": f"Failed to create new spreadsheet: {e}"
-            }
+            return SpreadsheetResponse(
+                success=False,
+                spreadsheet_url='',
+                rows_created=0,
+                columns_created=0,
+                shape="(0,0)",
+                error=str(e),
+                message=f"Failed to create new spreadsheet: {e}"
+            )
 
     async def append_rows(
         self,
@@ -249,6 +250,7 @@ class GoogleSheetDataTable(DataTableInterface):
             # Get sheet properties by gid (or first sheet if no gid)
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
+            sheet_id = sheet_props['sheetId']
 
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
@@ -302,20 +304,33 @@ class GoogleSheetDataTable(DataTableInterface):
                 ).execute
             )
 
-            return {
-                "success": True,
-                "spreadsheet_id": spreadsheet_id,
-                "worksheet": sheet_title,
-                "range": range_address,
-                "append_mode": "rows",
-                "updated_cells": sum(len(row) for row in values),
-                "data_shape": [len(values), len(values[0]) if values else 0],
-                "message": f"Successfully appended rows at {range_address} in worksheet '{sheet_title}'"
-            }
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+            
+            return UpdateResponse(
+                success=True,
+                spreadsheet_url=spreadsheet_url,
+                spreadsheet_id=spreadsheet_id,
+                worksheet=sheet_title,
+                range=range_address,
+                updated_cells=sum(len(row) for row in values),
+                shape=f"({len(values)},{len(values[0]) if values else 0})",
+                error=None,
+                message=f"Successfully appended rows at {range_address} in worksheet '{sheet_title}'"
+            )
 
         except Exception as e:
             logger.error(f"Error appending rows to {uri}: {e}")
-            raise
+            return UpdateResponse(
+                success=False,
+                spreadsheet_url="",
+                spreadsheet_id="",
+                worksheet="",
+                range="",
+                updated_cells=0,
+                shape="(0,0)",
+                error=str(e),
+                message=f"Failed to append rows: {e}"
+            )
 
     async def append_columns(
         self,
@@ -342,6 +357,7 @@ class GoogleSheetDataTable(DataTableInterface):
             # Get sheet properties by gid (or first sheet if no gid)
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
+            sheet_id = sheet_props['sheetId']
 
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
@@ -416,20 +432,33 @@ class GoogleSheetDataTable(DataTableInterface):
                 ).execute
             )
 
-            return {
-                "success": True,
-                "spreadsheet_id": spreadsheet_id,
-                "worksheet": sheet_title,
-                "range": range_address,
-                "append_mode": "columns",
-                "updated_cells": sum(len(row) for row in values),
-                "data_shape": [len(values), len(values[0]) if values else 0],
-                "message": f"Successfully appended columns at {range_address} in worksheet '{sheet_title}'"
-            }
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+            
+            return UpdateResponse(
+                success=True,
+                spreadsheet_url=spreadsheet_url,
+                spreadsheet_id=spreadsheet_id,
+                worksheet=sheet_title,
+                range=range_address,
+                updated_cells=sum(len(row) for row in values),
+                shape=f"({len(values)},{len(values[0]) if values else 0})",
+                error=None,
+                message=f"Successfully appended columns at {range_address} in worksheet '{sheet_title}'"
+            )
 
         except Exception as e:
             logger.error(f"Error appending columns to {uri}: {e}")
-            raise
+            return UpdateResponse(
+                success=False,
+                spreadsheet_url="",
+                spreadsheet_id="",
+                worksheet="",
+                range="",
+                updated_cells=0,
+                shape="(0,0)",
+                error=str(e),
+                message=f"Failed to append columns: {e}"
+            )
 
     async def update_range(
         self,
@@ -456,6 +485,7 @@ class GoogleSheetDataTable(DataTableInterface):
             # Get sheet properties by gid (or first sheet if no gid)
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
+            sheet_id = sheet_props['sheetId']
 
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
@@ -557,16 +587,30 @@ class GoogleSheetDataTable(DataTableInterface):
                 ).execute
             )
 
-            return {
-                "success": True,
-                "spreadsheet_id": spreadsheet_id,
-                "worksheet": sheet_title,
-                "range": final_range,
-                "updated_cells": sum(len(row) for row in values),
-                "data_shape": [len(values), len(values[0]) if values else 0],
-                "message": f"Successfully updated range {final_range} in worksheet '{sheet_title}'"
-            }
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+            
+            return UpdateResponse(
+                success=True,
+                spreadsheet_url=spreadsheet_url,
+                spreadsheet_id=spreadsheet_id,
+                worksheet=sheet_title,
+                range=final_range,
+                updated_cells=sum(len(row) for row in values),
+                shape=f"({len(values)},{len(values[0]) if values else 0})",
+                error=None,
+                message=f"Successfully updated range {final_range} in worksheet '{sheet_title}'"
+            )
 
         except Exception as e:
             logger.error(f"Error updating data to {uri}: {e}")
-            raise
+            return UpdateResponse(
+                success=False,
+                spreadsheet_url="",
+                spreadsheet_id="",
+                worksheet="",
+                range="",
+                updated_cells=0,
+                shape="(0,0)",
+                error=str(e),
+                message=f"Failed to update range: {e}"
+            )

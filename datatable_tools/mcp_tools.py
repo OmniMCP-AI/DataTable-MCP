@@ -12,14 +12,14 @@ Contains all 5 core MCP tools:
 - update_range: Update specific cell range
 """
 
-from typing import Dict, List, Optional, Any, Union
-from typing_extensions import TypedDict
+from typing import Union, Optional, List
 import logging
 from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 from datatable_tools.auth.service_decorator import require_google_service
+from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse
 
 logger = logging.getLogger(__name__)
 
@@ -27,30 +27,6 @@ logger = logging.getLogger(__name__)
 # Type aliases for cleaner, more maintainable type annotations
 PrimitiveValue = int | str | float | bool | None
 TableData = Union[list[list[PrimitiveValue]], list[dict[str, PrimitiveValue]]]
-
-
-# Response type definitions
-class TableResponse(TypedDict):
-    """Response type for Google Sheets table operations"""
-    success: bool
-    table_id: Optional[str]
-    name: Optional[str]
-    shape: Optional[str]
-    data: List[Dict[str, Any]] 
-    source_info: Optional[Dict[str, Any]]
-    error: Optional[str]
-    message: str
-
-
-class SpreadsheetResponse(TypedDict):
-    """Response type for creating new Google Sheets spreadsheet"""
-    success: bool
-    spreadsheet_url: str
-    rows_created: int
-    columns_created: int
-    data_shape: tuple[int, int]
-    error: Optional[str]
-    message: str
 
 
 # MCP Tools
@@ -116,7 +92,7 @@ async def write_new_sheet(
             - spreadsheet_url: Full URL to the created spreadsheet
             - rows_created: Number of rows written
             - columns_created: Number of columns written
-            - data_shape: Tuple of (rows, columns)
+            - shape: String of "(rows,columns)"
             - error: Error message if failed, None otherwise
             - message: Human-readable result message
 
@@ -151,7 +127,7 @@ async def append_rows(
     data: TableData = Field(
         description="Data in pandas-like formats. Accepts: List[List[int|str|float|bool|None]] (2D array) or List[Dict[str, int|str|float|bool|None]] (list of dicts, DataFrame-like)"
     )
-) -> Dict[str, Any]:
+) -> UpdateResponse:
     """
     Append data as new rows below existing data in Google Sheets.
     Automatically detects the last row and appends below it starting from column A.
@@ -163,7 +139,16 @@ async def append_rows(
               - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
 
     Returns:
-        Dict containing update results and file/spreadsheet information
+        UpdateResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the spreadsheet with gid
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - range: The range where data was appended
+            - updated_cells: Number of cells updated
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
 
     Examples:
         # Append new records to Google Sheets (2D array)
@@ -198,7 +183,7 @@ async def append_columns(
         default=None,
         description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts, headers are automatically extracted from dict keys."
     )
-) -> Dict[str, Any]:
+) -> UpdateResponse:
     """
     Append data as new columns to the right of existing data in Google Sheets.
     Automatically detects the last column and appends to its right starting from row 1.
@@ -213,7 +198,16 @@ async def append_columns(
                 extracted from the first row. For list of dicts, headers are automatically extracted from dict keys.
 
     Returns:
-        Dict containing update results and file/spreadsheet information
+        UpdateResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the spreadsheet with gid
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - range: The range where data was appended
+            - updated_cells: Number of cells updated
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
 
     Examples:
         # Append new columns to Google Sheets (2D array)
@@ -242,7 +236,7 @@ async def update_range(
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
     )
-) -> Dict[str, Any]:
+) -> UpdateResponse:
     """
     Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
 
@@ -262,7 +256,16 @@ async def update_range(
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
 
     Returns:
-        Dict containing update results and spreadsheet information
+        UpdateResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the spreadsheet with gid
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - range: The range that was updated
+            - updated_cells: Number of cells updated
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
 
     Examples:
         # Update at specific position (2D array)
