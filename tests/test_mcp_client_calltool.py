@@ -1057,8 +1057,8 @@ if __name__ == "__main__":
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
-    parser.add_argument("--env", choices=["local", "prod"], default="local",
-                       help="Environment to use: local (127.0.0.1:8321) or prod (datatable-mcp.maybe.ai)")
+    parser.add_argument("--env", choices=["local", "prod", "test"], default="local",
+                       help="Environment to use: local (127.0.0.1:8321) or test (datatable-mcp-test.maybe.ai) or prod (datatable-mcp.maybe.ai)")
     parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype"], default="all",
                        help="Which test to run: all (default), basic, write, advanced, gid, or listtype")
     args = parser.parse_args()
@@ -1066,9 +1066,10 @@ if __name__ == "__main__":
     # Set endpoint based on environment argument
     if args.env == "local":
         endpoint = "http://127.0.0.1:8321"
+    elif args.env == "prod":
+        endpoint = "https://datatable-mcp.maybe.ai"
     else:
         endpoint = "https://datatable-mcp-test.maybe.ai"
-        # endpoint = "https://datatable-mcp.maybe.ai"
         
 
     print(f"🔗 Using {args.env} environment: {endpoint}")
