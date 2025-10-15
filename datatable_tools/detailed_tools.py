@@ -19,6 +19,7 @@ from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
+from datatable_tools.auth.service_decorator import require_google_service
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,9 @@ class SpreadsheetResponse(TypedDict):
 
 # MCP Tools
 @mcp.tool
+@require_google_service("sheets", "sheets_read")
 async def load_data_table(
+    service,  # Injected by @require_google_service
     ctx: Context,
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
@@ -71,11 +74,13 @@ async def load_data_table(
         uri = "https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0#gid=0"
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.load_data_table(ctx, uri)
+    return await google_sheet.load_data_table(service, uri)
 
 
 @mcp.tool
+@require_google_service("sheets", "sheets_write")
 async def write_new_sheet(
+    service,  # Injected by @require_google_service
     ctx: Context,
     data: list[list[int | str | float | bool | None]] = Field(
         description="Data Accepts: List[List[int| str |float| bool | None]] (2D array)"
@@ -124,11 +129,13 @@ async def write_new_sheet(
                                    ["Item1", "This is a long description"]])
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.write_new_sheet(ctx, data, headers, sheet_name)
+    return await google_sheet.write_new_sheet(service, data, headers, sheet_name)
 
 
 @mcp.tool
+@require_google_service("sheets", "sheets_write")
 async def append_rows(
+    service,  # Injected by @require_google_service
     ctx: Context,
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
@@ -160,11 +167,13 @@ async def append_rows(
                          ["Item1", "This is a long description that will trigger header detection"]])
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.append_rows(ctx, uri, data)
+    return await google_sheet.append_rows(service, uri, data)
 
 
 @mcp.tool
+@require_google_service("sheets", "sheets_write")
 async def append_columns(
+    service,  # Injected by @require_google_service
     ctx: Context,
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
@@ -198,11 +207,13 @@ async def append_columns(
                       data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.append_columns(ctx, uri, data, headers)
+    return await google_sheet.append_columns(service, uri, data, headers)
 
 
 @mcp.tool
+@require_google_service("sheets", "sheets_write")
 async def update_range(
+    service,  # Injected by @require_google_service
     ctx: Context,
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
@@ -243,4 +254,4 @@ async def update_range(
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_range(ctx, uri, data, range_address)
+    return await google_sheet.update_range(service, uri, data, range_address)

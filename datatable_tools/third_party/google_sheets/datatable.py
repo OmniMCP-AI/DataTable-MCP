@@ -4,17 +4,16 @@ GoogleSheetDataTable - Google Sheets Implementation of DataTable Interface
 This module provides the Google Sheets-specific implementation of the DataTableInterface.
 All Google Sheets operations go through this class, which inherits from DataTableInterface.
 
-Stage 4.1: Clean architecture with stacked decorators and direct Google API usage.
+Stage 4.2: Framework-agnostic implementation with NO FastMCP dependency.
+Decorators moved to MCP layer (detailed_tools.py).
 """
 
 from typing import Dict, List, Optional, Any
 import logging
 import asyncio
 import re
-from fastmcp import Context
 
 from datatable_tools.interfaces.datatable import DataTableInterface
-from datatable_tools.auth.service_decorator import require_google_service
 from datatable_tools.google_sheets_helpers import (
     parse_google_sheets_uri,
     get_sheet_by_gid,
@@ -34,17 +33,19 @@ class GoogleSheetDataTable(DataTableInterface):
     Uses stacked decorators and direct Google Sheets API calls for clean architecture.
     """
 
-    @require_google_service("sheets", "sheets_read")
     async def load_data_table(
         self,
-        service,  # Injected by @require_google_service
-        ctx: Context,
+        service,  # Authenticated Google Sheets service
         uri: str
     ) -> Dict[str, Any]:
         """
         Load a table from Google Sheets.
 
         Implementation of DataTableInterface.load_data_table() for Google Sheets.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
         """
         # Parse URI to extract spreadsheet_id and gid
         spreadsheet_id, gid = parse_google_sheets_uri(uri)
@@ -118,11 +119,9 @@ class GoogleSheetDataTable(DataTableInterface):
             "message": f"Loaded table from Google Sheets with {len(data)} rows and {len(headers)} columns"
         }
 
-    @require_google_service("sheets", "sheets_write")
     async def write_new_sheet(
         self,
-        service,  # Injected by @require_google_service
-        ctx: Context,
+        service,  # Authenticated Google Sheets service
         data: List[List[Any]],
         headers: Optional[List[str]] = None,
         sheet_name: Optional[str] = None
@@ -131,6 +130,12 @@ class GoogleSheetDataTable(DataTableInterface):
         Create a new Google Sheets spreadsheet with the provided data.
 
         Implementation of DataTableInterface.write_new_sheet() for Google Sheets.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            data: 2D array of table data
+            headers: Optional column headers
+            sheet_name: Optional name for the spreadsheet
         """
         try:
             # Auto-detect headers if not provided
@@ -203,11 +208,9 @@ class GoogleSheetDataTable(DataTableInterface):
                 "message": f"Failed to create new spreadsheet: {e}"
             }
 
-    @require_google_service("sheets", "sheets_write")
     async def append_rows(
         self,
-        service,  # Injected by @require_google_service
-        ctx: Context,
+        service,  # Authenticated Google Sheets service
         uri: str,
         data: List[List[Any]]
     ) -> Dict[str, Any]:
@@ -215,6 +218,11 @@ class GoogleSheetDataTable(DataTableInterface):
         Append data as new rows below existing data in Google Sheets.
 
         Implementation of DataTableInterface.append_rows() for Google Sheets.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            data: 2D array of row data to append
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -284,11 +292,9 @@ class GoogleSheetDataTable(DataTableInterface):
             logger.error(f"Error appending rows to {uri}: {e}")
             raise
 
-    @require_google_service("sheets", "sheets_write")
     async def append_columns(
         self,
-        service,  # Injected by @require_google_service
-        ctx: Context,
+        service,  # Authenticated Google Sheets service
         uri: str,
         data: List[List[Any]],
         headers: Optional[List[str]] = None
@@ -297,6 +303,12 @@ class GoogleSheetDataTable(DataTableInterface):
         Append data as new columns to the right of existing data in Google Sheets.
 
         Implementation of DataTableInterface.append_columns() for Google Sheets.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            data: 2D array of column data to append
+            headers: Optional column headers
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -386,11 +398,9 @@ class GoogleSheetDataTable(DataTableInterface):
             logger.error(f"Error appending columns to {uri}: {e}")
             raise
 
-    @require_google_service("sheets", "sheets_write")
     async def update_range(
         self,
-        service,  # Injected by @require_google_service
-        ctx: Context,
+        service,  # Authenticated Google Sheets service
         uri: str,
         data: List[List[Any]],
         range_address: Optional[str] = None
@@ -399,6 +409,12 @@ class GoogleSheetDataTable(DataTableInterface):
         Writes cell values to a Google Sheets range, replacing existing content.
 
         Implementation of DataTableInterface.update_range() for Google Sheets.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            data: 2D array of cell values
+            range_address: A1 notation range address
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
