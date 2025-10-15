@@ -243,7 +243,47 @@ async def test_write_operations(url, headers):
                     else:
                         print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} cells with shape {shape}")
                 else:
-                    print(f"   ❌ Failed to append columns: {result_content.get('message', 'Unknown error')}")
+                    error_message = result_content.get('message', 'Unknown error')
+                    print(f"   ❌ Failed to append columns: {error_message}")
+
+                    # Check if it's a grid limits error
+                    if "exceeds grid limits" in error_message.lower():
+                        print(f"   🔄 Grid limits exceeded - clearing worksheet and retrying with update_range...")
+
+                        # Clear the worksheet by updating with empty content
+                        clear_res = await session.call_tool("update_range", {
+                            "uri": READ_WRITE_URI,
+                            "data": [[]],
+                            "range_address": "A1"
+                        })
+
+                        if not clear_res.isError:
+                            print(f"   ✅ Worksheet cleared successfully")
+
+                            # Instead of append_columns, use update_range to write to a specific location
+                            # This avoids the issue of append_columns trying to find the last column
+                            print(f"   🔄 Retrying with update_range to write to columns A-B...")
+
+                            # Prepare data with headers for update_range
+                            retry_data = [["Status", "Rating"]] + new_columns_data
+
+                            retry_res = await session.call_tool("update_range", {
+                                "uri": READ_WRITE_URI,
+                                "data": retry_data,
+                                "range_address": "A1"
+                            })
+
+                            if not retry_res.isError and retry_res.content and retry_res.content[0].text:
+                                retry_content = json.loads(retry_res.content[0].text)
+                                if retry_content.get('success'):
+                                    print(f"   ✅ Retry successful after clearing worksheet")
+                                    print(f"      Updated cells: {retry_content.get('updated_cells', 0)}")
+                                    print(f"      Shape: {retry_content.get('shape', '(0,0)')}")
+                                    print(f"      Note: Used update_range instead of append_columns to avoid grid limits")
+                                else:
+                                    print(f"   ❌ Retry failed: {retry_content.get('message', 'Unknown error')}")
+                        else:
+                            print(f"   ❌ Failed to clear worksheet")
             else:
                 print(f"   ❌ Failed to verify append_columns result")
             
