@@ -167,13 +167,82 @@ i mean the  @require_google_service + @mcp.tool look good to me. but you revert 
 
 support dataframe update_range/append_rows/append_columns
 
-### stage5
+
+### stage5 
+
+#### stage 5.1
+
+ added @datatable_tools/tools/mcpplus.py
+ added @tests/tools/test_mcpplus.py
+
+these are files from another repo ,   suppose to run in another repo to call mcp tool using MCP protocol (sse or streamablehttp) .  i move it to this repo
+
+##### requirement for this stage 
+
+now  i wanna testing call from by src code
+
+to support the follow usage
+```
+result = await call_tool_by_sse(
+            sse_url=TEST_SSE_URL,
+            tool_name="google_sheets__update_range",
+            direct_call = true,
+            args={
+                'uri': TWITTER_CASE_URI,
+                'data': df_test,
+                'range_address': 'A2:D3'
+            }
+        )
+```
+
+if direct_call is false, continue the orininal logic .
+when direct_call is true, mean call the core standard API to 
+
+my plan is :
+
+ - update_range  will direct call the following in mcp_tools.py 
+```
+ google_sheet = GoogleSheetDataTable()
+ await google_sheet.update_range(service, uri, data, range_address)
+```    
+
+ - since service are injected so we need to init it by  
+
+ - similar to create_google_service() in @tests/standard_datable/test_standalone.py
+might need to read @tests/standard_datable/README.md
+and move create_google_service to a actual useful somewhere
+
+ - then we could call the code by args once after service is initcialized
+ - next we need to support GoogleSheetDataTable.update_range by support data as a dataframe(polar not pandas)
+ - add test case in standalone test for support dataframe
+ - then implement same for append_rows/append_columns/write_new_sheet and test it
+ - you might need to change the file i added for some part related PATH and SETTING , while change it as less as possible. so that i could copy back to another repo for integrate test. 
+    - i will currently copy this datatable_tools folder until stage6 is complete for usage.
+ - since the tool_name in the call_tool_by_sse is looks like 
+ ```
+ google_sheets__update_range
+ ```
+ google_sheets is the mcp server name , refer to the service this repo provided.
+ so we might need a dict for mapping  tool_name and the Function 
+ 
+
+
+
+#### stage 5.2
+
+ - add the @mcp.tool support data as type : dataframe(polar)
+ - note that MCP should not support dataframe yet due to MCP limitation. 
+ - so this is just trying to support it , caller from LLM wont pass dataframe to this MCP tool layer, but through this , another component could get to know this mcp tool is support dataframe.
+    - another component means planner (that build workflow) will know what tools are avaiable and what input are supported via the MCP protocol list_tools (which return tool & tool desc & input schema & output shcema)
+ - test it
+
+### stage6
 
 make the third-party and interface as a package ,so that others could reuse the core : standard datatable api via package install, but able to build their own mcp based on that and keep align with the standard API.
 
 but i wont publish to pip, but need to keep it in private repo . dont might need to later update pyproject to install from git.
 
-### stage6
+### stage7
 
 update the pyproject to install from the package after stage4 fully complete.
 
