@@ -31,7 +31,7 @@ except ImportError:
     POLARS_AVAILABLE = False
     print("Warning: Polars not available, some tests will be skipped")
 
-from datatable_tools.datatable_tools.tools.mcpplus import call_tool_by_sse, query_user_oauth_info_by_sse
+from datatable_tools.tools.mcp_tools import call_tool_by_sse, query_user_oauth_info_by_sse
 from datatable_tools.auth.service_factory import create_google_service_from_env
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 
@@ -52,7 +52,7 @@ async def test_tool_discovery():
 
     try:
         from mcp.client.sse import sse_client
-        from datatable_tools.datatable_tools.tools.mcpplus import MCPPlus
+        from datatable_tools.tools.mcp_tools import MCPPlus
 
         # Get OAuth info for headers
         oauth_result = await query_user_oauth_info_by_sse(TEST_SSE_URL, "google_sheets")
