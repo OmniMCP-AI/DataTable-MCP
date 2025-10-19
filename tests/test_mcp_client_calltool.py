@@ -765,7 +765,7 @@ async def test_1d_array_input(url, headers):
             await session.initialize()
 
             # Use READ_WRITE_URI3 for all tests
-            test_uri = READ_WRITE_URI3
+            test_uri = READ_WRITE_URI_1D
             print(f"\n💡 Using test sheet: {test_uri}")
 
             # Test 1: update_range with 1D array (single row)
