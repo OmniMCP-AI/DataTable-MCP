@@ -8,6 +8,7 @@ Future implementations (Excel, CSV, Database, etc.) will inherit from this inter
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any, Dict
 from fastmcp import Context
+from datatable_tools.models import TableData
 
 
 class DataTableInterface(ABC):
@@ -27,7 +28,7 @@ class DataTableInterface(ABC):
     async def write_new_sheet(
         self,
         ctx: Context,
-        data: List[List[Any]],
+        data: TableData,
         headers: Optional[List[str]] = None,
         sheet_name: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -36,7 +37,10 @@ class DataTableInterface(ABC):
 
         Args:
             ctx: FastMCP context
-            data: 2D array of data (rows x columns)
+            data: Data in multiple formats:
+                  - List[List[Any]]: 2D array (rows x columns)
+                  - List[Dict[str, Any]]: List of dicts (DataFrame-like)
+                  - List[Any]: 1D array (single row/column)
             headers: Optional column headers
             sheet_name: Optional name for the sheet
 
@@ -50,7 +54,7 @@ class DataTableInterface(ABC):
         self,
         ctx: Context,
         uri: str,
-        data: List[List[Any]]
+        data: TableData
     ) -> Dict[str, Any]:
         """
         Append rows to an existing sheet.
@@ -58,7 +62,10 @@ class DataTableInterface(ABC):
         Args:
             ctx: FastMCP context
             uri: URI identifying the target sheet
-            data: 2D array of rows to append
+            data: Data in multiple formats:
+                  - List[List[Any]]: 2D array of rows
+                  - List[Dict[str, Any]]: List of dicts (DataFrame-like)
+                  - List[Any]: 1D array (single row)
 
         Returns:
             Dict with success status and update info
@@ -70,7 +77,7 @@ class DataTableInterface(ABC):
         self,
         ctx: Context,
         uri: str,
-        data: List[List[Any]],
+        data: TableData,
         headers: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
@@ -79,7 +86,10 @@ class DataTableInterface(ABC):
         Args:
             ctx: FastMCP context
             uri: URI identifying the target sheet
-            data: 2D array where each inner list is a column
+            data: Data in multiple formats:
+                  - List[List[Any]]: 2D array where each inner list is a column
+                  - List[Dict[str, Any]]: List of dicts (DataFrame-like)
+                  - List[Any]: 1D array (single column)
             headers: Optional headers for new columns
 
         Returns:
@@ -92,7 +102,7 @@ class DataTableInterface(ABC):
         self,
         ctx: Context,
         uri: str,
-        data: List[List[Any]],
+        data: TableData,
         range_address: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -101,7 +111,10 @@ class DataTableInterface(ABC):
         Args:
             ctx: FastMCP context
             uri: URI identifying the target sheet
-            data: 2D array of data to write
+            data: Data in multiple formats:
+                  - List[List[Any]]: 2D array of data
+                  - List[Dict[str, Any]]: List of dicts (DataFrame-like)
+                  - List[Any]: 1D array (single row/column)
             range_address: Optional range address (e.g., "A1:C10")
                          If None, auto-expands from A1
 

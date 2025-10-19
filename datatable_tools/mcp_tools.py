@@ -12,14 +12,14 @@ Contains all 5 core MCP tools:
 - update_range: Update specific cell range
 """
 
-from typing import Union, Optional, List, Any
+from typing import Optional, List, Any
 import logging
 from pydantic import Field
 from fastmcp import Context
 from core.server import mcp
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 from datatable_tools.auth.service_decorator import require_google_service
-from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse
+from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, TableData
 
 # Optional Polars import for type hints
 try:
@@ -30,18 +30,6 @@ except ImportError:
     pl = None
 
 logger = logging.getLogger(__name__)
-
-
-# Type aliases for cleaner, more maintainable type annotations
-PrimitiveValue = int | str | float | bool | None
-
-# MCP-compatible type (cannot include pl.DataFrame in actual type for Pydantic)
-# DataFrame support is advertised via Field descriptions only
-TableData = Union[
-    list[list[PrimitiveValue]],  # 2D array: list of rows
-    list[dict[str, PrimitiveValue]],  # DataFrame-like: list of dicts
-    list[PrimitiveValue]  # 1D array: single row or single column
-]
 
 
 # MCP Tools
