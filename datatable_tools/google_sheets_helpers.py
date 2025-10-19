@@ -244,17 +244,19 @@ def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], lis
     Supports:
     - List[List[Any]]: 2D array (traditional format)
     - List[Dict[str, Any]]: List of dicts (pandas DataFrame-like)
+    - List[Any]: 1D array (single row or column) - NEW
     - pl.DataFrame: Polars DataFrame (NEW in Stage 5)
 
     Args:
         data: One of the supported data formats:
               - List[List[Any]]: 2D array
               - List[Dict[str, Any]]: List of dicts
+              - List[Any]: 1D array (single row or column)
               - pl.DataFrame: Polars DataFrame (if polars is installed)
 
     Returns:
         (headers, data_rows) tuple:
-            - headers: List of column names (None if 2D array without headers)
+            - headers: List of column names (None if 2D array/1D array without headers)
             - data_rows: 2D array of data values
 
     Raises:
@@ -285,6 +287,14 @@ def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], lis
         None
         >>> rows
         [['Alice', 30], ['Bob', 25]]
+
+        >>> # 1D array (NEW) - single row
+        >>> data = ["Alice", 30, "New York"]
+        >>> headers, rows = process_data_input(data)
+        >>> headers
+        None
+        >>> rows
+        [['Alice', 30, 'New York']]
     """
     # NEW: Handle Polars DataFrame
     if POLARS_AVAILABLE and isinstance(data, pl.DataFrame):
@@ -322,6 +332,14 @@ def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], lis
 
         logger.debug(f"Converted list of dicts to 2D array. Headers: {headers}, Rows: {len(data_rows)}")
         return headers, data_rows
+
+    # NEW: Check if data is 1D array (list of primitives, not list of lists)
+    # Detect by checking if first element is NOT a list or dict
+    if not isinstance(data[0], (list, dict)):
+        # This is a 1D array - wrap it in a list to make it 2D with single row
+        data_rows = [data]
+        logger.debug(f"Converted 1D array to 2D array (single row). Length: {len(data)}")
+        return None, data_rows
 
     # Already a 2D array (list of lists)
     return None, data

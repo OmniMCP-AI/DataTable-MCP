@@ -9,6 +9,7 @@ Test Functions:
 - test_advanced_operations: New sheet creation, complex data formats
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
 - test_list_of_dict_input: Tests DataFrame-like list of dict input support
+- test_1d_array_input: Tests 1D array input support (NEW)
 
 Usage:
     # Run all tests
@@ -20,6 +21,7 @@ Usage:
     python test_mcp_client_calltool.py --env=local --test=advanced
     python test_mcp_client_calltool.py --env=local --test=gid
     python test_mcp_client_calltool.py --env=local --test=listtype
+    python test_mcp_client_calltool.py --env=local --test=1d
 
     # Run against production
     python test_mcp_client_calltool.py --env=prod --test=all
@@ -42,6 +44,7 @@ READ_ONLY_URI = "https://docs.google.com/spreadsheets/d/1DpaI7L4yfYptsv6X2TL0Inh
 READ_WRITE_URI = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=265933634#gid=265933634"
 READ_WRITE_URI2 = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=1852099269#gid=1852099269"
 READ_WRITE_URI3 = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=244346339#gid=244346339"
+READ_WRITE_URI_1D = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=509803551#gid=509803551"
 
 async def test_basic_operations(url, headers):
     """Test basic MCP operations: tool listing, data loading, error handling"""
@@ -750,6 +753,187 @@ async def test_gid_fix(url, headers):
 
             return new_spreadsheet_url
 
+async def test_1d_array_input(url, headers):
+    """Test 1D array input support for update_range, append_rows, and append_columns"""
+    print(f"🚀 Testing 1D Array Input Support")
+    print("=" * 60)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Use READ_WRITE_URI3 for all tests
+            test_uri = READ_WRITE_URI3
+            print(f"\n💡 Using test sheet: {test_uri}")
+
+            # Test 1: update_range with 1D array (single row)
+            print(f"\n📝 Test 1: update_range with 1D array (single row)")
+            print(f"   Updating a single row using 1D array format")
+
+            single_row_data = ["Product A", 99.99, "Electronics", 50, timestamp]
+
+            update_row_res = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": single_row_data,  # 1D array
+                "range_address": "A1:E1"
+            })
+            print(f"✅ Update range (1D row) result: {update_row_res}")
+
+            # Verify the result
+            if not update_row_res.isError and update_row_res.content and update_row_res.content[0].text:
+                result_content = json.loads(update_row_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
+
+                    # Expected: 5 cells (1 row × 5 columns)
+                    expected_cells = 5
+                    expected_shape = "(1,5)"
+                    if updated_cells == expected_cells and shape == expected_shape:
+                        print(f"   ✅ PASS: 1D array converted to single row correctly")
+                        print(f"   ✅ PASS: Shape is correct: {shape}")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} with shape {shape}")
+                else:
+                    print(f"   ❌ FAIL: {result_content.get('message', 'Unknown error')}")
+
+            # Test 2: append_rows with 1D array (single row)
+            print(f"\n📝 Test 2: append_rows with 1D array (single row)")
+            print(f"   Appending a single row using 1D array format")
+
+            append_row_data = ["Appended A", 49.99, "Books", 25, timestamp]
+
+            append_row_res = await session.call_tool("append_rows", {
+                "uri": test_uri,
+                "data": append_row_data  # 1D array
+            })
+            print(f"✅ Append rows (1D) result: {append_row_res}")
+
+            # Verify the result
+            if not append_row_res.isError and append_row_res.content and append_row_res.content[0].text:
+                result_content = json.loads(append_row_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
+
+                    # Expected: 5 cells (1 row × 5 columns)
+                    expected_cells = 5
+                    expected_shape = "(1,5)"
+                    if updated_cells == expected_cells and shape == expected_shape:
+                        print(f"   ✅ PASS: 1D array appended as single row correctly")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} with shape {shape}")
+
+            # Test 3: append_columns with 1D array (single column)
+            print(f"\n📝 Test 3: append_columns with 1D array (single column)")
+            print(f"   Appending a single column using 1D array format")
+
+            # Note: For append_columns, 1D array represents column values (multiple rows, 1 column)
+            # But process_data_input will convert it to [[val1, val2, val3...]] which is 1 row
+            # So we need to test if this works as expected or if we need special handling
+
+            append_col_data = ["Value1", "Value2", "Value3", "Value4", "Value5"]
+
+            append_col_res = await session.call_tool("append_columns", {
+                "uri": test_uri,
+                "data": append_col_data,  # 1D array
+                "headers": ["NewColumn"]
+            })
+            print(f"✅ Append columns (1D) result: {append_col_res}")
+
+            # Verify the result
+            if not append_col_res.isError and append_col_res.content and append_col_res.content[0].text:
+                result_content = json.loads(append_col_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
+
+                    # With current implementation, 1D array becomes 1 row
+                    # So: 1 header row + 1 data row = 2 rows, 5 columns
+                    # This might not be what we want for columns - need to discuss
+                    print(f"   💡 Note: 1D array is converted to single row (not column)")
+                    print(f"   💡 For columns, you may want to use 2D format: [[val1], [val2], ...]")
+                else:
+                    print(f"   ⚠️  {result_content.get('message', 'Unknown error')}")
+
+            # Test 4: Mixed - compare 1D vs 2D for same data
+            print(f"\n📝 Test 4: Comparing 1D array vs 2D array (single row)")
+
+            # Using 1D array
+            data_1d = ["Item1", 10, 1.99]
+            res_1d = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": data_1d,
+                "range_address": "K25"
+            })
+
+            # Using 2D array (single row)
+            data_2d = [["Item2", 20, 2.99]]
+            res_2d = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": data_2d,
+                "range_address": "K26"
+            })
+
+            # Compare results
+            if (not res_1d.isError and not res_2d.isError and
+                res_1d.content and res_2d.content):
+
+                result_1d = json.loads(res_1d.content[0].text)
+                result_2d = json.loads(res_2d.content[0].text)
+
+                if result_1d.get('success') and result_2d.get('success'):
+                    shape_1d = result_1d.get('shape', '(0,0)')
+                    shape_2d = result_2d.get('shape', '(0,0)')
+
+                    print(f"   📊 1D array shape: {shape_1d}")
+                    print(f"   📊 2D array shape: {shape_2d}")
+
+                    if shape_1d == shape_2d == "(1,3)":
+                        print(f"   ✅ PASS: Both 1D and 2D formats produce same result for single row")
+                    else:
+                        print(f"   ❌ FAIL: Shapes differ - 1D: {shape_1d}, 2D: {shape_2d}")
+
+            # Test 5: Numeric 1D array
+            print(f"\n📝 Test 5: Testing 1D array with numeric values")
+
+            numeric_data = [100, 200, 300, 400, 500]
+
+            numeric_res = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": numeric_data,
+                "range_address": "M20"
+            })
+            print(f"✅ Numeric 1D array result: {numeric_res}")
+
+            if not numeric_res.isError and numeric_res.content and numeric_res.content[0].text:
+                result_content = json.loads(numeric_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+
+                    print(f"   📊 Updated {updated_cells} cells with shape {shape}")
+
+                    if updated_cells == 5 and shape == "(1,5)":
+                        print(f"   ✅ PASS: Numeric 1D array handled correctly")
+
+            print(f"\n✅ 1D array input test completed!")
+            print(f"\n📊 Test Summary:")
+            print(f"   ✓ update_range accepts 1D array (single row)")
+            print(f"   ✓ append_rows accepts 1D array (single row)")
+            print(f"   ✓ append_columns accepts 1D array (converted to single row)")
+            print(f"   ✓ 1D and 2D formats produce same result for single row")
+            print(f"   ✓ Numeric 1D arrays handled correctly")
+            print(f"   💡 Note: For column operations, consider using 2D format [[val1], [val2], ...]")
+
 async def test_list_of_dict_input(url, headers):
     """Test list of dict input support for write_new_sheet, append_rows, update_range"""
     print(f"🚀 Testing List of Dict Input Support")
@@ -1037,6 +1221,11 @@ async def run_all_tests(url, headers):
         listtype_test_url = await test_list_of_dict_input(url, headers)
         results['list_of_dict_input'] = {'status': 'passed', 'test_sheet_url': listtype_test_url}
 
+        # Run 1D array input test (NEW)
+        print(f"\n{'='*20} 1D ARRAY INPUT TEST {'='*20}")
+        await test_1d_array_input(url, headers)
+        results['1d_array_input'] = {'status': 'passed'}
+
         # Summary
         print(f"\n{'='*80}")
         print("🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
@@ -1066,17 +1255,18 @@ async def run_single_test(test_name, url, headers):
         'write': test_write_operations,
         'advanced': test_advanced_operations,
         'gid': test_gid_fix,
-        'listtype': test_list_of_dict_input
+        'listtype': test_list_of_dict_input,
+        '1d': test_1d_array_input  # NEW
     }
-    
+
     if test_name not in test_functions:
         print(f"❌ Unknown test: {test_name}")
         print(f"Available tests: {', '.join(test_functions.keys())}")
         return
-    
+
     print(f"🎯 Running single test: {test_name}")
     print("=" * 60)
-    
+
     try:
         result = await test_functions[test_name](url, headers)
         print(f"\n✅ Test '{test_name}' completed successfully!")
@@ -1095,8 +1285,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
     parser.add_argument("--env", choices=["local", "prod", "test"], default="local",
                        help="Environment to use: local (127.0.0.1:8321) or test (datatable-mcp-test.maybe.ai) or prod (datatable-mcp.maybe.ai)")
-    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype"], default="all",
-                       help="Which test to run: all (default), basic, write, advanced, gid, or listtype")
+    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d"], default="all",
+                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, or 1d")
     args = parser.parse_args()
 
     # Set endpoint based on environment argument

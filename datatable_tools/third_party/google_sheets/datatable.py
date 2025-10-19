@@ -157,12 +157,13 @@ class GoogleSheetDataTable(DataTableInterface):
                 final_headers = extracted_headers
                 final_data = data_rows
             else:
-                # Auto-detect headers if not provided and data is 2D array
-                detected_headers, processed_rows = auto_detect_headers(data_rows if extracted_headers else data)
+                # Auto-detect headers if not provided and data_rows is 2D array
+                # Use data_rows (already processed by process_data_input)
+                detected_headers, processed_rows = auto_detect_headers(data_rows)
 
                 # Use provided headers if given, otherwise use detected headers
                 final_headers = headers if headers is not None else detected_headers
-                final_data = processed_rows if detected_headers else (data_rows if extracted_headers else data)
+                final_data = processed_rows if detected_headers else data_rows
 
             # Use default sheet name if not provided
             title = sheet_name or "New DataTable"
@@ -259,10 +260,10 @@ class GoogleSheetDataTable(DataTableInterface):
             if extracted_headers:
                 values_to_write = data_rows
             else:
-                # Auto-detect headers in data (but don't write headers when appending rows)
-                detected_headers, processed_rows = auto_detect_headers(data)
+                # Auto-detect headers in data_rows (already processed, but don't write headers when appending rows)
+                detected_headers, processed_rows = auto_detect_headers(data_rows)
                 # For append_rows, we only write data rows, not headers
-                values_to_write = processed_rows if detected_headers else data
+                values_to_write = processed_rows if detected_headers else data_rows
 
             # Convert to strings for Google Sheets API
             values = [[str(cell) if cell is not None else "" for cell in row] for row in values_to_write]
@@ -368,13 +369,14 @@ class GoogleSheetDataTable(DataTableInterface):
                 final_data = data_rows
             else:
                 # Process headers - auto-detect if not provided
-                detected_headers, processed_rows = auto_detect_headers(data_rows if extracted_headers else data)
+                # Use data_rows (already processed by process_data_input)
+                detected_headers, processed_rows = auto_detect_headers(data_rows)
 
                 # Determine final headers and data
                 if headers is not None:
                     # User provided headers explicitly
                     final_headers = headers
-                    final_data = data_rows if extracted_headers else data
+                    final_data = data_rows
                 elif detected_headers:
                     # Headers auto-detected
                     final_headers = detected_headers
@@ -382,7 +384,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 else:
                     # No headers
                     final_headers = []
-                    final_data = data_rows if extracted_headers else data
+                    final_data = data_rows
 
             # Convert to strings for Google Sheets API
             values_only = [[str(cell) if cell is not None else "" for cell in row] for row in final_data]
@@ -496,8 +498,8 @@ class GoogleSheetDataTable(DataTableInterface):
                 values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
                 logger.info(f"Including extracted headers from list of dicts: {extracted_headers}")
             else:
-                # Auto-detect headers in data and include them in output
-                detected_headers, processed_rows = auto_detect_headers(data)
+                # Auto-detect headers in data_rows (already processed)
+                detected_headers, processed_rows = auto_detect_headers(data_rows)
 
                 # If headers were detected, include them in the output
                 if detected_headers:
@@ -505,7 +507,8 @@ class GoogleSheetDataTable(DataTableInterface):
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in processed_rows])
                     logger.info(f"Including detected headers in output: {detected_headers}")
                 else:
-                    values = [[str(cell) if cell is not None else "" for cell in row] for row in data]
+                    # Use data_rows (already processed by process_data_input)
+                    values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
 
             if not values:
                 values = [[""]]

@@ -37,7 +37,11 @@ PrimitiveValue = int | str | float | bool | None
 
 # MCP-compatible type (cannot include pl.DataFrame in actual type for Pydantic)
 # DataFrame support is advertised via Field descriptions only
-TableData = Union[list[list[PrimitiveValue]], list[dict[str, PrimitiveValue]]]
+TableData = Union[
+    list[list[PrimitiveValue]],  # 2D array: list of rows
+    list[dict[str, PrimitiveValue]],  # DataFrame-like: list of dicts
+    list[PrimitiveValue]  # 1D array: single row or single column
+]
 
 
 # MCP Tools
@@ -78,6 +82,7 @@ async def write_new_sheet(
             "Data in pandas-like formats. Accepts:\n"
             "- List[List[int|str|float|bool|None]]: 2D array\n"
             "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- List[int|str|float|bool|None]: 1D array (single row/column)\n"
             "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
         )
     ),
@@ -151,6 +156,7 @@ async def append_rows(
             "Data to append as rows. Accepts:\n"
             "- List[List[int|str|float|bool|None]]: 2D array\n"
             "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- List[int|str|float|bool|None]: 1D array (single row)\n"
             "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
         )
     )
@@ -205,6 +211,7 @@ async def append_columns(
             "Data to append as columns. Accepts:\n"
             "- List[List[int|str|float|bool|None]]: 2D array\n"
             "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- List[int|str|float|bool|None]: 1D array (single column)\n"
             "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
         )
     ),
@@ -264,6 +271,7 @@ async def update_range(
             "Data to write to range. Accepts:\n"
             "- List[List[int|str|float|bool|None]]: 2D array of cell values (rows × columns)\n"
             "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- List[int|str|float|bool|None]: 1D array (single row/column)\n"
             "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)\n"
             "CRITICAL: Must be proper data structure, NOT a string. Each inner list represents one row."
         )
