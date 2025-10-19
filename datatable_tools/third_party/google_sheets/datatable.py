@@ -508,6 +508,16 @@ class GoogleSheetDataTable(DataTableInterface):
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
 
+            # Special handling for 1D array with single-column range:
+            # If range_address is a single column (e.g., "B", "C:C") and data_rows is a single row,
+            # transpose it to column format (multiple rows, single column)
+            from datatable_tools.google_sheets_helpers import is_single_column_range
+            if (range_address and is_single_column_range(range_address) and
+                len(data_rows) == 1 and len(data_rows[0]) > 1):
+                # Transpose: single row with multiple values -> multiple rows with single value
+                data_rows = [[value] for value in data_rows[0]]
+                logger.debug(f"Transposed 1D array to column format for single-column range '{range_address}': {len(data_rows)} rows x 1 column")
+
             # If data was list of dicts, include extracted headers
             if extracted_headers:
                 values = [[str(h) for h in extracted_headers]]
@@ -563,8 +573,12 @@ class GoogleSheetDataTable(DataTableInterface):
             # Auto-expand range if single cell provided
             def auto_expand_range(range_addr: str, data_values: list[list]) -> str:
                 """Auto-expand single cell range to full range based on data dimensions."""
-                if not range_addr or ':' in range_addr:
-                    return range_addr  # Already a range or None
+                if not range_addr:
+                    return "A1"
+
+                # If it's already a full range with colon, return as-is
+                if ':' in range_addr:
+                    return range_addr
 
                 rows = len(data_values)
                 cols = max(len(row) for row in data_values) if data_values else 0
@@ -572,7 +586,16 @@ class GoogleSheetDataTable(DataTableInterface):
                 if rows == 0 or cols == 0:
                     return range_addr
 
-                # Parse start cell (e.g., "A23" -> col="A", row=23)
+                # Case 1: Just a column letter (e.g., "B", "AA")
+                # Convert to B1:B{rows} or B:B format
+                if range_addr.isalpha():
+                    # For column-only specification, use B1:B{rows} format
+                    end_row = rows
+                    expanded = f"{range_addr}1:{range_addr}{end_row}"
+                    logger.info(f"Auto-expanded column '{range_addr}' to '{expanded}' for data shape ({rows}x{cols})")
+                    return expanded
+
+                # Case 2: Cell address (e.g., "A23" -> col="A", row=23)
                 match = re.match(r'^([A-Z]+)(\d+)$', range_addr)
                 if not match:
                     return range_addr

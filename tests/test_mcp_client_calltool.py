@@ -925,14 +925,101 @@ async def test_1d_array_input(url, headers):
                     if updated_cells == 5 and shape == "(1,5)":
                         print(f"   ✅ PASS: Numeric 1D array handled correctly")
 
+            # Test 6: Column-oriented behavior - 1D array with single column range
+            print(f"\n📝 Test 6: Testing column-oriented behavior (1D array + column range)")
+            print(f"   When range_address is a single column (e.g., 'B', 'C:C'),")
+            print(f"   1D arrays should transpose to vertical format")
+
+            # Test 6a: Single column letter
+            print(f"\n   6a: 1D array [1,2,3,4,5] with range='N' (single column letter)")
+            column_data_a = [1, 2, 3, 4, 5]
+
+            column_res_a = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": column_data_a,
+                "range_address": "N"
+            })
+            print(f"   Result: {column_res_a}")
+
+            if not column_res_a.isError and column_res_a.content and column_res_a.content[0].text:
+                result_content = json.loads(column_res_a.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+                    range_updated = result_content.get('range', '')
+
+                    print(f"      📊 Updated {updated_cells} cells with shape {shape}")
+                    print(f"      📍 Range: {range_updated}")
+
+                    # Expected: (5,1) - 5 rows × 1 column, range N1:N5
+                    if updated_cells == 5 and shape == "(5,1)" and "N1:N5" in range_updated:
+                        print(f"      ✅ PASS: Correctly transposed to column format!")
+                    else:
+                        print(f"      ❌ FAIL: Expected 5 cells, shape (5,1), range N1:N5")
+
+            # Test 6b: Column with colon format
+            print(f"\n   6b: 1D array [10,20,30] with range='O:O' (column range)")
+            column_data_b = [10, 20, 30]
+
+            column_res_b = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": column_data_b,
+                "range_address": "O:O"
+            })
+
+            if not column_res_b.isError and column_res_b.content and column_res_b.content[0].text:
+                result_content = json.loads(column_res_b.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+                    range_updated = result_content.get('range', '')
+
+                    print(f"      📊 Updated {updated_cells} cells with shape {shape}")
+                    print(f"      📍 Range: {range_updated}")
+
+                    # Expected: (3,1) - 3 rows × 1 column
+                    if updated_cells == 3 and shape == "(3,1)":
+                        print(f"      ✅ PASS: Correctly transposed to column format!")
+                    else:
+                        print(f"      ❌ FAIL: Expected 3 cells, shape (3,1)")
+
+            # Test 6c: Cell address (should NOT transpose - stays as row)
+            print(f"\n   6c: 1D array [100,200,300] with range='P20' (cell address)")
+            cell_data = [100, 200, 300]
+
+            cell_res = await session.call_tool("update_range", {
+                "uri": test_uri,
+                "data": cell_data,
+                "range_address": "P20"
+            })
+
+            if not cell_res.isError and cell_res.content and cell_res.content[0].text:
+                result_content = json.loads(cell_res.content[0].text)
+                if result_content.get('success'):
+                    updated_cells = result_content.get('updated_cells', 0)
+                    shape = result_content.get('shape', '(0,0)')
+                    range_updated = result_content.get('range', '')
+
+                    print(f"      📊 Updated {updated_cells} cells with shape {shape}")
+                    print(f"      📍 Range: {range_updated}")
+
+                    # Expected: (1,3) - 1 row × 3 columns, range P20:R20
+                    if updated_cells == 3 and shape == "(1,3)" and "P20:R20" in range_updated:
+                        print(f"      ✅ PASS: Correctly kept as row (not transposed)!")
+                    else:
+                        print(f"      ❌ FAIL: Expected 3 cells, shape (1,3), range P20:R20")
+
             print(f"\n✅ 1D array input test completed!")
             print(f"\n📊 Test Summary:")
-            print(f"   ✓ update_range accepts 1D array (single row)")
+            print(f"   ✓ update_range accepts 1D array (single row by default)")
+            print(f"   ✓ update_range with column range (B, C:C) transposes 1D array to column")
+            print(f"   ✓ update_range with cell address (B1) keeps 1D array as row")
             print(f"   ✓ append_rows accepts 1D array (single row)")
-            print(f"   ✓ append_columns accepts 1D array (converted to single row)")
+            print(f"   ✓ append_columns accepts 1D array with single header (transposes to column)")
             print(f"   ✓ 1D and 2D formats produce same result for single row")
             print(f"   ✓ Numeric 1D arrays handled correctly")
-            print(f"   💡 Note: For column operations, consider using 2D format [[val1], [val2], ...]")
+            print(f"   💡 Smart behavior: Column ranges trigger vertical layout, cell addresses use horizontal")
+
 
 async def test_list_of_dict_input(url, headers):
     """Test list of dict input support for write_new_sheet, append_rows, update_range"""

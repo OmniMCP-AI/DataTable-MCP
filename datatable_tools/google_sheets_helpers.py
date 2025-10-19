@@ -237,6 +237,55 @@ def column_letter_to_index(letter: str) -> int:
     return index - 1
 
 
+def is_single_column_range(range_address: str) -> bool:
+    """
+    Check if range_address represents a single column (e.g., "B", "C", "AA").
+
+    Single column ranges are:
+    - Just a column letter: "B", "C", "AA", "ZZ"
+    - Column with colon: "B:B", "C:C"
+    - NOT: "B1", "B1:B10", "A1:C3"
+
+    Args:
+        range_address: A1 notation range address
+
+    Returns:
+        True if it's a single column range, False otherwise
+
+    Examples:
+        >>> is_single_column_range("B")
+        True
+        >>> is_single_column_range("B:B")
+        True
+        >>> is_single_column_range("AA")
+        True
+        >>> is_single_column_range("B1")
+        False
+        >>> is_single_column_range("B1:B10")
+        False
+        >>> is_single_column_range("A1:C3")
+        False
+    """
+    if not range_address:
+        return False
+
+    # Remove worksheet prefix if present (e.g., "Sheet1!B" -> "B")
+    if '!' in range_address:
+        range_address = range_address.split('!', 1)[1]
+
+    range_address = range_address.strip()
+
+    # Check for "B:B" format
+    if ':' in range_address:
+        parts = range_address.split(':')
+        if len(parts) == 2 and parts[0] == parts[1] and parts[0].isalpha():
+            return True
+        return False
+
+    # Check for single letter(s) only: "B", "AA", "ZZ"
+    return range_address.isalpha()
+
+
 def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], list[list]]:
     """
     Process data input supporting multiple formats including Polars DataFrames.
