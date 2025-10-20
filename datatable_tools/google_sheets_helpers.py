@@ -239,12 +239,13 @@ def column_letter_to_index(letter: str) -> int:
 
 def is_single_column_range(range_address: str) -> bool:
     """
-    Check if range_address represents a single column (e.g., "B", "C", "AA").
+    Check if range_address represents a single column (e.g., "B", "C", "AA", "J5:J8").
 
     Single column ranges are:
     - Just a column letter: "B", "C", "AA", "ZZ"
     - Column with colon: "B:B", "C:C"
-    - NOT: "B1", "B1:B10", "A1:C3"
+    - Column with row numbers: "J5:J8", "B1:B10", "AA3:AA20"
+    - NOT: "A1:C3", "B1:C10" (multiple columns)
 
     Args:
         range_address: A1 notation range address
@@ -259,9 +260,11 @@ def is_single_column_range(range_address: str) -> bool:
         True
         >>> is_single_column_range("AA")
         True
-        >>> is_single_column_range("B1")
-        False
+        >>> is_single_column_range("J5:J8")
+        True
         >>> is_single_column_range("B1:B10")
+        True
+        >>> is_single_column_range("B1")
         False
         >>> is_single_column_range("A1:C3")
         False
@@ -275,11 +278,20 @@ def is_single_column_range(range_address: str) -> bool:
 
     range_address = range_address.strip()
 
-    # Check for "B:B" format
+    # Check for "B:B" format or "J5:J8" format
     if ':' in range_address:
         parts = range_address.split(':')
-        if len(parts) == 2 and parts[0] == parts[1] and parts[0].isalpha():
-            return True
+        if len(parts) == 2:
+            # Extract column letters from both parts
+            import re
+            match1 = re.match(r'^([A-Z]+)(\d*)$', parts[0])
+            match2 = re.match(r'^([A-Z]+)(\d*)$', parts[1])
+
+            if match1 and match2:
+                col1 = match1.group(1)
+                col2 = match2.group(1)
+                # Check if both parts have the same column letter
+                return col1 == col2
         return False
 
     # Check for single letter(s) only: "B", "AA", "ZZ"
