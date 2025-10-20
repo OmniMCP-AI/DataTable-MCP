@@ -4,9 +4,10 @@ MCP Tools - All Core Operations
 Thin wrapper layer that delegates to GoogleSheetDataTable implementation.
 These @mcp.tool functions serve as the API entry points for MCP clients.
 
-Contains all 5 core MCP tools:
+Contains all 6 core MCP tools:
 - load_data_table: Load data from Google Sheets
 - write_new_sheet: Create new Google Sheets spreadsheet
+- create_empty_table_with_xy: Create empty table with headers and columns
 - append_rows: Append rows to existing sheet
 - append_columns: Append columns to existing sheet
 - update_range: Update specific cell range
@@ -129,6 +130,78 @@ async def write_new_sheet(
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.write_new_sheet(service, data, headers, sheet_name)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_write")
+async def create_empty_table_with_xy(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    headers: str = Field(
+        description="Comma-separated string of column headers (y-axis). Example: 'Name,Age,City'"
+    ),
+    columns: str = Field(
+        description="Comma-separated string of row labels (x-axis). Example: 'Row1,Row2,Row3'"
+    ),
+    sheet_name: Optional[str] = Field(
+        default=None,
+        description="Optional name for the new spreadsheet (default: 'Empty DataTable')"
+    )
+) -> SpreadsheetResponse:
+    """
+    Create a new Google Sheets spreadsheet with an empty table structure.
+    The table has headers (y-axis) as column names and columns (x-axis) as row labels.
+
+    Args:
+        headers: Comma-separated string of column headers (y-axis)
+                 Example: "Name,Age,City"
+        columns: Comma-separated string of row labels (x-axis)
+                 Example: "Person1,Person2,Person3"
+        sheet_name: Optional name for the new spreadsheet (default: "Empty DataTable")
+
+    Returns:
+        SpreadsheetResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the created spreadsheet
+            - rows_created: Number of rows written
+            - columns_created: Number of columns written
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
+
+    Examples:
+        # Create empty table with headers and row labels
+        create_empty_table_with_xy(ctx, headers="Name,Age,City", columns="Person1,Person2,Person3")
+
+        # Result: A table with:
+        # - Header row: ["", "Name", "Age", "City"]
+        # - Data rows: ["Person1", "", "", ""], ["Person2", "", "", ""], ["Person3", "", "", ""]
+    """
+    # Parse headers and columns from comma-separated strings
+    header_list = [h.strip() for h in headers.split(",")]
+    column_list = [c.strip() for c in columns.split(",")]
+
+    # Build the table structure:
+    # First row: empty cell + headers
+    # Subsequent rows: column label + empty cells
+    data = []
+
+    # Header row: ["", header1, header2, ...]
+    data.append([""] + header_list)
+
+    # Data rows: [column_label, "", "", ...]
+    for col_label in column_list:
+        row = [col_label] + [""] * len(header_list)
+        data.append(row)
+
+    # Use write_new_sheet to create the spreadsheet
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.write_new_sheet(
+        service,
+        data,
+        headers=None,  # Headers are already embedded in data
+        sheet_name=sheet_name or "Empty DataTable"
+    )
 
 
 @mcp.tool

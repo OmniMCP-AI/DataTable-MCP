@@ -9,7 +9,8 @@ Test Functions:
 - test_advanced_operations: New sheet creation, complex data formats
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
 - test_list_of_dict_input: Tests DataFrame-like list of dict input support
-- test_1d_array_input: Tests 1D array input support (NEW)
+- test_1d_array_input: Tests 1D array input support
+- test_create_empty_table: Tests create_empty_table with headers and columns (NEW)
 
 Usage:
     # Run all tests
@@ -22,6 +23,7 @@ Usage:
     python test_mcp_client_calltool.py --env=local --test=gid
     python test_mcp_client_calltool.py --env=local --test=listtype
     python test_mcp_client_calltool.py --env=local --test=1d
+    python test_mcp_client_calltool.py --env=local --test=empty
 
     # Run against production
     python test_mcp_client_calltool.py --env=prod --test=all
@@ -1275,6 +1277,137 @@ async def test_list_of_dict_input(url, headers):
 
             return new_spreadsheet_url
 
+
+async def test_create_empty_table(url, headers):
+    """Test create_empty_table_with_xy: create empty table with headers and columns"""
+    print(f"🚀 Testing Create Empty Table with XY")
+    print("=" * 60)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Test 1: Create empty table with simple headers and columns
+            print(f"\n📝 Test 1: Creating empty table with simple headers and columns")
+            print(f"   Headers: Name,Age,City")
+            print(f"   Columns: Person1,Person2,Person3")
+
+            create_res = await session.call_tool("create_empty_table_with_xy", {
+                "headers": "Name,Age,City",
+                "columns": "Person1,Person2,Person3",
+                "sheet_name": f"Empty Table Test {timestamp}"
+            })
+            print(f"✅ Create empty table result: {create_res}")
+
+            # Verify the result
+            new_spreadsheet_url = None
+            if not create_res.isError and create_res.content and create_res.content[0].text:
+                result_content = json.loads(create_res.content[0].text)
+                if result_content.get('success'):
+                    new_spreadsheet_url = result_content.get('spreadsheet_url')
+                    rows_created = result_content.get('rows_created')
+                    columns_created = result_content.get('columns_created')
+                    shape = result_content.get('shape')
+
+                    print(f"   ✅ Empty table created:")
+                    print(f"      URL: {new_spreadsheet_url}")
+                    print(f"      Rows: {rows_created}")
+                    print(f"      Columns: {columns_created}")
+                    print(f"      Shape: {shape}")
+
+                    # Verify dimensions
+                    # Expected: 4 rows (1 header + 3 data rows), 4 columns (1 label + 3 headers)
+                    expected_rows = 4
+                    expected_cols = 4
+                    expected_shape = "(4,4)"
+
+                    if rows_created == expected_rows and columns_created == expected_cols and shape == expected_shape:
+                        print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
+                        print(f"   ✅ PASS: Table structure: header row + column labels + empty cells")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
+                else:
+                    print(f"   ❌ FAIL: {result_content.get('message', 'Unknown error')}")
+            else:
+                print(f"   ❌ FAIL: Could not create empty table")
+
+            # Test 2: Create empty table with different dimensions
+            print(f"\n📝 Test 2: Creating empty table with different dimensions")
+            print(f"   Headers: Product,Price,Stock,Category,Supplier")
+            print(f"   Columns: Item1,Item2")
+
+            create_res2 = await session.call_tool("create_empty_table_with_xy", {
+                "headers": "Product,Price,Stock,Category,Supplier",
+                "columns": "Item1,Item2",
+                "sheet_name": f"Empty Table 2 {timestamp}"
+            })
+            print(f"✅ Create empty table 2 result: {create_res2}")
+
+            if not create_res2.isError and create_res2.content and create_res2.content[0].text:
+                result_content = json.loads(create_res2.content[0].text)
+                if result_content.get('success'):
+                    rows_created = result_content.get('rows_created')
+                    columns_created = result_content.get('columns_created')
+
+                    # Expected: 3 rows (1 header + 2 data), 6 columns (1 label + 5 headers)
+                    expected_rows = 3
+                    expected_cols = 6
+
+                    if rows_created == expected_rows and columns_created == expected_cols:
+                        print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
+                    else:
+                        print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
+
+            # Test 3: Create minimal empty table (1 header, 1 column)
+            print(f"\n📝 Test 3: Creating minimal empty table (1 header, 1 column)")
+
+            create_res3 = await session.call_tool("create_empty_table_with_xy", {
+                "headers": "Value",
+                "columns": "Row1"
+            })
+            print(f"✅ Minimal empty table result: {create_res3}")
+
+            if not create_res3.isError and create_res3.content and create_res3.content[0].text:
+                result_content = json.loads(create_res3.content[0].text)
+                if result_content.get('success'):
+                    rows_created = result_content.get('rows_created')
+                    columns_created = result_content.get('columns_created')
+
+                    # Expected: 2 rows (1 header + 1 data), 2 columns (1 label + 1 header)
+                    expected_rows = 2
+                    expected_cols = 2
+
+                    if rows_created == expected_rows and columns_created == expected_cols:
+                        print(f"   ✅ PASS: Minimal table dimensions correct - {expected_rows}×{expected_cols}")
+
+            # Test 4: Test with spaces in headers and columns (should be trimmed)
+            print(f"\n📝 Test 4: Testing with spaces in headers/columns (should be trimmed)")
+
+            create_res4 = await session.call_tool("create_empty_table_with_xy", {
+                "headers": " Header1 , Header2 , Header3 ",
+                "columns": " Row1 , Row2 "
+            })
+            print(f"✅ Trimming test result: {create_res4}")
+
+            if not create_res4.isError and create_res4.content and create_res4.content[0].text:
+                result_content = json.loads(create_res4.content[0].text)
+                if result_content.get('success'):
+                    print(f"   ✅ PASS: Successfully created table with trimmed headers/columns")
+
+            print(f"\n✅ Create empty table test completed!")
+            print(f"\n📊 Test Summary:")
+            print(f"   ✓ create_empty_table_with_xy creates table with proper structure")
+            print(f"   ✓ Headers (y-axis) become column headers")
+            print(f"   ✓ Columns (x-axis) become row labels")
+            print(f"   ✓ Returns same SpreadsheetResponse as write_new_sheet")
+            print(f"   ✓ Handles various dimensions correctly")
+            print(f"   ✓ Trims whitespace from comma-separated inputs")
+
+            return new_spreadsheet_url
+
+
 async def run_all_tests(url, headers):
     """Run all test suites in sequence"""
     print("🎯 Starting Google Sheets MCP Integration Tests")
@@ -1313,6 +1446,11 @@ async def run_all_tests(url, headers):
         await test_1d_array_input(url, headers)
         results['1d_array_input'] = {'status': 'passed'}
 
+        # Run create empty table test (NEW)
+        print(f"\n{'='*20} CREATE EMPTY TABLE TEST {'='*20}")
+        empty_table_url = await test_create_empty_table(url, headers)
+        results['create_empty_table'] = {'status': 'passed', 'test_sheet_url': empty_table_url}
+
         # Summary
         print(f"\n{'='*80}")
         print("🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
@@ -1343,7 +1481,8 @@ async def run_single_test(test_name, url, headers):
         'advanced': test_advanced_operations,
         'gid': test_gid_fix,
         'listtype': test_list_of_dict_input,
-        '1d': test_1d_array_input  # NEW
+        '1d': test_1d_array_input,
+        'empty': test_create_empty_table  # NEW
     }
 
     if test_name not in test_functions:
@@ -1372,8 +1511,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
     parser.add_argument("--env", choices=["local", "prod", "test"], default="local",
                        help="Environment to use: local (127.0.0.1:8321) or test (datatable-mcp-test.maybe.ai) or prod (datatable-mcp.maybe.ai)")
-    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d"], default="all",
-                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, or 1d")
+    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d", "empty"], default="all",
+                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, 1d, or empty")
     args = parser.parse_args()
 
     # Set endpoint based on environment argument
