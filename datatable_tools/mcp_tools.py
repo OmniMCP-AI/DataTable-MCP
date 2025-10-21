@@ -134,14 +134,14 @@ async def write_new_sheet(
 
 @mcp.tool
 @require_google_service("sheets", "sheets_write")
-async def create_empty_table_with_xy(
+async def create_empty_table_with_headerrow(
     service,  # Injected by @require_google_service
     ctx: Context,
     headers: str = Field(
-        description="Comma-separated string of column headers (y-axis). Example: 'Name,Age,City'"
+        description="Comma-separated string of column headers. Example: 'Name,Age,City'"
     ),
-    columns: str = Field(
-        description="Comma-separated string of row labels (x-axis). Example: 'Row1,Row2,Row3'"
+    rows: str = Field(
+        description="Comma-separated string of row labels. Example: 'Person1,Person2,Person3'"
     ),
     sheet_name: Optional[str] = Field(
         default=None,
@@ -150,13 +150,13 @@ async def create_empty_table_with_xy(
 ) -> SpreadsheetResponse:
     """
     Create a new Google Sheets spreadsheet with an empty table structure.
-    The table has headers (y-axis) as column names and columns (x-axis) as row labels.
+    The table has column headers and row labels.
 
     Args:
-        headers: Comma-separated string of column headers (y-axis)
+        headers: Comma-separated string of column headers
                  Example: "Name,Age,City"
-        columns: Comma-separated string of row labels (x-axis)
-                 Example: "Person1,Person2,Person3"
+        rows: Comma-separated string of row labels
+              Example: "Person1,Person2,Person3"
         sheet_name: Optional name for the new spreadsheet (default: "Empty DataTable")
 
     Returns:
@@ -171,27 +171,27 @@ async def create_empty_table_with_xy(
 
     Examples:
         # Create empty table with headers and row labels
-        create_empty_table_with_xy(ctx, headers="Name,Age,City", columns="Person1,Person2,Person3")
+        create_empty_table_with_headerrow(ctx, headers="Name,Age,City", rows="Person1,Person2,Person3")
 
         # Result: A table with:
         # - Header row: ["", "Name", "Age", "City"]
         # - Data rows: ["Person1", "", "", ""], ["Person2", "", "", ""], ["Person3", "", "", ""]
     """
-    # Parse headers and columns from comma-separated strings
+    # Parse headers and rows from comma-separated strings
     header_list = [h.strip() for h in headers.split(",")]
-    column_list = [c.strip() for c in columns.split(",")]
+    row_list = [r.strip() for r in rows.split(",")]
 
     # Build the table structure:
     # First row: empty cell + headers
-    # Subsequent rows: column label + empty cells
+    # Subsequent rows: row label + empty cells
     data = []
 
     # Header row: ["", header1, header2, ...]
     data.append([""] + header_list)
 
-    # Data rows: [column_label, "", "", ...]
-    for col_label in column_list:
-        row = [col_label] + [""] * len(header_list)
+    # Data rows: [row_label, "", "", ...]
+    for row_label in row_list:
+        row = [row_label] + [""] * len(header_list)
         data.append(row)
 
     # Use write_new_sheet to create the spreadsheet

@@ -10,7 +10,7 @@ Test Functions:
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
 - test_list_of_dict_input: Tests DataFrame-like list of dict input support
 - test_1d_array_input: Tests 1D array input support
-- test_create_empty_table: Tests create_empty_table with headers and columns (NEW)
+- test_create_empty_table: Tests create_empty_table_with_headerrow with headers and rows (NEW)
 
 Usage:
     # Run all tests
@@ -1279,8 +1279,8 @@ async def test_list_of_dict_input(url, headers):
 
 
 async def test_create_empty_table(url, headers):
-    """Test create_empty_table_with_xy: create empty table with headers and columns"""
-    print(f"🚀 Testing Create Empty Table with XY")
+    """Test create_empty_table_with_headerrow: create empty table with headers and rows"""
+    print(f"🚀 Testing Create Empty Table with Headers and Rows")
     print("=" * 60)
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1289,14 +1289,14 @@ async def test_create_empty_table(url, headers):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            # Test 1: Create empty table with simple headers and columns
-            print(f"\n📝 Test 1: Creating empty table with simple headers and columns")
+            # Test 1: Create empty table with simple headers and rows
+            print(f"\n📝 Test 1: Creating empty table with simple headers and rows")
             print(f"   Headers: Name,Age,City")
-            print(f"   Columns: Person1,Person2,Person3")
+            print(f"   Rows: Person1,Person2,Person3")
 
-            create_res = await session.call_tool("create_empty_table_with_xy", {
+            create_res = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": "Name,Age,City",
-                "columns": "Person1,Person2,Person3",
+                "rows": "Person1,Person2,Person3",
                 "sheet_name": f"Empty Table Test {timestamp}"
             })
             print(f"✅ Create empty table result: {create_res}")
@@ -1325,7 +1325,7 @@ async def test_create_empty_table(url, headers):
 
                     if rows_created == expected_rows and columns_created == expected_cols and shape == expected_shape:
                         print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
-                        print(f"   ✅ PASS: Table structure: header row + column labels + empty cells")
+                        print(f"   ✅ PASS: Table structure: header row + row labels + empty cells")
                     else:
                         print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
                 else:
@@ -1336,11 +1336,11 @@ async def test_create_empty_table(url, headers):
             # Test 2: Create empty table with different dimensions
             print(f"\n📝 Test 2: Creating empty table with different dimensions")
             print(f"   Headers: Product,Price,Stock,Category,Supplier")
-            print(f"   Columns: Item1,Item2")
+            print(f"   Rows: Item1,Item2")
 
-            create_res2 = await session.call_tool("create_empty_table_with_xy", {
+            create_res2 = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": "Product,Price,Stock,Category,Supplier",
-                "columns": "Item1,Item2",
+                "rows": "Item1,Item2",
                 "sheet_name": f"Empty Table 2 {timestamp}"
             })
             print(f"✅ Create empty table 2 result: {create_res2}")
@@ -1360,12 +1360,12 @@ async def test_create_empty_table(url, headers):
                     else:
                         print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
 
-            # Test 3: Create minimal empty table (1 header, 1 column)
-            print(f"\n📝 Test 3: Creating minimal empty table (1 header, 1 column)")
+            # Test 3: Create minimal empty table (1 header, 1 row)
+            print(f"\n📝 Test 3: Creating minimal empty table (1 header, 1 row)")
 
-            create_res3 = await session.call_tool("create_empty_table_with_xy", {
+            create_res3 = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": "Value",
-                "columns": "Row1"
+                "rows": "Row1"
             })
             print(f"✅ Minimal empty table result: {create_res3}")
 
@@ -1382,25 +1382,25 @@ async def test_create_empty_table(url, headers):
                     if rows_created == expected_rows and columns_created == expected_cols:
                         print(f"   ✅ PASS: Minimal table dimensions correct - {expected_rows}×{expected_cols}")
 
-            # Test 4: Test with spaces in headers and columns (should be trimmed)
-            print(f"\n📝 Test 4: Testing with spaces in headers/columns (should be trimmed)")
+            # Test 4: Test with spaces in headers and rows (should be trimmed)
+            print(f"\n📝 Test 4: Testing with spaces in headers/rows (should be trimmed)")
 
-            create_res4 = await session.call_tool("create_empty_table_with_xy", {
+            create_res4 = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": " Header1 , Header2 , Header3 ",
-                "columns": " Row1 , Row2 "
+                "rows": " Row1 , Row2 "
             })
             print(f"✅ Trimming test result: {create_res4}")
 
             if not create_res4.isError and create_res4.content and create_res4.content[0].text:
                 result_content = json.loads(create_res4.content[0].text)
                 if result_content.get('success'):
-                    print(f"   ✅ PASS: Successfully created table with trimmed headers/columns")
+                    print(f"   ✅ PASS: Successfully created table with trimmed headers/rows")
 
             print(f"\n✅ Create empty table test completed!")
             print(f"\n📊 Test Summary:")
-            print(f"   ✓ create_empty_table_with_xy creates table with proper structure")
-            print(f"   ✓ Headers (y-axis) become column headers")
-            print(f"   ✓ Columns (x-axis) become row labels")
+            print(f"   ✓ create_empty_table_with_headerrow creates table with proper structure")
+            print(f"   ✓ Headers become column headers")
+            print(f"   ✓ Rows parameter becomes row labels")
             print(f"   ✓ Returns same SpreadsheetResponse as write_new_sheet")
             print(f"   ✓ Handles various dimensions correctly")
             print(f"   ✓ Trims whitespace from comma-separated inputs")
