@@ -7,7 +7,7 @@ These @mcp.tool functions serve as the API entry points for MCP clients.
 Contains all 6 core MCP tools:
 - load_data_table: Load data from Google Sheets
 - write_new_sheet: Create new Google Sheets spreadsheet
-- create_empty_table_with_xy: Create empty table with headers and columns
+- create_empty_table_with_headerrow: Create empty table with headers and columns
 - append_rows: Append rows to existing sheet
 - append_columns: Append columns to existing sheet
 - update_range: Update specific cell range
