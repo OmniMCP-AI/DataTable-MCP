@@ -1279,89 +1279,94 @@ async def test_list_of_dict_input(url, headers):
 
 
 async def test_create_empty_table(url, headers):
-    """Test create_empty_table_with_headerrow: create empty table with headers and rows"""
-    print(f"🚀 Testing Create Empty Table with Headers and Rows")
+    """Test create_empty_table_with_headerrow: create empty table structure with headers and rows"""
+    print(f"🚀 Testing Create Empty Table Structure (No Google Sheet Creation)")
     print("=" * 60)
-
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            # Test 1: Create empty table with simple headers and rows
-            print(f"\n📝 Test 1: Creating empty table with simple headers and rows")
+            # Test 1: Create empty table structure with simple headers and rows
+            print(f"\n📝 Test 1: Creating empty table structure with simple headers and rows")
             print(f"   Headers: Name,Age,City")
             print(f"   Rows: Person1,Person2,Person3")
 
             create_res = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": "Name,Age,City",
-                "rows": "Person1,Person2,Person3",
-                "sheet_name": f"Empty Table Test {timestamp}"
+                "rows": "Person1,Person2,Person3"
             })
             print(f"✅ Create empty table result: {create_res}")
 
             # Verify the result
-            new_spreadsheet_url = None
             if not create_res.isError and create_res.content and create_res.content[0].text:
                 result_content = json.loads(create_res.content[0].text)
                 if result_content.get('success'):
-                    new_spreadsheet_url = result_content.get('spreadsheet_url')
-                    rows_created = result_content.get('rows_created')
-                    columns_created = result_content.get('columns_created')
+                    data = result_content.get('data', [])
                     shape = result_content.get('shape')
 
-                    print(f"   ✅ Empty table created:")
-                    print(f"      URL: {new_spreadsheet_url}")
-                    print(f"      Rows: {rows_created}")
-                    print(f"      Columns: {columns_created}")
+                    print(f"   ✅ Empty table structure created:")
                     print(f"      Shape: {shape}")
+                    print(f"      Data rows: {len(data)}")
 
-                    # Verify dimensions
-                    # Expected: 4 rows (1 header + 3 data rows), 4 columns (1 label + 3 headers)
-                    expected_rows = 4
-                    expected_cols = 4
-                    expected_shape = "(4,4)"
+                    # Verify data structure is list of dicts
+                    if data and isinstance(data[0], dict):
+                        print(f"   ✅ Data format: List of dictionaries")
+                        print(f"   📝 First row keys: {list(data[0].keys())}")
+                        print(f"   📝 First row: {data[0]}")
 
-                    if rows_created == expected_rows and columns_created == expected_cols and shape == expected_shape:
-                        print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
-                        print(f"   ✅ PASS: Table structure: header row + row labels + empty cells")
+                        # Verify dimensions
+                        # Expected: 3 data rows, 4 columns (metrics + 3 headers)
+                        expected_rows = 3
+                        expected_cols = 4
+                        expected_shape = "(3,4)"
+
+                        if len(data) == expected_rows and shape == expected_shape:
+                            print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
+
+                            # Verify structure: metrics column + header columns with empty values
+                            if "metrics" in data[0] and data[0]["metrics"] == "Person1":
+                                print(f"   ✅ PASS: 'metrics' column contains row labels")
+                            if all(data[0].get(h) == "" for h in ["Name", "Age", "City"]):
+                                print(f"   ✅ PASS: All header columns have empty values")
+                        else:
+                            print(f"   ❌ FAIL: Expected {expected_rows} rows with shape {expected_shape}, got {len(data)} rows with shape {shape}")
                     else:
-                        print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
+                        print(f"   ❌ FAIL: Data is not a list of dictionaries")
                 else:
                     print(f"   ❌ FAIL: {result_content.get('message', 'Unknown error')}")
             else:
-                print(f"   ❌ FAIL: Could not create empty table")
+                print(f"   ❌ FAIL: Could not create empty table structure")
 
             # Test 2: Create empty table with different dimensions
-            print(f"\n📝 Test 2: Creating empty table with different dimensions")
+            print(f"\n📝 Test 2: Creating empty table structure with different dimensions")
             print(f"   Headers: Product,Price,Stock,Category,Supplier")
             print(f"   Rows: Item1,Item2")
 
             create_res2 = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": "Product,Price,Stock,Category,Supplier",
-                "rows": "Item1,Item2",
-                "sheet_name": f"Empty Table 2 {timestamp}"
+                "rows": "Item1,Item2"
             })
             print(f"✅ Create empty table 2 result: {create_res2}")
 
             if not create_res2.isError and create_res2.content and create_res2.content[0].text:
                 result_content = json.loads(create_res2.content[0].text)
                 if result_content.get('success'):
-                    rows_created = result_content.get('rows_created')
-                    columns_created = result_content.get('columns_created')
+                    data = result_content.get('data', [])
+                    shape = result_content.get('shape')
 
-                    # Expected: 3 rows (1 header + 2 data), 6 columns (1 label + 5 headers)
-                    expected_rows = 3
+                    # Expected: 2 data rows, 6 columns (metrics + 5 headers)
+                    expected_rows = 2
                     expected_cols = 6
+                    expected_shape = "(2,6)"
 
-                    if rows_created == expected_rows and columns_created == expected_cols:
+                    if len(data) == expected_rows and shape == expected_shape:
                         print(f"   ✅ PASS: Correct dimensions - {expected_rows} rows × {expected_cols} columns")
                     else:
-                        print(f"   ❌ FAIL: Expected {expected_rows}×{expected_cols}, got {rows_created}×{columns_created}")
+                        print(f"   ❌ FAIL: Expected {expected_rows} rows with shape {expected_shape}, got {len(data)} rows with shape {shape}")
 
             # Test 3: Create minimal empty table (1 header, 1 row)
-            print(f"\n📝 Test 3: Creating minimal empty table (1 header, 1 row)")
+            print(f"\n📝 Test 3: Creating minimal empty table structure (1 header, 1 row)")
 
             create_res3 = await session.call_tool("create_empty_table_with_headerrow", {
                 "headers": "Value",
@@ -1372,15 +1377,16 @@ async def test_create_empty_table(url, headers):
             if not create_res3.isError and create_res3.content and create_res3.content[0].text:
                 result_content = json.loads(create_res3.content[0].text)
                 if result_content.get('success'):
-                    rows_created = result_content.get('rows_created')
-                    columns_created = result_content.get('columns_created')
+                    data = result_content.get('data', [])
+                    shape = result_content.get('shape')
 
-                    # Expected: 2 rows (1 header + 1 data), 2 columns (1 label + 1 header)
-                    expected_rows = 2
+                    # Expected: 1 data row, 2 columns (metrics + 1 header)
+                    expected_rows = 1
                     expected_cols = 2
+                    expected_shape = "(1,2)"
 
-                    if rows_created == expected_rows and columns_created == expected_cols:
-                        print(f"   ✅ PASS: Minimal table dimensions correct - {expected_rows}×{expected_cols}")
+                    if len(data) == expected_rows and shape == expected_shape:
+                        print(f"   ✅ PASS: Minimal table dimensions correct - {expected_rows} rows × {expected_cols} columns")
 
             # Test 4: Test with spaces in headers and rows (should be trimmed)
             print(f"\n📝 Test 4: Testing with spaces in headers/rows (should be trimmed)")
@@ -1394,18 +1400,24 @@ async def test_create_empty_table(url, headers):
             if not create_res4.isError and create_res4.content and create_res4.content[0].text:
                 result_content = json.loads(create_res4.content[0].text)
                 if result_content.get('success'):
-                    print(f"   ✅ PASS: Successfully created table with trimmed headers/rows")
+                    data = result_content.get('data', [])
+                    # Verify trimming
+                    if data and "Header1" in data[0] and data[0]["metrics"] == "Row1":
+                        print(f"   ✅ PASS: Headers and rows trimmed correctly")
+                    else:
+                        print(f"   ⚠️  WARNING: Trimming may not be working as expected")
 
             print(f"\n✅ Create empty table test completed!")
             print(f"\n📊 Test Summary:")
-            print(f"   ✓ create_empty_table_with_headerrow creates table with proper structure")
-            print(f"   ✓ Headers become column headers")
-            print(f"   ✓ Rows parameter becomes row labels")
-            print(f"   ✓ Returns same SpreadsheetResponse as write_new_sheet")
+            print(f"   ✓ create_empty_table_with_headerrow creates list of dicts structure")
+            print(f"   ✓ Does NOT create a Google Spreadsheet")
+            print(f"   ✓ Returns TableResponse (not SpreadsheetResponse)")
+            print(f"   ✓ Headers become dict keys with empty string values")
+            print(f"   ✓ Rows parameter becomes 'metrics' column values")
             print(f"   ✓ Handles various dimensions correctly")
             print(f"   ✓ Trims whitespace from comma-separated inputs")
 
-            return new_spreadsheet_url
+            return None  # No spreadsheet URL since no sheet is created
 
 
 async def run_all_tests(url, headers):

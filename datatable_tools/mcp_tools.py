@@ -133,74 +133,67 @@ async def write_new_sheet(
 
 
 @mcp.tool
-@require_google_service("sheets", "sheets_write")
 async def create_empty_table_with_headerrow(
-    service,  # Injected by @require_google_service
     ctx: Context,
     headers: str = Field(
-        description="Comma-separated string of column headers. Example: 'Name,Age,City'"
+        description="Comma-separated string of column headers. Example: '2025-Q3,2025-Q4,2026,2027'"
     ),
     rows: str = Field(
-        description="Comma-separated string of row labels. Example: 'Person1,Person2,Person3'"
-    ),
-    sheet_name: Optional[str] = Field(
-        default=None,
-        description="Optional name for the new spreadsheet (default: 'Empty DataTable')"
+        description="Comma-separated string of row labels/metrics. Example: 'Analyst Estimates – Revenue,Analyst Estimates – EPS'"
     )
-) -> SpreadsheetResponse:
+) -> TableResponse:
     """
-    Create a new Google Sheets spreadsheet with an empty table structure.
-    The table has column headers and row labels.
+    Create an empty table structure with column headers and row labels, returned as a list of dicts.
+    Does NOT create a Google Spreadsheet - only returns the data structure.
 
     Args:
-        headers: Comma-separated string of column headers
-                 Example: "Name,Age,City"
-        rows: Comma-separated string of row labels
-              Example: "Person1,Person2,Person3"
-        sheet_name: Optional name for the new spreadsheet (default: "Empty DataTable")
+        headers: Comma-separated string of column headers (e.g., time periods)
+                 Example: "2025-Q3,2025-Q4,2026,2027"
+        rows: Comma-separated string of row labels/metrics
+              Example: "Analyst Estimates – Revenue,Analyst Estimates – EPS"
 
     Returns:
-        SpreadsheetResponse containing:
+        TableResponse containing:
             - success: Whether the operation succeeded
-            - spreadsheet_url: Full URL to the created spreadsheet
-            - rows_created: Number of rows written
-            - columns_created: Number of columns written
+            - data: List of dicts where each dict represents a row with:
+                    - "metrics" key containing the row label
+                    - keys for each header with empty string values
             - shape: String of "(rows,columns)"
-            - error: Error message if failed, None otherwise
             - message: Human-readable result message
 
     Examples:
-        # Create empty table with headers and row labels
-        create_empty_table_with_headerrow(ctx, headers="Name,Age,City", rows="Person1,Person2,Person3")
+        # Create empty table structure
+        result = create_empty_table_with_headerrow(
+            ctx,
+            headers="2025-Q3,2025-Q4,2026,2027",
+            rows="Analyst Estimates – Revenue,Analyst Estimates – EPS"
+        )
 
-        # Result: A table with:
-        # - Header row: ["", "Name", "Age", "City"]
-        # - Data rows: ["Person1", "", "", ""], ["Person2", "", "", ""], ["Person3", "", "", ""]
+        # Result data:
+        # [
+        #     {"metrics": "Analyst Estimates – Revenue", "2025-Q3": "", "2025-Q4": "", "2026": "", "2027": ""},
+        #     {"metrics": "Analyst Estimates – EPS", "2025-Q3": "", "2025-Q4": "", "2026": "", "2027": ""}
+        # ]
     """
     # Parse headers and rows from comma-separated strings
     header_list = [h.strip() for h in headers.split(",")]
     row_list = [r.strip() for r in rows.split(",")]
 
-    # Build the table structure:
-    # First row: empty cell + headers
-    # Subsequent rows: row label + empty cells
-    data = []
+    # Build the data structure: list of dicts
+    # Each dict has "metrics" key for row label, plus all headers with empty values
+    data = [
+        {
+            "metrics": metric,
+            **{header: "" for header in header_list}
+        }
+        for metric in row_list
+    ]
 
-    # Header row: ["", header1, header2, ...]
-    data.append([""] + header_list)
-
-    # Data rows: [row_label, "", "", ...]
-    for row_label in row_list:
-        row = [row_label] + [""] * len(header_list)
-        data.append(row)
-
-    # Use write_new_sheet to create the spreadsheet
-    google_sheet = GoogleSheetDataTable()
-    return await google_sheet.write_new_sheet(
-        service,
-        data,
-        headers=None,  # Headers are already embedded in data
-        sheet_name=sheet_name or "Empty DataTable"
+    return TableResponse(
+        success=True,
+        data=data,
+        shape=f"({len(row_list)},{len(header_list) + 1})",  # +1 for metrics column
+        message=f"Created empty table structure with {len(row_list)} rows and {len(header_list)} data columns"
     )
 
 
