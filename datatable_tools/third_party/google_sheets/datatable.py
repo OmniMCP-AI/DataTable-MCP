@@ -518,20 +518,28 @@ class GoogleSheetDataTable(DataTableInterface):
                 data_rows = [[value] for value in data_rows[0]]
                 logger.debug(f"Transposed 1D array to column format for single-column range '{range_address}': {len(data_rows)} rows x 1 column")
 
-            # If data was list of dicts, include extracted headers
-            if extracted_headers:
+            # If data was list of dicts, include extracted headers ONLY if no explicit range_address
+            if extracted_headers and not range_address:
                 values = [[str(h) for h in extracted_headers]]
                 values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
                 logger.info(f"Including extracted headers from list of dicts: {extracted_headers}")
+            elif extracted_headers:
+                # Explicit range_address provided - only use data rows
+                values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
+                logger.info(f"Using data rows only (no headers) for explicit range_address: {range_address}")
             else:
                 # Auto-detect headers in data_rows (already processed)
                 detected_headers, processed_rows = auto_detect_headers(data_rows)
 
-                # If headers were detected, include them in the output
-                if detected_headers:
+                # If headers were detected, include them in the output ONLY if no explicit range_address
+                if detected_headers and not range_address:
                     values = [[str(h) for h in detected_headers]]
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in processed_rows])
                     logger.info(f"Including detected headers in output: {detected_headers}")
+                elif detected_headers:
+                    # Explicit range_address provided - only use processed data rows
+                    values = [[str(cell) if cell is not None else "" for cell in row] for row in processed_rows]
+                    logger.info(f"Using processed data rows only (no headers) for explicit range_address: {range_address}")
                 else:
                     # Use data_rows (already processed by process_data_input)
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
