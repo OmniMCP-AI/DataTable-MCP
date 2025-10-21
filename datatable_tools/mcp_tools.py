@@ -132,7 +132,7 @@ async def write_new_sheet(
     return await google_sheet.write_new_sheet(service, data, headers, sheet_name)
 
 
-@mcp.tool
+# @mcp.tool
 async def create_empty_table_with_headerrow(
     ctx: Context,
     headers: str = Field(
