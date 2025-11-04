@@ -169,8 +169,14 @@ class GoogleSheetDataTable(DataTableInterface):
             title = sheet_name or "New DataTable"
 
             # Prepare data for Google Sheets API
-            # Convert data to strings (Google Sheets API requirement)
-            values = [[str(cell) if cell is not None else "" for cell in row] for row in final_data]
+            # Serialize nested structures (lists/dicts) to JSON strings
+            # Convert other types to strings (Google Sheets API requirement)
+            from datatable_tools.google_sheets_helpers import serialize_row
+
+            values = [serialize_row(row) for row in final_data]
+
+            # Convert to strings after serialization
+            values = [[str(cell) if cell is not None else "" for cell in row] for row in values]
 
             # Prepare write data with headers
             write_data = []

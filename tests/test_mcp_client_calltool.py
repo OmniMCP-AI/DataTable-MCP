@@ -1377,12 +1377,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set endpoint based on environment argument
-    if args.env == "local":
-        endpoint = "http://127.0.0.1:8321"
+    if args.env == "test":
+        endpoint = "https://datatable-mcp-test.maybe.ai"
     elif args.env == "prod":
         endpoint = "https://datatable-mcp.maybe.ai"
     else:
-        endpoint = "https://datatable-mcp-test.maybe.ai"
+        endpoint = "http://127.0.0.1:8321"
         
 
     print(f"🔗 Using {args.env} environment: {endpoint}")

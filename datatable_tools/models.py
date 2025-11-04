@@ -14,21 +14,26 @@ from pydantic import BaseModel
 # ============================================================================
 # These types are shared across all DataTable operations to ensure consistency
 
-PrimitiveValue = int | str | float | bool | None
-"""Primitive types that can be stored in a cell"""
-
 TableData = Union[
-    List[List[PrimitiveValue]],      # 2D array: list of rows
-    List[Dict[str, PrimitiveValue]], # DataFrame-like: list of dicts
-    List[PrimitiveValue]             # 1D array: single row or single column
+    List[List[Any]],                 # 2D array: list of rows (allows nested structures)
+    List[Dict[str, Any]],            # DataFrame-like: list of dicts (allows nested structures)
+    List[Any],                       # 1D array: single row or single column
+    str                              # Polars DataFrame string representation (from MCP serialization)
 ]
 """
 Unified data input type for all DataTable operations.
 
-Supports three formats:
-- List[List[PrimitiveValue]]: Traditional 2D array (rows × columns)
-- List[Dict[str, PrimitiveValue]]: DataFrame-like list of dicts
-- List[PrimitiveValue]: 1D array (automatically converted to single row)
+Supports four formats:
+- List[List[CellValue]]: Traditional 2D array (rows × columns), supports nested structures
+- List[Dict[str, CellValue]]: DataFrame-like list of dicts, supports nested structures
+- List[CellValue]: 1D array (automatically converted to single row)
+- str: Polars DataFrame string representation (when serialized through MCP protocol)
+
+**Nested Structure Support:**
+- Cells can contain lists: `image_urls=[]` or `image_urls=[{"url": "..."}]`
+- Cells can contain dicts: `metadata={"key": "value"}`
+- Nested structures are preserved during data processing
+- Google Sheets will store these as JSON strings
 
 Examples:
     >>> # 2D array
@@ -39,6 +44,15 @@ Examples:
 
     >>> # 1D array (single row)
     >>> data = ["Alice", 30, "New York"]
+
+    >>> # With nested structures (common in API responses)
+    >>> data = [
+    ...     {"name": "Alice", "images": [{"url": "http://..."}], "tags": []},
+    ...     {"name": "Bob", "images": [], "tags": ["tag1"]}
+    ... ]
+
+    >>> # Polars DataFrame string (from MCP serialization)
+    >>> data = "shape: (2, 2)\\n┌──────┬─────┐\\n│ name ┆ age │\\n..."
 """
 
 

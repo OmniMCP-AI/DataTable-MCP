@@ -94,6 +94,54 @@ async def get_sheet_by_gid(service, spreadsheet_id: str, gid: Optional[str]) -> 
     return sheets[0]['properties']
 
 
+def serialize_cell_value(value: Any) -> Any:
+    """
+    Serialize cell values for Google Sheets storage.
+
+    Converts nested structures (lists, dicts) to JSON strings.
+    Leaves primitive types unchanged.
+
+    Args:
+        value: Cell value to serialize
+
+    Returns:
+        Serialized value suitable for Google Sheets
+
+    Examples:
+        >>> serialize_cell_value([{"url": "http://..."}])
+        '[{"url": "http://..."}]'
+
+        >>> serialize_cell_value([])
+        '[]'
+
+        >>> serialize_cell_value("string")
+        'string'
+
+        >>> serialize_cell_value(42)
+        42
+    """
+    # Convert lists and dicts to JSON strings for Google Sheets storage
+    if isinstance(value, (list, dict)):
+        import json
+        return json.dumps(value, ensure_ascii=False)
+
+    # Return primitive values as-is
+    return value
+
+
+def serialize_row(row: list) -> list:
+    """
+    Serialize all values in a row for Google Sheets storage.
+
+    Args:
+        row: List of cell values
+
+    Returns:
+        List of serialized cell values
+    """
+    return [serialize_cell_value(v) for v in row]
+
+
 def auto_detect_headers(values: list[list]) -> Tuple[list[str], list[list]]:
     """
     Auto-detect if first row contains headers
@@ -298,7 +346,147 @@ def is_single_column_range(range_address: str) -> bool:
     return range_address.isalpha()
 
 
-def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], list[list]]:
+def parse_polars_dataframe_string(data_str: str) -> Tuple[list[str], list[list]]:
+    """
+    Parse Polars DataFrame string representation into headers and data rows.
+
+    This handles cases where a Polars DataFrame is serialized to a string through
+    the MCP protocol (e.g., when passed from FastestAI workflow).
+
+    **WARNING**: Polars display format truncates long text and wraps multi-line content,
+    which can result in data loss. This is a defensive fallback only.
+    The proper fix is to use `.to_dicts()` or pass the DataFrame directly with `direct_call=True`.
+
+    Args:
+        data_str: String representation of a Polars DataFrame
+
+    Returns:
+        (headers, data_rows) tuple
+
+    Raises:
+        ValueError: If the DataFrame display is truncated (contains "…") which indicates data loss
+    """
+    logger.error(
+        "Received Polars DataFrame as string representation. "
+        "This is problematic because:\n"
+        "  1. Display format truncates long text (indicated by '…')\n"
+        "  2. Multi-line text in cells gets wrapped\n"
+        "  3. This can result in incomplete or incorrect data\n"
+        "\nProper solutions:\n"
+        "  - Use MCPPlus with DataFrame.to_dicts() conversion (should be automatic)\n"
+        "  - Or pass DataFrame directly with direct_call=True in MCPPlus bridge\n"
+        "\nThis parser is a defensive fallback only and may not work correctly for all cases."
+    )
+
+    # Check if the DataFrame display is truncated (contains "…")
+    if "…" in data_str:
+        raise ValueError(
+            "Polars DataFrame string representation is truncated (contains '…'). "
+            "This indicates data loss during string conversion. "
+            "Cannot reliably parse truncated DataFrame. "
+            "\n\nPlease fix the upstream code to pass DataFrames properly using:\n"
+            "  1. MCPPlus with .to_dicts() conversion (automatic)\n"
+            "  2. Or direct_call=True for native DataFrame support"
+        )
+
+    lines = data_str.strip().split('\n')
+
+    # Find the header row (first row with │ and ┆, but not containing --- or ═)
+    header_idx = None
+    for i, line in enumerate(lines):
+        if '│' in line and '┆' in line:
+            if '---' not in line and '═' not in line:
+                header_idx = i
+                break
+
+    if header_idx is None:
+        raise ValueError("Could not find header row in Polars DataFrame string representation")
+
+    # Extract headers
+    header_line = lines[header_idx]
+    header_line = header_line.strip()
+    if header_line.startswith('│'):
+        header_line = header_line[1:]
+    if header_line.endswith('│'):
+        header_line = header_line[:-1]
+
+    headers = [h.strip() for h in header_line.split('┆')]
+
+    # Find data separator (╞═══)
+    data_start_idx = None
+    for i, line in enumerate(lines):
+        if '╞' in line and '═' in line:
+            data_start_idx = i + 1
+            break
+
+    if data_start_idx is None:
+        raise ValueError("Could not find data separator in Polars DataFrame string representation")
+
+    # Extract data rows
+    # We need to handle multi-line wrapping by combining wrapped lines into single rows
+    data_rows = []
+    current_row = None
+    num_columns = len(headers)
+
+    for i in range(data_start_idx, len(lines)):
+        line = lines[i].strip()
+
+        # Stop at bottom border
+        if line.startswith('└'):
+            # Add last row if it exists
+            if current_row and len(current_row) == num_columns:
+                data_rows.append(current_row)
+            break
+
+        # Skip empty lines
+        if not line or not line.startswith('│'):
+            continue
+
+        # Remove box drawing characters
+        if line.startswith('│'):
+            line = line[1:]
+        if line.endswith('│'):
+            line = line[:-1]
+
+        # Split by delimiter
+        values = [v.strip() for v in line.split('┆')]
+
+        # Check if this starts a new row (has expected number of columns)
+        if len(values) == num_columns:
+            # Save previous row if it exists
+            if current_row and len(current_row) == num_columns:
+                data_rows.append(current_row)
+
+            # Start new row with type conversion
+            current_row = []
+            for v in values:
+                if v == '' or v == 'null':
+                    current_row.append(None)
+                elif v.replace('.', '', 1).replace('-', '', 1).isdigit():
+                    try:
+                        if '.' in v:
+                            current_row.append(float(v))
+                        else:
+                            current_row.append(int(v))
+                    except ValueError:
+                        current_row.append(v)
+                else:
+                    current_row.append(v)
+        else:
+            # This is a continuation of a multi-line cell
+            # We should append to the current row's cells
+            # But Polars wrapping is complex, so we'll just warn
+            logger.warning(f"Detected multi-line wrapping in Polars display. Data may be incomplete.")
+
+    # Add the last row if it exists
+    if current_row and len(current_row) == num_columns:
+        data_rows.append(current_row)
+
+    logger.warning(f"Parsed Polars DataFrame string: {len(headers)} columns, {len(data_rows)} rows. Data may be incomplete due to display wrapping.")
+    return headers, data_rows
+
+
+def process_data_input(data: Union[list, str, Any]) -> Tuple[Optional[list[str]], list[list]]:
     """
     Process data input supporting multiple formats including Polars DataFrames.
 
@@ -307,6 +495,7 @@ def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], lis
     - List[Dict[str, Any]]: List of dicts (pandas DataFrame-like)
     - List[Any]: 1D array (single row or column) - NEW
     - pl.DataFrame: Polars DataFrame (NEW in Stage 5)
+    - str: Polars DataFrame string representation (when serialized through MCP)
 
     Args:
         data: One of the supported data formats:
@@ -314,6 +503,7 @@ def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], lis
               - List[Dict[str, Any]]: List of dicts
               - List[Any]: 1D array (single row or column)
               - pl.DataFrame: Polars DataFrame (if polars is installed)
+              - str: Polars DataFrame string representation
 
     Returns:
         (headers, data_rows) tuple:
@@ -357,6 +547,17 @@ def process_data_input(data: Union[list, Any]) -> Tuple[Optional[list[str]], lis
         >>> rows
         [['Alice', 30, 'New York']]
     """
+    # NEW: Handle Polars DataFrame string representation (from MCP serialization)
+    if isinstance(data, str):
+        # Check if it looks like a Polars DataFrame string
+        if data.startswith('shape:') and '┌' in data and '│' in data:
+            return parse_polars_dataframe_string(data)
+        else:
+            raise ValueError(
+                f"String data input is not supported unless it's a Polars DataFrame representation. "
+                f"Received: {data[:100]}..."
+            )
+
     # NEW: Handle Polars DataFrame
     if POLARS_AVAILABLE and isinstance(data, pl.DataFrame):
         # Extract headers from column names
