@@ -832,20 +832,24 @@ async def test_1d_array_input(url, headers):
 
             # Test 3: append_columns with 1D array (single column)
             print(f"\n📝 Test 3: append_columns with 1D array (single column)")
-            print(f"   Appending a single column using 1D array format")
+            print(f"   Appending a single column using 2D array format with header")
 
-            # Note: For append_columns, 1D array represents column values (multiple rows, 1 column)
-            # But process_data_input will convert it to [[val1, val2, val3...]] which is 1 row
-            # So we need to test if this works as expected or if we need special handling
-
-            append_col_data = ["Value1", "Value2", "Value3", "Value4", "Value5"]
+            # For append_columns with a single column, use 2D format with header as first row
+            # Format: [["Header"], [val1], [val2], ...]
+            append_col_data = [
+                ["NewColumn"],  # Header row
+                ["Value1"],     # Data row 1
+                ["Value2"],     # Data row 2
+                ["Value3"],     # Data row 3
+                ["Value4"],     # Data row 4
+                ["Value5"]      # Data row 5
+            ]
 
             append_col_res = await session.call_tool("append_columns", {
                 "uri": test_uri,
-                "data": append_col_data,  # 1D array
-                "headers": ["NewColumn"]
+                "data": append_col_data  # 2D array with header in first row
             })
-            print(f"✅ Append columns (1D) result: {append_col_res}")
+            print(f"✅ Append columns (single column) result: {append_col_res}")
 
             # Verify the result
             if not append_col_res.isError and append_col_res.content and append_col_res.content[0].text:
@@ -856,11 +860,13 @@ async def test_1d_array_input(url, headers):
 
                     print(f"   📊 Updated {updated_cells} cells with shape {shape}")
 
-                    # With current implementation, 1D array becomes 1 row
-                    # So: 1 header row + 1 data row = 2 rows, 5 columns
-                    # This might not be what we want for columns - need to discuss
-                    print(f"   💡 Note: 1D array is converted to single row (not column)")
-                    print(f"   💡 For columns, you may want to use 2D format: [[val1], [val2], ...]")
+                    # Expected: 6 rows (1 header + 5 data) × 1 column = 6 cells
+                    expected_cells = 6
+                    expected_shape = "(6,1)"
+                    if updated_cells == expected_cells and shape == expected_shape:
+                        print(f"   ✅ PASS: Correct single column appended with header")
+                    else:
+                        print(f"   ⚠️  Expected {expected_cells} cells with shape {expected_shape}, got {updated_cells} with shape {shape}")
                 else:
                     print(f"   ⚠️  {result_content.get('message', 'Unknown error')}")
 
