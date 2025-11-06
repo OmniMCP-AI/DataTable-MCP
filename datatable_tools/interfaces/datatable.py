@@ -29,7 +29,6 @@ class DataTableInterface(ABC):
         self,
         ctx: Context,
         data: TableData,
-        headers: Optional[List[str]] = None,
         sheet_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -41,7 +40,6 @@ class DataTableInterface(ABC):
                   - List[List[Any]]: 2D array (rows x columns)
                   - List[Dict[str, Any]]: List of dicts (DataFrame-like)
                   - List[Any]: 1D array (single row/column)
-            headers: Optional column headers
             sheet_name: Optional name for the sheet
 
         Returns:
@@ -77,8 +75,7 @@ class DataTableInterface(ABC):
         self,
         ctx: Context,
         uri: str,
-        data: TableData,
-        headers: Optional[List[str]] = None
+        data: TableData
     ) -> Dict[str, Any]:
         """
         Append columns to an existing sheet.
@@ -90,7 +87,6 @@ class DataTableInterface(ABC):
                   - List[List[Any]]: 2D array where each inner list is a column
                   - List[Dict[str, Any]]: List of dicts (DataFrame-like)
                   - List[Any]: 1D array (single column)
-            headers: Optional headers for new columns
 
         Returns:
             Dict with success status and update info

@@ -74,10 +74,6 @@ async def write_new_sheet(
             "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
         )
     ),
-    headers: Optional[List[str]] = Field(
-        default=None,
-        description="Optional column headers. If None, headers will be auto-detected from first row if it contains short strings followed by longer content. For list of dicts or DataFrames, headers are automatically extracted."
-    ),
     sheet_name: Optional[str] = Field(
         default=None,
         description="Optional name for the new spreadsheet (default: 'New DataTable')"
@@ -91,8 +87,7 @@ async def write_new_sheet(
               - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
               - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
               - polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)
-        headers: Optional column headers. If None, headers will be auto-detected.
-                For list of dicts or DataFrames, headers are automatically extracted.
+              Headers are automatically extracted from list of dicts or DataFrames, or auto-detected from 2D arrays.
         sheet_name: Optional name for the new spreadsheet (default: "New DataTable")
 
     Returns:
@@ -106,11 +101,10 @@ async def write_new_sheet(
             - message: Human-readable result message
 
     Examples:
-        # Create new spreadsheet with 2D array data
-        write_new_sheet(ctx, data=[["John", 25], ["Jane", 30]],
-                        headers=["name", "age"])
+        # Create new spreadsheet with 2D array data (headers auto-detected)
+        write_new_sheet(ctx, data=[["name", "age"], ["John", 25], ["Jane", 30]])
 
-        # Create with list of dicts (DataFrame-like)
+        # Create with list of dicts (DataFrame-like, headers extracted from dict keys)
         write_new_sheet(ctx, data=[{"name": "John", "age": 25}, {"name": "Jane", "age": 30}])
 
         # Create with Polars DataFrame (via MCPPlus bridge)
@@ -128,7 +122,7 @@ async def write_new_sheet(
                         sheet_name="Product Catalog")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.write_new_sheet(service, data, headers, sheet_name)
+    return await google_sheet.write_new_sheet(service, data, sheet_name)
 
 
 @mcp.tool
@@ -202,10 +196,6 @@ async def append_columns(
             "- List[int|str|float|bool|None]: 1D array (single column)\n"
             "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
         )
-    ),
-    headers: Optional[List[str]] = Field(
-        default=None,
-        description="Optional column headers. If None, headers will be auto-detected. For list of dicts or DataFrames, headers are automatically extracted."
     )
 ) -> UpdateResponse:
     """
@@ -217,9 +207,7 @@ async def append_columns(
         data: Data in pandas-like formats. Accepts:
               - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
               - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
-        headers: Optional column headers. If None and first row contains short strings followed
-                by rows with longer content (>50 chars), headers will be auto-detected and
-                extracted from the first row. For list of dicts, headers are automatically extracted from dict keys.
+              Headers are automatically extracted from list of dicts or DataFrames, or auto-detected from 2D arrays.
 
     Returns:
         UpdateResponse containing:
@@ -234,16 +222,16 @@ async def append_columns(
             - message: Human-readable result message
 
     Examples:
-        # Append new columns to Google Sheets (2D array)
+        # Append new columns to Google Sheets (2D array with headers auto-detected)
         append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
-                      data=[["Feature1"], ["Feature2"]], headers=["new_feature"])
+                      data=[["new_feature"], ["Feature1"], ["Feature2"]])
 
-        # Append with list of dicts (DataFrame-like)
+        # Append with list of dicts (DataFrame-like, headers extracted from dict keys)
         append_columns(ctx, "https://docs.google.com/spreadsheets/d/{id}/edit?gid={gid}",
                       data=[{"new_col": "Value1"}, {"new_col": "Value2"}])
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.append_columns(service, uri, data, headers)
+    return await google_sheet.append_columns(service, uri, data)
 
 
 @mcp.tool

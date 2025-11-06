@@ -164,7 +164,6 @@ async def test_append_columns_with_dataframe():
     new_sheet_result = await google_sheet.write_new_sheet(
         service=service,
         data=initial_df,
-        headers=None,
         sheet_name=f"DataFrame Append Columns Test {timestamp}"
     )
 
@@ -191,8 +190,7 @@ async def test_append_columns_with_dataframe():
     result = await google_sheet.append_columns(
         service=service,
         uri=test_uri,  # Use the new sheet URI
-        data=df,  # Pass DataFrame directly
-        headers=None  # Headers will be extracted from DataFrame
+        data=df  # Pass DataFrame directly
     )
 
     # Verify result
@@ -248,7 +246,6 @@ async def test_write_new_sheet_with_dataframe():
     result = await google_sheet.write_new_sheet(
         service=service,
         data=df,  # Pass DataFrame directly
-        headers=None,  # Headers will be extracted from DataFrame
         sheet_name=f"DataFrame Test {timestamp}"
     )
 

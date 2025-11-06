@@ -134,7 +134,6 @@ class GoogleSheetDataTable(DataTableInterface):
         self,
         service,  # Authenticated Google Sheets service
         data: List[List[Any]],
-        headers: Optional[List[str]] = None,
         sheet_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -145,24 +144,23 @@ class GoogleSheetDataTable(DataTableInterface):
         Args:
             service: Authenticated Google Sheets API service object
             data: 2D array of table data or list of dicts (DataFrame-like)
-            headers: Optional column headers
             sheet_name: Optional name for the spreadsheet
         """
         try:
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
 
-            # If data was list of dicts and headers not explicitly provided, use extracted headers
-            if extracted_headers and headers is None:
+            # If data was list of dicts, use extracted headers
+            if extracted_headers:
                 final_headers = extracted_headers
                 final_data = data_rows
             else:
-                # Auto-detect headers if not provided and data_rows is 2D array
+                # Auto-detect headers if data_rows is 2D array
                 # Use data_rows (already processed by process_data_input)
                 detected_headers, processed_rows = auto_detect_headers(data_rows)
 
-                # Use provided headers if given, otherwise use detected headers
-                final_headers = headers if headers is not None else detected_headers
+                # Use detected headers
+                final_headers = detected_headers
                 final_data = processed_rows if detected_headers else data_rows
 
             # Use default sheet name if not provided
@@ -343,8 +341,7 @@ class GoogleSheetDataTable(DataTableInterface):
         self,
         service,  # Authenticated Google Sheets service
         uri: str,
-        data: List[List[Any]],
-        headers: Optional[List[str]] = None
+        data: List[List[Any]]
     ) -> Dict[str, Any]:
         """
         Append data as new columns to the right of existing data in Google Sheets.
@@ -355,7 +352,6 @@ class GoogleSheetDataTable(DataTableInterface):
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
             data: 2D array of column data to append or list of dicts (DataFrame-like)
-            headers: Optional column headers
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -369,44 +365,17 @@ class GoogleSheetDataTable(DataTableInterface):
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
 
-            # Special handling for 1D array in append_columns context:
-            # If data_rows is [[val1, val2, val3, ...]] (single row) and headers is provided with len==1,
-            # transpose it to [[val1], [val2], [val3], ...] (single column)
-            transposed_1d = False
-            if (headers is not None and len(headers) == 1 and
-                len(data_rows) == 1 and len(data_rows[0]) > 1):
-                # Transpose: single row with multiple values -> multiple rows with single value
-                data_rows = [[value] for value in data_rows[0]]
-                transposed_1d = True
-                logger.debug(f"Transposed 1D array to column format for append_columns: {len(data_rows)} rows x 1 column")
-
-            # If data was list of dicts and headers not explicitly provided, use extracted headers
-            if extracted_headers and headers is None:
+            # If data was list of dicts, use extracted headers
+            if extracted_headers:
                 final_headers = extracted_headers
                 final_data = data_rows
             else:
-                # Process headers - auto-detect if not provided
-                # Use data_rows (already processed by process_data_input)
-                # Skip auto-detection if we just transposed a 1D array
-                if transposed_1d:
-                    detected_headers = None
-                    processed_rows = data_rows
-                else:
-                    detected_headers, processed_rows = auto_detect_headers(data_rows)
+                # Auto-detect headers if data_rows is 2D array
+                detected_headers, processed_rows = auto_detect_headers(data_rows)
 
-                # Determine final headers and data
-                if headers is not None:
-                    # User provided headers explicitly
-                    final_headers = headers
-                    final_data = data_rows
-                elif detected_headers:
-                    # Headers auto-detected
-                    final_headers = detected_headers
-                    final_data = processed_rows
-                else:
-                    # No headers
-                    final_headers = []
-                    final_data = data_rows
+                # Use detected headers
+                final_headers = detected_headers
+                final_data = processed_rows if detected_headers else data_rows
 
             # Convert to strings for Google Sheets API
             values_only = [[str(cell) if cell is not None else "" for cell in row] for row in final_data]

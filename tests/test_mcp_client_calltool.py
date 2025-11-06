@@ -208,19 +208,19 @@ async def test_write_operations(url, headers):
             # Test 4: Append columns using append_columns
             print(f"\n📝 Test 4: Appending new columns")
 
-            # Data should be in row format: each row contains values for all new columns
+            # Data with headers in first row (headers will be auto-detected)
             new_columns_data = [
-                ["Active", 4.5],    # Row 1: Status=Active, Rating=4.5
-                ["Active", 4.0],    # Row 2: Status=Active, Rating=4.0  
-                ["Active", 5.0],    # Row 3: Status=Active, Rating=5.0
-                ["Active", 4.2],    # Row 4: Status=Active, Rating=4.2
-                ["Active", 4.8]     # Row 5: Status=Active, Rating=4.8
+                ["Status", "Rating"],  # Headers row
+                ["Active", 4.5],       # Row 1: Status=Active, Rating=4.5
+                ["Active", 4.0],       # Row 2: Status=Active, Rating=4.0
+                ["Active", 5.0],       # Row 3: Status=Active, Rating=5.0
+                ["Active", 4.2],       # Row 4: Status=Active, Rating=4.2
+                ["Active", 4.8]        # Row 5: Status=Active, Rating=4.8
             ]
 
             append_columns_res = await session.call_tool("append_columns", {
                 "uri": READ_WRITE_URI,
-                "data": new_columns_data,
-                "headers": ["Status", "Rating"]
+                "data": new_columns_data
             })
             print(f"✅ Append columns result: {append_columns_res}")
 
