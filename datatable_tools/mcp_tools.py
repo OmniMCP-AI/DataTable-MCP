@@ -254,6 +254,10 @@ async def update_range(
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
+    ),
+    skip_header: bool = Field(
+        default=False,
+        description="If True, skip writing headers when data is a DataFrame or list of dicts. Only write the data rows. Default is False."
     )
 ) -> UpdateResponse:
     """
@@ -273,6 +277,7 @@ async def update_range(
               CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
+        skip_header: If True, skip writing headers when data is a DataFrame or list of dicts. Default is False.
 
     Returns:
         UpdateResponse containing:
@@ -297,4 +302,4 @@ async def update_range(
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_range(service, uri, data, range_address)
+    return await google_sheet.update_range(service, uri, data, range_address, skip_header)

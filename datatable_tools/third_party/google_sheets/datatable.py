@@ -458,7 +458,8 @@ class GoogleSheetDataTable(DataTableInterface):
         service,  # Authenticated Google Sheets service
         uri: str,
         data: List[List[Any]],
-        range_address: Optional[str] = None
+        range_address: Optional[str] = None,
+        skip_header: bool = False
     ) -> Dict[str, Any]:
         """
         Writes cell values to a Google Sheets range, replacing existing content.
@@ -470,6 +471,7 @@ class GoogleSheetDataTable(DataTableInterface):
             uri: Google Sheets URI
             data: 2D array of cell values or list of dicts (DataFrame-like)
             range_address: A1 notation range address
+            skip_header: If True, skip writing headers when data is a DataFrame or list of dicts. Default is False.
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -493,25 +495,34 @@ class GoogleSheetDataTable(DataTableInterface):
                 data_rows = [[value] for value in data_rows[0]]
                 logger.debug(f"Transposed 1D array to column format for single-column range '{range_address}': {len(data_rows)} rows x 1 column")
 
-            # If data was list of dicts, ALWAYS include extracted headers
+            # If data was list of dicts, ALWAYS include extracted headers (unless skip_header=True)
             # (list of dicts format implies DataFrame-like structure with headers)
             if extracted_headers:
-                values = [[str(h) for h in extracted_headers]]
-                values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
-                logger.info(f"Including extracted headers from list of dicts: {extracted_headers}")
+                if skip_header:
+                    # Skip headers - only write data rows
+                    values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
+                    logger.info(f"[skip_header=True] Skipping extracted headers from list of dicts: {extracted_headers}")
+                    logger.info(f"[skip_header=True] Writing {len(data_rows)} data rows only (no header row)")
+                else:
+                    # Include headers
+                    values = [[str(h) for h in extracted_headers]]
+                    values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
+                    logger.info(f"[skip_header=False] Including extracted headers from list of dicts: {extracted_headers}")
+                    logger.info(f"[skip_header=False] Writing {len(data_rows)} data rows + 1 header row = {len(values)} total rows")
             else:
                 # Auto-detect headers in data_rows (already processed)
                 detected_headers, processed_rows = auto_detect_headers(data_rows)
 
-                # If headers were detected, include them in the output ONLY if no explicit range_address
-                if detected_headers and not range_address:
+                # If headers were detected, include them in the output based on skip_header and range_address
+                if detected_headers and not skip_header and not range_address:
                     values = [[str(h) for h in detected_headers]]
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in processed_rows])
-                    logger.info(f"Including detected headers in output: {detected_headers}")
+                    logger.info(f"[skip_header=False] Including detected headers in output: {detected_headers}")
                 elif detected_headers:
-                    # Explicit range_address provided - only use processed data rows
+                    # Explicit range_address provided or skip_header=True - only use processed data rows
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in processed_rows]
-                    logger.info(f"Using processed data rows only (no headers) for explicit range_address: {range_address}")
+                    reason = "skip_header=True" if skip_header else f"explicit range_address: {range_address}"
+                    logger.info(f"[skip_header={skip_header}] Using processed data rows only (no headers) due to {reason}")
                 else:
                     # Use data_rows (already processed by process_data_input)
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
@@ -625,7 +636,11 @@ class GoogleSheetDataTable(DataTableInterface):
             )
 
             spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
-            
+
+            # Log success with spreadsheet URL
+            logger.info(f"Successfully updated range {final_range} in worksheet '{sheet_title}'")
+            logger.info(f"Spreadsheet URL: {spreadsheet_url}")
+
             return UpdateResponse(
                 success=True,
                 spreadsheet_url=spreadsheet_url,
