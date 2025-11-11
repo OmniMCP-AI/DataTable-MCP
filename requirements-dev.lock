@@ -108,6 +108,8 @@ idna==3.10
     # via httpx
     # via requests
     # via yarl
+iniconfig==2.3.0
+    # via pytest
 isodate==0.7.2
     # via openapi-core
 jsonschema==4.25.1
@@ -154,12 +156,16 @@ openapi-spec-validator==0.7.2
     # via openapi-core
 openpyxl==3.1.5
     # via datatable-mcp
+packaging==25.0
+    # via pytest
 pandas==2.3.2
     # via datatable-mcp
 parse==1.20.2
     # via openapi-core
 pathable==0.4.4
     # via jsonschema-path
+pluggy==1.6.0
+    # via pytest
 polars==1.34.0
     # via datatable-mcp
 polars-runtime-32==1.34.0
@@ -193,6 +199,7 @@ pydantic-core==2.33.2
 pydantic-settings==2.10.1
     # via mcp
 pygments==2.19.2
+    # via pytest
     # via rich
 pyjwt==2.10.1
     # via datatable-mcp
@@ -202,6 +209,9 @@ pyparsing==3.2.5
     # via httplib2
 pyperclip==1.10.0
     # via fastmcp
+pytest==9.0.0
+    # via pytest-asyncio
+pytest-asyncio==1.3.0
 python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.1.1
@@ -262,6 +272,7 @@ typing-extensions==4.15.0
     # via openapi-core
     # via pydantic
     # via pydantic-core
+    # via pytest-asyncio
     # via referencing
     # via sqlalchemy
     # via starlette

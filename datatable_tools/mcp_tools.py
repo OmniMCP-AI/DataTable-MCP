@@ -12,7 +12,7 @@ Contains all 5 core MCP tools:
 - update_range: Update specific cell range
 """
 
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 import logging
 from pydantic import Field
 from fastmcp import Context
@@ -254,14 +254,14 @@ async def update_range(
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
-    ),
-    skip_header: bool = Field(
-        default=False,
-        description="If True, skip writing headers when data is a DataFrame or list of dicts. Only write the data rows. Default is False."
     )
 ) -> UpdateResponse:
     """
     Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
+
+    Automatically detects if the original URI data has headers and handles updates accordingly:
+    - If original data has headers and new data has headers: skips header and updates only data rows
+    - If original data has no headers: updates all data including first row
 
     <description>Overwrites cell values in a specified range with provided 2D array data or list of dicts. Replaces existing content completely - does not merge or append. Auto-expands range when data dimensions exceed specified range.</description>
 
@@ -277,7 +277,6 @@ async def update_range(
               CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
-        skip_header: If True, skip writing headers when data is a DataFrame or list of dicts. Default is False.
 
     Returns:
         UpdateResponse containing:
@@ -302,4 +301,90 @@ async def update_range(
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_range(service, uri, data, range_address, skip_header)
+    return await google_sheet.update_range(service, uri, data, range_address)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_write")
+async def update_range_by_lookup(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    data: List[Dict[str, Any]] = Field(
+        description=(
+            "Update data as list of dicts (DataFrame-like). Each dict represents a row with column names as keys.\n"
+            "Must include the lookup column specified in 'on' parameter.\n"
+            "Example: [{'username': '@user1', 'status': 'active'}, {'username': '@user2', 'status': 'inactive'}]"
+        )
+    ),
+    on: str = Field(
+        description="Column name to use as lookup key for matching rows (e.g., 'username', 'id', 'email'). Must exist in both the sheet and update data. Matching is case-insensitive."
+    ),
+    override: bool = Field(
+        default=False,
+        description="If True, empty/null values in update data will clear existing cells. If False (default), empty/null values preserve existing cell values."
+    )
+) -> UpdateResponse:
+    """
+    Update Google Sheets data by looking up rows using a key column, similar to SQL UPDATE with JOIN.
+
+    <description>Performs selective column updates by matching rows via a lookup key. Only updates columns present in the new data while preserving other columns and unmatched rows. Similar to a database UPDATE with JOIN operation.</description>
+
+    <use_case>Use for updating specific columns in a sheet based on a key column (like username or ID), enriching existing data with new fields, or syncing partial data from external sources without overwriting the entire sheet.</use_case>
+
+    <limitation>Duplicate lookup keys: only first match is updated. Unmatched rows in update data are silently ignored. Case-insensitive matching only.</limitation>
+
+    <failure_cases>Fails if lookup column doesn't exist in sheet or update data, if data is not list of dicts, or if sheet cannot be loaded. Returns warning if no matching rows found.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI (supports full URL pattern)
+        data: List of dicts with update data. Must include the lookup column.
+              Example: [{"username": "@user1", "latest_tweet": "2025-09-18"}, ...]
+        on: Lookup column name (must exist in both sheet and data). Case-insensitive matching.
+        override: If True, empty values clear cells. If False, empty values preserve existing values. Default False.
+
+    Returns:
+        UpdateResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the spreadsheet with gid
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - range: The range that was updated
+            - updated_cells: Number of cells updated
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result with match statistics
+
+    Behavior:
+        - Lookup matching: Case-insensitive
+        - Duplicate keys: Updates first match only
+        - Unmatched rows: Ignored (skipped silently)
+        - New columns: Automatically added at the end
+        - Empty values: Clears cell if override=True, preserves if override=False
+
+    Examples:
+        # Basic update by username
+        update_range_by_lookup(
+            ctx, uri,
+            data=[
+                {"username": "@user1", "status": "active"},
+                {"username": "@user2", "status": "inactive"}
+            ],
+            on="username"
+        )
+
+        # Update with new columns (automatically added) and override empty values
+        update_range_by_lookup(
+            ctx, uri,
+            data=[
+                {"username": "@user1", "latest_tweet": "2025-09-18", "formatted_date": "2025-09-18"},
+                {"username": "@user2", "latest_tweet": "", "formatted_date": ""}
+            ],
+            on="username",
+            override=True  # Empty values will clear existing cells
+        )
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.update_by_lookup(service, uri, data, on, override)

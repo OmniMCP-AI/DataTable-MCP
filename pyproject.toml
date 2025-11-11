@@ -52,3 +52,9 @@ datatable-mcp = "main:main"
 [tool.setuptools]
 packages = [ "core", "datatable_tools"]
 py-modules = [ "main"]
+
+[tool.rye]
+dev-dependencies = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=1.3.0",
+]

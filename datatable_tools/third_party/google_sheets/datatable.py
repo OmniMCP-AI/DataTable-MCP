@@ -458,20 +458,22 @@ class GoogleSheetDataTable(DataTableInterface):
         service,  # Authenticated Google Sheets service
         uri: str,
         data: List[List[Any]],
-        range_address: Optional[str] = None,
-        skip_header: bool = False
+        range_address: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Writes cell values to a Google Sheets range, replacing existing content.
 
         Implementation of DataTableInterface.update_range() for Google Sheets.
 
+        Automatically detects if the original URI data has headers and handles updates accordingly:
+        - If original data has headers and new data has headers: skips header and updates only data rows
+        - If original data has no headers: updates all data including first row
+
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
             data: 2D array of cell values or list of dicts (DataFrame-like)
             range_address: A1 notation range address
-            skip_header: If True, skip writing headers when data is a DataFrame or list of dicts. Default is False.
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -481,6 +483,25 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
             sheet_id = sheet_props['sheetId']
+
+            # Load original data to detect if it has headers
+            range_name = f"'{sheet_title}'!A:ZZ"
+            result = await asyncio.to_thread(
+                service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name
+                ).execute
+            )
+            original_data = result.get('values', [])
+
+            # Detect if original data has headers
+            original_has_headers = False
+            if original_data:
+                detected_headers, _ = auto_detect_headers(original_data)
+                original_has_headers = bool(detected_headers)
+                logger.info(f"Original data header detection: {original_has_headers}")
+                if original_has_headers:
+                    logger.info(f"Detected original headers: {detected_headers}")
 
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
@@ -495,36 +516,44 @@ class GoogleSheetDataTable(DataTableInterface):
                 data_rows = [[value] for value in data_rows[0]]
                 logger.debug(f"Transposed 1D array to column format for single-column range '{range_address}': {len(data_rows)} rows x 1 column")
 
-            # If data was list of dicts, ALWAYS include extracted headers (unless skip_header=True)
+            # If data was list of dicts, include/skip extracted headers based on original data
             # (list of dicts format implies DataFrame-like structure with headers)
             if extracted_headers:
-                if skip_header:
+                # Determine if we should skip headers:
+                # Skip headers if original data has headers AND new data has headers
+                skip_header_for_update = original_has_headers and extracted_headers
+
+                if skip_header_for_update:
                     # Skip headers - only write data rows
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
-                    logger.info(f"[skip_header=True] Skipping extracted headers from list of dicts: {extracted_headers}")
-                    logger.info(f"[skip_header=True] Writing {len(data_rows)} data rows only (no header row)")
+                    logger.info(f"[Auto-detected] Original data has headers. Skipping extracted headers from list of dicts: {extracted_headers}")
+                    logger.info(f"[Auto-detected] Writing {len(data_rows)} data rows only (no header row)")
                 else:
                     # Include headers
                     values = [[str(h) for h in extracted_headers]]
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
-                    logger.info(f"[skip_header=False] Including extracted headers from list of dicts: {extracted_headers}")
-                    logger.info(f"[skip_header=False] Writing {len(data_rows)} data rows + 1 header row = {len(values)} total rows")
+                    logger.info(f"[Auto-detected] Original data has no headers. Including extracted headers from list of dicts: {extracted_headers}")
+                    logger.info(f"[Auto-detected] Writing {len(data_rows)} data rows + 1 header row = {len(values)} total rows")
             else:
                 # Auto-detect headers in data_rows (already processed)
                 detected_headers, processed_rows = auto_detect_headers(data_rows)
 
-                # If headers were detected, include them in the output based on skip_header and range_address
-                if detected_headers and not skip_header and not range_address:
+                # Determine if we should skip headers:
+                # Skip headers if original data has headers AND new data has detected headers
+                skip_header_for_update = original_has_headers and detected_headers
+
+                # If headers were detected in new data, decide whether to include them
+                if detected_headers and not skip_header_for_update:
+                    # Original has NO headers, so include detected headers
                     values = [[str(h) for h in detected_headers]]
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in processed_rows])
-                    logger.info(f"[skip_header=False] Including detected headers in output: {detected_headers}")
-                elif detected_headers:
-                    # Explicit range_address provided or skip_header=True - only use processed data rows
+                    logger.info(f"[Auto-detected] Original data has no headers. Including detected headers in output: {detected_headers}")
+                elif detected_headers and skip_header_for_update:
+                    # Original has headers, new data has headers - skip header row
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in processed_rows]
-                    reason = "skip_header=True" if skip_header else f"explicit range_address: {range_address}"
-                    logger.info(f"[skip_header={skip_header}] Using processed data rows only (no headers) due to {reason}")
+                    logger.info(f"[Auto-detected] Original data has headers. Skipping detected headers in new data: {detected_headers}")
                 else:
-                    # Use data_rows (already processed by process_data_input)
+                    # No headers detected in new data - use all data rows as-is
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
 
             if not values:
@@ -665,4 +694,261 @@ class GoogleSheetDataTable(DataTableInterface):
                 shape="(0,0)",
                 error=str(e),
                 message=f"Failed to update range: {e}"
+            )
+
+    async def update_by_lookup(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str,
+        data: List[Dict[str, Any]],
+        on: str,
+        override: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Update Google Sheets data by looking up rows using a key column.
+
+        Similar to SQL UPDATE with JOIN - matches rows by a lookup key and updates
+        only the columns present in the new data, preserving other columns.
+        New columns are automatically added at the end if they don't exist.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            data: List of dicts containing update data (DataFrame-like)
+            on: Column name to use as lookup key (must exist in both sheet and data)
+            override: If True, empty/null values in data will clear existing cells;
+                     If False, empty/null values will preserve existing values
+
+        Returns:
+            UpdateResponse with success status, updated cell count, and metadata
+
+        Behavior:
+            - Lookup matching: Case-insensitive
+            - Duplicate keys: Updates first match only
+            - Unmatched rows: Ignored (skipped silently)
+            - New columns: Automatically added at the end
+            - Empty values: Clears cell if override=True, preserves if override=False
+
+        Examples:
+            # Basic update by username
+            await update_by_lookup(
+                service, uri,
+                data=[
+                    {"username": "@user1", "status": "active"},
+                    {"username": "@user2", "status": "inactive"}
+                ],
+                on="username"
+            )
+
+            # Update with new columns (automatically added) and override empty values
+            await update_by_lookup(
+                service, uri,
+                data=[{"username": "@user1", "new_col": "value", "old_col": ""}],
+                on="username",
+                override=True  # Empty "old_col" will clear the existing cell
+            )
+        """
+        try:
+            # Validate input
+            if not isinstance(data, list) or not data:
+                return UpdateResponse(
+                    success=False,
+                    spreadsheet_url="",
+                    spreadsheet_id="",
+                    worksheet="",
+                    range="",
+                    updated_cells=0,
+                    shape="(0,0)",
+                    error="Invalid data: must be non-empty list of dicts",
+                    message="Failed to update by lookup: invalid data"
+                )
+
+            if not all(isinstance(row, dict) for row in data):
+                return UpdateResponse(
+                    success=False,
+                    spreadsheet_url="",
+                    spreadsheet_id="",
+                    worksheet="",
+                    range="",
+                    updated_cells=0,
+                    shape="(0,0)",
+                    error="Invalid data: all items must be dicts",
+                    message="Failed to update by lookup: invalid data format"
+                )
+
+            # Check if lookup column exists in update data
+            if not all(on in row for row in data):
+                return UpdateResponse(
+                    success=False,
+                    spreadsheet_url="",
+                    spreadsheet_id="",
+                    worksheet="",
+                    range="",
+                    updated_cells=0,
+                    shape="(0,0)",
+                    error=f"Lookup column '{on}' not found in all rows of update data",
+                    message=f"Failed to update by lookup: missing lookup column '{on}'"
+                )
+
+            # Load existing sheet data
+            logger.info(f"Loading existing sheet data from {uri}")
+            load_response = await self.load_data_table(service, uri)
+
+            if not load_response.success:
+                return UpdateResponse(
+                    success=False,
+                    spreadsheet_url="",
+                    spreadsheet_id="",
+                    worksheet="",
+                    range="",
+                    updated_cells=0,
+                    shape="(0,0)",
+                    error=f"Failed to load sheet: {load_response.error}",
+                    message="Failed to update by lookup: could not load sheet"
+                )
+
+            existing_data = load_response.data  # List of dicts
+            existing_headers = list(existing_data[0].keys()) if existing_data else []
+            metadata = load_response.source_info
+            spreadsheet_id = metadata['spreadsheet_id']
+            sheet_title = metadata['worksheet']
+            sheet_id = metadata.get('worksheet_url', '').split('gid=')[-1] if 'worksheet_url' in metadata else '0'
+
+            # Validate lookup column exists in sheet
+            if on not in existing_headers:
+                return UpdateResponse(
+                    success=False,
+                    spreadsheet_url=metadata.get('worksheet_url', ''),
+                    spreadsheet_id=spreadsheet_id,
+                    worksheet=sheet_title,
+                    range="",
+                    updated_cells=0,
+                    shape="(0,0)",
+                    error=f"Lookup column '{on}' not found in sheet. Available columns: {existing_headers}",
+                    message=f"Failed to update by lookup: lookup column '{on}' not in sheet"
+                )
+
+            # Build case-insensitive lookup index: {lookup_value.lower(): row_index}
+            logger.info(f"Building lookup index on column '{on}' (case-insensitive)")
+            lookup_index = {}
+            for idx, row in enumerate(existing_data):
+                lookup_value = str(row.get(on, "")).lower()
+                if lookup_value and lookup_value not in lookup_index:
+                    # Store first occurrence only (handle duplicates)
+                    lookup_index[lookup_value] = idx
+
+            logger.info(f"Built lookup index with {len(lookup_index)} unique keys")
+
+            # Identify columns in update data
+            update_columns = set()
+            for row in data:
+                update_columns.update(row.keys())
+
+            # Identify new columns (columns in data but not in sheet)
+            new_columns = [col for col in update_columns if col not in existing_headers]
+
+            # Determine final headers - automatically add new columns at the end
+            final_headers = existing_headers.copy()
+            if new_columns:
+                final_headers.extend(new_columns)
+                logger.info(f"Adding new columns at the end: {new_columns}")
+
+            # Initialize result data with existing data
+            # Convert to list of lists for easier manipulation
+            result_data = []
+            for row in existing_data:
+                row_list = [row.get(header, "") for header in final_headers]
+                result_data.append(row_list)
+
+            # If new columns were added, ensure all existing rows have placeholders
+            if new_columns:
+                for row_list in result_data:
+                    # Pad rows with empty strings for new columns
+                    while len(row_list) < len(final_headers):
+                        row_list.append("")
+
+            # Perform lookup and update
+            matched_count = 0
+            unmatched_count = 0
+            updated_cells = 0
+
+            for update_row in data:
+                lookup_value = str(update_row.get(on, "")).lower()
+
+                if lookup_value not in lookup_index:
+                    unmatched_count += 1
+                    continue
+
+                # Get row index in existing data
+                row_idx = lookup_index[lookup_value]
+                matched_count += 1
+
+                # Update columns in this row
+                for col_name, new_value in update_row.items():
+                    if col_name not in final_headers:
+                        # Column not in final headers (should not happen as we add all columns)
+                        continue
+
+                    col_idx = final_headers.index(col_name)
+
+                    # Handle empty/null values based on override flag
+                    if new_value is None or new_value == "":
+                        if override:
+                            # Clear the cell
+                            result_data[row_idx][col_idx] = ""
+                            updated_cells += 1
+                        # else: preserve existing value (do nothing)
+                    else:
+                        # Update with new value
+                        result_data[row_idx][col_idx] = new_value
+                        updated_cells += 1
+
+            logger.info(f"Lookup results: {matched_count} matched, {unmatched_count} unmatched")
+            logger.info(f"Updated {updated_cells} cells")
+
+            if matched_count == 0:
+                logger.warning("No matching rows found")
+
+            # Prepare data for writing back to sheet (headers + data)
+            write_data = [final_headers] + result_data
+
+            # Write back to sheet starting from A1
+            range_address = "A1"
+            response = await self.update_range(service, uri, write_data, range_address)
+
+            # Enhance response message with lookup statistics
+            if response.success:
+                spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+                # Create new UpdateResponse with enhanced message
+                return UpdateResponse(
+                    success=True,
+                    spreadsheet_url=spreadsheet_url,
+                    spreadsheet_id=response.spreadsheet_id,
+                    worksheet=response.worksheet,
+                    range=response.range,
+                    updated_cells=response.updated_cells,
+                    shape=response.shape,
+                    error=None,
+                    message=(
+                        f"Successfully updated by lookup on '{on}': "
+                        f"{matched_count} rows matched, {unmatched_count} unmatched, "
+                        f"{updated_cells} cells updated"
+                    )
+                )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error updating by lookup: {e}")
+            return UpdateResponse(
+                success=False,
+                spreadsheet_url="",
+                spreadsheet_id="",
+                worksheet="",
+                range="",
+                updated_cells=0,
+                shape="(0,0)",
+                error=str(e),
+                message=f"Failed to update by lookup: {e}"
             )
