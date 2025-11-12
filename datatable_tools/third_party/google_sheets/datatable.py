@@ -243,6 +243,8 @@ class GoogleSheetDataTable(DataTableInterface):
 
         Implementation of DataTableInterface.append_rows() for Google Sheets.
 
+        Automatically resizes the sheet if the append operation would exceed grid limits.
+
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
@@ -256,6 +258,22 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
             sheet_id = sheet_props['sheetId']
+
+            # Get current grid dimensions from sheet properties
+            metadata = await asyncio.to_thread(
+                service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute
+            )
+            sheets = metadata.get('sheets', [])
+            current_grid_row_count = 1000  # Default fallback
+            current_grid_col_count = 26    # Default fallback
+
+            for sheet in sheets:
+                if sheet.get('properties', {}).get('sheetId') == sheet_id:
+                    grid_props = sheet.get('properties', {}).get('gridProperties', {})
+                    current_grid_row_count = grid_props.get('rowCount', 1000)
+                    current_grid_col_count = grid_props.get('columnCount', 26)
+                    logger.info(f"Current grid dimensions: {current_grid_row_count} rows x {current_grid_col_count} columns")
+                    break
 
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
@@ -294,6 +312,55 @@ class GoogleSheetDataTable(DataTableInterface):
             end_col_index = len(values[0]) - 1 if values else 0
             end_col = column_index_to_letter(end_col_index)
 
+            # Check if we need to resize the sheet
+            rows_to_append = len(values)
+            required_row_count = row_count + rows_to_append
+            required_col_count = end_col_index + 1
+
+            need_resize = False
+            new_row_count = current_grid_row_count
+            new_col_count = current_grid_col_count
+
+            if required_row_count > current_grid_row_count:
+                # Add buffer for future operations (1000 rows)
+                new_row_count = required_row_count + 1000
+                need_resize = True
+                logger.info(f"Sheet resize needed: rows {current_grid_row_count} -> {new_row_count}")
+
+            if required_col_count > current_grid_col_count:
+                # Add buffer for future operations (10 columns)
+                new_col_count = required_col_count + 10
+                need_resize = True
+                logger.info(f"Sheet resize needed: columns {current_grid_col_count} -> {new_col_count}")
+
+            # Resize the sheet if needed
+            if need_resize:
+                resize_request = {
+                    "requests": [
+                        {
+                            "updateSheetProperties": {
+                                "properties": {
+                                    "sheetId": sheet_id,
+                                    "gridProperties": {
+                                        "rowCount": new_row_count,
+                                        "columnCount": new_col_count
+                                    }
+                                },
+                                "fields": "gridProperties.rowCount,gridProperties.columnCount"
+                            }
+                        }
+                    ]
+                }
+
+                logger.info(f"Resizing sheet '{sheet_title}' to {new_row_count} rows x {new_col_count} columns")
+                await asyncio.to_thread(
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body=resize_request
+                    ).execute
+                )
+                logger.info("Sheet successfully resized")
+
             # Create range address
             range_address = f"{start_col}{start_row}:{end_col}{end_row}"
             full_range = f"'{sheet_title}'!{range_address}"
@@ -310,7 +377,11 @@ class GoogleSheetDataTable(DataTableInterface):
             )
 
             spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
-            
+
+            message = f"Successfully appended rows at {range_address} in worksheet '{sheet_title}'"
+            if need_resize:
+                message += f" (sheet auto-resized to {new_row_count} rows x {new_col_count} columns)"
+
             return UpdateResponse(
                 success=True,
                 spreadsheet_url=spreadsheet_url,
@@ -320,7 +391,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 updated_cells=sum(len(row) for row in values),
                 shape=f"({len(values)},{len(values[0]) if values else 0})",
                 error=None,
-                message=f"Successfully appended rows at {range_address} in worksheet '{sheet_title}'"
+                message=message
             )
 
         except Exception as e:
