@@ -130,6 +130,107 @@ class GoogleSheetDataTable(DataTableInterface):
             message=f"Loaded table from Google Sheets with {len(data)} rows and {len(headers)} columns"
         )
 
+    async def read_worksheet_with_formulas(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str
+    ) -> Dict[str, Any]:
+        """
+        Read a worksheet from Google Sheets with formulas instead of calculated values.
+
+        Similar to load_data_table, but returns the raw formulas from cells
+        instead of the computed values. For cells without formulas, returns the plain value.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+
+        Returns:
+            TableResponse with cell formulas (e.g., "=SUM(A1:A10)" instead of "100")
+        """
+        # Parse URI to extract spreadsheet_id and gid
+        spreadsheet_id, gid = parse_google_sheets_uri(uri)
+
+        logger.info(f"Loading table with formulas from Google Sheets: {spreadsheet_id}, gid={gid}")
+
+        # Get sheet properties by gid (or first sheet if no gid)
+        sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
+        sheet_title = sheet_props['title']
+        sheet_id = sheet_props['sheetId']
+
+        # Read data from sheet using FORMULA mode to get raw formulas
+        range_name = f"'{sheet_title}'!A:ZZ"
+        result = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueRenderOption='FORMULA'  # KEY DIFFERENCE: Get formulas instead of values
+            ).execute
+        )
+
+        all_data = result.get('values', [])
+
+        # Calculate sheet dimensions
+        if all_data:
+            row_count = len(all_data)
+            col_count = max(len(row) for row in all_data) if all_data else 0
+        else:
+            row_count = 0
+            col_count = 0
+
+        # Process headers and data (first row = headers)
+        headers = []
+        data_rows = []
+
+        if all_data:
+            headers = all_data[0] if all_data else []
+            data_rows = all_data[1:] if len(all_data) > 1 else []
+
+            # Ensure consistent column count
+            if headers:
+                max_cols = len(headers)
+                for row in data_rows:
+                    # Pad short rows
+                    while len(row) < max_cols:
+                        row.append("")
+                    # Truncate long rows
+                    if len(row) > max_cols:
+                        row[:] = row[:max_cols]
+
+        # Convert data from list of lists to list of dicts
+        data = []
+        if headers and data_rows:
+            for row in data_rows:
+                row_dict = {}
+                for i, header in enumerate(headers):
+                    # Use the header as key, and the corresponding cell value (which is now a formula if present)
+                    row_dict[header] = row[i] if i < len(row) else ""
+                data.append(row_dict)
+
+        # Build metadata
+        metadata = {
+            "type": "google_sheets",
+            "spreadsheet_id": spreadsheet_id,
+            "original_uri": uri,
+            "worksheet": sheet_title,
+            "used_range": f"A1:{chr(65 + col_count - 1)}{row_count}" if row_count > 0 and col_count > 0 else "A1:A1",
+            "worksheet_url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}",
+            "row_count": row_count,
+            "column_count": col_count,
+            "value_render_option": "FORMULA"  # Indicate that this contains formulas
+        }
+
+        return TableResponse(
+            success=True,
+            table_id=f"gs_{spreadsheet_id}_{gid or '0'}_formulas",
+            name=f"Sheet (Formulas): {sheet_title}",
+            shape=f"({len(data)},{len(headers)})",
+            data=data,
+            source_info=metadata,
+            error=None,
+            message=f"Loaded table with formulas from Google Sheets with {len(data)} rows and {len(headers)} columns"
+        )
+
     async def write_new_sheet(
         self,
         service,  # Authenticated Google Sheets service
@@ -1062,3 +1163,90 @@ class GoogleSheetDataTable(DataTableInterface):
         except Exception as e:
             logger.error(f"Error updating by lookup: {e}")
             raise Exception(f"Failed to update by lookup on '{on}': {e}") from e
+
+    async def list_worksheets(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str
+    ) -> Dict[str, Any]:
+        """
+        List all worksheets (sheets/tabs) in a Google Sheets spreadsheet.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI (spreadsheet ID or full URL)
+
+        Returns:
+            WorksheetsListResponse containing:
+                - success: Whether the operation succeeded
+                - spreadsheet_id: The spreadsheet ID
+                - spreadsheet_url: Full URL to the spreadsheet
+                - spreadsheet_title: The title of the spreadsheet
+                - worksheets: List of WorksheetInfo objects
+                - total_worksheets: Total number of worksheets
+                - error: Error message if failed, None otherwise
+                - message: Human-readable result message
+        """
+        try:
+            # Import response model
+            from datatable_tools.models import WorksheetsListResponse, WorksheetInfo
+
+            # Parse URI to extract spreadsheet_id
+            spreadsheet_id, _ = parse_google_sheets_uri(uri)
+
+            logger.info(f"Listing worksheets for spreadsheet: {spreadsheet_id}")
+
+            # Get spreadsheet metadata
+            result = await asyncio.to_thread(
+                service.spreadsheets().get(
+                    spreadsheetId=spreadsheet_id
+                ).execute
+            )
+
+            spreadsheet_title = result.get('properties', {}).get('title', 'Untitled')
+            sheets = result.get('sheets', [])
+
+            # Extract worksheet information
+            worksheets = []
+            for sheet in sheets:
+                props = sheet.get('properties', {})
+                grid_props = props.get('gridProperties', {})
+
+                worksheet_info = WorksheetInfo(
+                    sheet_id=props.get('sheetId', 0),
+                    title=props.get('title', 'Untitled'),
+                    index=props.get('index', 0),
+                    row_count=grid_props.get('rowCount', 0),
+                    column_count=grid_props.get('columnCount', 0)
+                )
+                worksheets.append(worksheet_info)
+
+            # Sort by index
+            worksheets.sort(key=lambda x: x.index)
+
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
+            return WorksheetsListResponse(
+                success=True,
+                spreadsheet_id=spreadsheet_id,
+                spreadsheet_url=spreadsheet_url,
+                spreadsheet_title=spreadsheet_title,
+                worksheets=worksheets,
+                total_worksheets=len(worksheets),
+                error=None,
+                message=f"Found {len(worksheets)} worksheet(s) in '{spreadsheet_title}'"
+            )
+
+        except Exception as e:
+            logger.error(f"Error listing worksheets: {e}")
+            from datatable_tools.models import WorksheetsListResponse
+            return WorksheetsListResponse(
+                success=False,
+                spreadsheet_id="",
+                spreadsheet_url="",
+                spreadsheet_title="",
+                worksheets=[],
+                total_worksheets=0,
+                error=str(e),
+                message=f"Failed to list worksheets: {e}"
+            )

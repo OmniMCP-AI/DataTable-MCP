@@ -11,7 +11,28 @@ A comprehensive Model Context Protocol (MCP) server for in-memory tabular data m
 - **Pandas-like Interface**: Familiar DataFrame-style operations
 - **Column Name Focused**: Use semantic column names to reduce LLM errors
 
-### 🛠️ Tools Available (22 Total)
+### 🛠️ Google Sheets Tools (9 Total)
+
+#### 📥 Data Loading (2 tools)
+- `load_data_table` - Load table data from Google Sheets (returns calculated values)
+- `read_worksheet_with_formulas` - Read worksheet data with raw formulas (returns formula strings like "=SUM(A1:A10)")
+
+#### 📤 Data Writing (3 tools)
+- `write_new_sheet` - Create new Google Sheets spreadsheet with data
+- `write_new_worksheet` - Create new worksheet (tab) in existing spreadsheet
+- `append_rows` - Append rows to existing sheet
+
+#### ✏️ Data Modification (3 tools)
+- `append_columns` - Append columns to existing sheet
+- `update_range` - Update specific cell range (A1 notation)
+- `update_range_by_lookup` - Update rows by lookup key (SQL-like UPDATE...JOIN)
+
+#### 🗂️ Metadata (1 tool)
+- `list_worksheets` - List all worksheets (tabs) in a spreadsheet with metadata
+
+---
+
+### 🛠️ Legacy In-Memory Tools (22 Total)
 
 #### 📊 Table Lifecycle Management (4 tools)
 - `create_table` - Create from data array with auto-detected headers

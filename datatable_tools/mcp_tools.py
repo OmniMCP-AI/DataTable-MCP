@@ -21,7 +21,7 @@ from fastmcp import Context
 from core.server import mcp
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 from datatable_tools.auth.service_decorator import require_google_service
-from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, TableData
+from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, TableData, WorksheetsListResponse
 
 # Optional Polars import for type hints
 try:
@@ -60,6 +60,70 @@ async def load_data_table(
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.load_data_table(service, uri)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_read")
+async def read_worksheet_with_formulas(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    )
+) -> TableResponse:
+    """
+    Read a worksheet from Google Sheets with cell formulas instead of calculated values.
+
+    Similar to load_data_table, but returns the raw formulas from cells (e.g., "=SUM(A1:A10)")
+    instead of the computed values (e.g., "100"). For cells without formulas, returns the plain value.
+
+    <description>Reads worksheet data from Google Sheets with raw formulas preserved. Returns formula strings (e.g., "=A1+A2") instead of calculated results. Useful for inspecting spreadsheet logic, copying formulas, or understanding cell dependencies.</description>
+
+    <use_case>Use when you need to:
+    - Inspect or analyze spreadsheet formulas and logic
+    - Copy formulas to another sheet while preserving references
+    - Understand cell dependencies and calculations
+    - Debug formula errors or circular references
+    - Document spreadsheet computation logic
+    </use_case>
+
+    <limitation>Returns formulas as text strings. Does not evaluate or validate formula syntax. For cells without formulas, returns the plain value (same as load_data_table).</limitation>
+
+    <failure_cases>Fails if URI is invalid, spreadsheet doesn't exist, or user lacks read permissions. No special handling for complex formula types (array formulas, lambda functions, etc.).</failure_cases>
+
+    Args:
+        uri: Google Sheets URI. Supports:
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
+
+    Returns:
+        TableResponse containing:
+            - success: Whether the operation succeeded
+            - table_id: Unique identifier for this table (with "_formulas" suffix)
+            - name: Sheet name with "(Formulas)" indicator
+            - shape: String of "(rows,columns)"
+            - data: List of dicts with column names as keys and formula strings as values
+            - source_info: Metadata including "value_render_option": "FORMULA"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
+
+    Examples:
+        # Read formulas from Google Sheets
+        result = read_worksheet_with_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0"
+        )
+
+        # Access formula data
+        if result.success:
+            for row in result.data:
+                print(row)  # {"Total": "=SUM(A2:A10)", "Average": "=AVERAGE(B2:B10)"}
+
+        # Compare with regular values
+        values = load_data_table(ctx, uri)                    # Returns {"Total": "100", "Average": "25.5"}
+        formulas = read_worksheet_with_formulas(ctx, uri)     # Returns {"Total": "=SUM(A2:A10)", "Average": "=AVERAGE(B2:B10)"}
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.read_worksheet_with_formulas(service, uri)
 
 
 @mcp.tool
@@ -469,3 +533,68 @@ async def update_range_by_lookup(
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.update_by_lookup(service, uri, data, on, override)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_read")
+async def list_worksheets(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports spreadsheet ID or full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/...)"
+    )
+) -> WorksheetsListResponse:
+    """
+    List all worksheets (sheets/tabs) in a Google Sheets spreadsheet.
+
+    <description>Retrieves metadata for all worksheets in a spreadsheet, including sheet names, IDs, dimensions, and ordering. Useful for discovering available sheets before performing operations.</description>
+
+    <use_case>Use when you need to discover what sheets exist in a spreadsheet, get sheet IDs for specific operations, or check sheet dimensions before reading/writing data.</use_case>
+
+    <limitation>Read-only operation. Does not modify the spreadsheet. Requires read access to the spreadsheet.</limitation>
+
+    <failure_cases>Fails if spreadsheet doesn't exist, URI is invalid, or user lacks read permissions. Returns empty list for spreadsheets with no sheets (rare).</failure_cases>
+
+    Args:
+        uri: Google Sheets URI. Supports:
+             - Full URL: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit
+             - Spreadsheet ID: {spreadsheetID}
+
+    Returns:
+        WorksheetsListResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_id: The spreadsheet ID
+            - spreadsheet_url: Full URL to the spreadsheet
+            - spreadsheet_title: The title of the spreadsheet
+            - worksheets: List of WorksheetInfo objects with:
+                - sheet_id: Unique sheet ID (gid)
+                - title: Worksheet name/title
+                - index: Zero-based position in the tab list
+                - row_count: Number of rows in the sheet
+                - column_count: Number of columns in the sheet
+            - total_worksheets: Total number of worksheets
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
+
+    Examples:
+        # List all worksheets in a spreadsheet
+        result = list_worksheets(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit"
+        )
+
+        # Use spreadsheet ID directly
+        result = list_worksheets(
+            ctx,
+            uri="16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60"
+        )
+
+        # Access worksheet information
+        if result.success:
+            print(f"Spreadsheet: {result.spreadsheet_title}")
+            print(f"Total sheets: {result.total_worksheets}")
+            for ws in result.worksheets:
+                print(f"  - {ws.title} (gid={ws.sheet_id}, {ws.row_count}x{ws.column_count})")
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.list_worksheets(service, uri)

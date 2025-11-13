@@ -96,3 +96,24 @@ class UpdateResponse(BaseModel):
     error: Optional[str] = None
     message: str
 
+
+class WorksheetInfo(BaseModel):
+    """Information about a single worksheet"""
+    sheet_id: int
+    title: str
+    index: int
+    row_count: int
+    column_count: int
+
+
+class WorksheetsListResponse(BaseModel):
+    """Response type for listing worksheets in a Google Sheets spreadsheet"""
+    success: bool
+    spreadsheet_id: str
+    spreadsheet_url: str
+    spreadsheet_title: str
+    worksheets: List[WorksheetInfo]
+    total_worksheets: int
+    error: Optional[str] = None
+    message: str
+
