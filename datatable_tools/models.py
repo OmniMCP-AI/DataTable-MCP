@@ -104,6 +104,7 @@ class WorksheetInfo(BaseModel):
     index: int
     row_count: int
     column_count: int
+    worksheet_url: str
 
 
 class WorksheetsListResponse(BaseModel):

@@ -1211,13 +1211,15 @@ class GoogleSheetDataTable(DataTableInterface):
             for sheet in sheets:
                 props = sheet.get('properties', {})
                 grid_props = props.get('gridProperties', {})
+                sheet_id = props.get('sheetId', 0)
 
                 worksheet_info = WorksheetInfo(
-                    sheet_id=props.get('sheetId', 0),
+                    sheet_id=sheet_id,
                     title=props.get('title', 'Untitled'),
                     index=props.get('index', 0),
                     row_count=grid_props.get('rowCount', 0),
-                    column_count=grid_props.get('columnCount', 0)
+                    column_count=grid_props.get('columnCount', 0),
+                    worksheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
                 )
                 worksheets.append(worksheet_info)
 
