@@ -572,6 +572,7 @@ async def list_worksheets(
                 - index: Zero-based position in the tab list
                 - row_count: Number of rows in the sheet
                 - column_count: Number of columns in the sheet
+                - worksheet_url: Direct URL to the worksheet (includes gid)
             - total_worksheets: Total number of worksheets
             - error: Error message if failed, None otherwise
             - message: Human-readable result message
@@ -595,6 +596,7 @@ async def list_worksheets(
             print(f"Total sheets: {result.total_worksheets}")
             for ws in result.worksheets:
                 print(f"  - {ws.title} (gid={ws.sheet_id}, {ws.row_count}x{ws.column_count})")
+                print(f"    URL: {ws.worksheet_url}")
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.list_worksheets(service, uri)
