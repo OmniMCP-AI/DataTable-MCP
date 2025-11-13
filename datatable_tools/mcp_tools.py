@@ -4,12 +4,14 @@ MCP Tools - All Core Operations
 Thin wrapper layer that delegates to GoogleSheetDataTable implementation.
 These @mcp.tool functions serve as the API entry points for MCP clients.
 
-Contains all 5 core MCP tools:
+Contains all core MCP tools:
 - load_data_table: Load data from Google Sheets
 - write_new_sheet: Create new Google Sheets spreadsheet
+- write_new_worksheet: Create new worksheet in existing spreadsheet
 - append_rows: Append rows to existing sheet
 - append_columns: Append columns to existing sheet
 - update_range: Update specific cell range
+- update_range_by_lookup: Update rows by lookup key
 """
 
 from typing import Optional, List, Any, Dict
@@ -302,6 +304,85 @@ async def update_range(
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.update_range(service, uri, data, range_address)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_write")
+async def write_new_worksheet(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    data: TableData = Field(
+        description=(
+            "Data to write to the new worksheet. Accepts:\n"
+            "- List[List[int|str|float|bool|None]]: 2D array\n"
+            "- List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like)\n"
+            "- List[int|str|float|bool|None]: 1D array (single row/column)\n"
+            "- polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)"
+        )
+    ),
+    worksheet_name: str = Field(
+        description="Name for the new worksheet to create in the spreadsheet"
+    )
+) -> UpdateResponse:
+    """
+    Create a new worksheet in an existing Google Sheets spreadsheet and write data to it.
+
+    If a worksheet with the same name already exists, it will write to the existing worksheet
+    instead of creating a duplicate.
+
+    <description>Creates a new worksheet (tab) within an existing spreadsheet and populates it with data. If the worksheet already exists, writes data to it.</description>
+
+    <use_case>Use for organizing related data into separate tabs within the same spreadsheet, creating categorized views, or splitting large datasets into logical sections.</use_case>
+
+    <limitation>Cannot create worksheets with duplicate names in the same spreadsheet. If worksheet exists, data will overwrite existing content.</limitation>
+
+    <failure_cases>Fails if URI is invalid, spreadsheet doesn't exist, or worksheet name contains invalid characters. Data truncation on cells >50,000 characters.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI pointing to the target spreadsheet
+        data: Data in pandas-like formats. Accepts:
+              - List[List[int|str|float|bool|None]]: 2D array of table data (rows x columns)
+              - List[Dict[str, int|str|float|bool|None]]: List of dicts (DataFrame-like), each dict represents a row
+              - polars.DataFrame: Polars DataFrame (when called via MCPPlus bridge with direct_call=True)
+              Headers are automatically extracted from list of dicts or DataFrames, or auto-detected from 2D arrays.
+        worksheet_name: Name for the new worksheet to create
+
+    Returns:
+        UpdateResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the worksheet with gid
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - range: The range where data was written
+            - updated_cells: Number of cells written
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message
+
+    Examples:
+        # Create worksheet with 2D array data (headers auto-detected)
+        write_new_worksheet(ctx, uri, data=[["name", "age"], ["John", 25], ["Jane", 30]],
+                           worksheet_name="Employees")
+
+        # Create with list of dicts (DataFrame-like, headers extracted from dict keys)
+        write_new_worksheet(ctx, uri, data=[{"name": "John", "age": 25}, {"name": "Jane", "age": 30}],
+                           worksheet_name="Users")
+
+        # Create with Polars DataFrame (via MCPPlus bridge)
+        import polars as pl
+        df = pl.DataFrame({"name": ["John", "Jane"], "age": [25, 30]})
+        result = await call_tool_by_sse(
+            sse_url=SSE_URL,
+            tool_name="google_sheets__write_new_worksheet",
+            direct_call=True,
+            args={"uri": uri, "data": df, "worksheet_name": "Analytics"}
+        )
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.write_new_worksheet(service, uri, data, worksheet_name)
 
 
 @mcp.tool

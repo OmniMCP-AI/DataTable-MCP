@@ -222,15 +222,142 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error creating new spreadsheet: {e}")
-            return SpreadsheetResponse(
-                success=False,
-                spreadsheet_url='',
-                rows_created=0,
-                columns_created=0,
-                shape="(0,0)",
-                error=str(e),
-                message=f"Failed to create new spreadsheet: {e}"
+            raise Exception(f"Failed to create new spreadsheet: {e}") from e
+
+    async def write_new_worksheet(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str,
+        data: List[List[Any]],
+        worksheet_name: str
+    ) -> Dict[str, Any]:
+        """
+        Create a new worksheet in an existing Google Sheets spreadsheet and write data to it.
+
+        If a worksheet with the same name already exists, it will return the existing worksheet
+        information without creating a duplicate.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI pointing to the target spreadsheet
+            data: 2D array of table data or list of dicts (DataFrame-like)
+            worksheet_name: Name for the new worksheet
+
+        Returns:
+            UpdateResponse containing worksheet URL and write information
+        """
+        try:
+            # Parse URI to extract spreadsheet_id
+            spreadsheet_id, _ = parse_google_sheets_uri(uri)
+
+            logger.info(f"Creating worksheet '{worksheet_name}' in spreadsheet {spreadsheet_id}")
+
+            # Get current worksheets
+            metadata = await asyncio.to_thread(
+                service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute
             )
+            sheets = metadata.get('sheets', [])
+
+            # Check if worksheet with this name already exists
+            existing_worksheet = None
+            for sheet in sheets:
+                if sheet.get('properties', {}).get('title') == worksheet_name:
+                    existing_worksheet = sheet
+                    break
+
+            # Create worksheet if it doesn't exist
+            if existing_worksheet:
+                logger.info(f"Worksheet '{worksheet_name}' already exists")
+                worksheet_id = existing_worksheet['properties']['sheetId']
+            else:
+                # Create new worksheet
+                add_sheet_request = {
+                    "requests": [{
+                        "addSheet": {
+                            "properties": {
+                                "title": worksheet_name,
+                                "gridProperties": {
+                                    "rowCount": 1000,
+                                    "columnCount": 26
+                                }
+                            }
+                        }
+                    }]
+                }
+
+                add_result = await asyncio.to_thread(
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body=add_sheet_request
+                    ).execute
+                )
+
+                worksheet_id = add_result['replies'][0]['addSheet']['properties']['sheetId']
+                logger.info(f"Successfully created worksheet '{worksheet_name}' with ID {worksheet_id}")
+
+            # Process input data (handles both 2D array and list of dicts)
+            extracted_headers, data_rows = process_data_input(data)
+
+            # If data was list of dicts, use extracted headers
+            if extracted_headers:
+                final_headers = extracted_headers
+                final_data = data_rows
+            else:
+                # Auto-detect headers if data_rows is 2D array
+                detected_headers, processed_rows = auto_detect_headers(data_rows)
+
+                # Use detected headers
+                final_headers = detected_headers
+                final_data = processed_rows if detected_headers else data_rows
+
+            # Prepare data for Google Sheets API
+            from datatable_tools.google_sheets_helpers import serialize_row
+
+            values = [serialize_row(row) for row in final_data]
+
+            # Convert to strings after serialization
+            values = [[str(cell) if cell is not None else "" for cell in row] for row in values]
+
+            # Prepare write data with headers
+            write_data = []
+            if final_headers:
+                write_data.append([str(h) for h in final_headers])
+            write_data.extend(values)
+
+            # Write data to the worksheet
+            if write_data:
+                range_name = f"'{worksheet_name}'!A1"
+                body = {'values': write_data}
+                await asyncio.to_thread(
+                    service.spreadsheets().values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=range_name,
+                        valueInputOption='RAW',
+                        body=body
+                    ).execute
+                )
+
+            # Build worksheet URL
+            worksheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={worksheet_id}"
+
+            total_cols = len(write_data[0]) if write_data else 0
+            total_rows = len(write_data)  # Total rows including headers
+
+            return UpdateResponse(
+                success=True,
+                spreadsheet_url=worksheet_url,
+                spreadsheet_id=spreadsheet_id,
+                worksheet=worksheet_name,
+                range=f"A1:{column_index_to_letter(total_cols - 1)}{total_rows}" if write_data else "A1",
+                updated_cells=sum(len(row) for row in write_data),
+                shape=f"({total_rows},{total_cols})",
+                error=None,
+                message=f"Successfully created worksheet '{worksheet_name}' and wrote {len(values)} data rows"
+            )
+
+        except Exception as e:
+            logger.error(f"Error creating worksheet in {uri}: {e}")
+            raise Exception(f"Failed to create worksheet in {uri}: {e}") from e
 
     async def append_rows(
         self,
@@ -396,17 +523,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error appending rows to {uri}: {e}")
-            return UpdateResponse(
-                success=False,
-                spreadsheet_url="",
-                spreadsheet_id="",
-                worksheet="",
-                range="",
-                updated_cells=0,
-                shape="(0,0)",
-                error=str(e),
-                message=f"Failed to append rows: {e}"
-            )
+            raise Exception(f"Failed to append rows to {uri}: {e}") from e
 
     async def append_columns(
         self,
@@ -512,17 +629,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error appending columns to {uri}: {e}")
-            return UpdateResponse(
-                success=False,
-                spreadsheet_url="",
-                spreadsheet_id="",
-                worksheet="",
-                range="",
-                updated_cells=0,
-                shape="(0,0)",
-                error=str(e),
-                message=f"Failed to append columns: {e}"
-            )
+            raise Exception(f"Failed to append columns to {uri}: {e}") from e
 
     async def update_range(
         self,
@@ -755,17 +862,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error updating data to {uri}: {e}")
-            return UpdateResponse(
-                success=False,
-                spreadsheet_url="",
-                spreadsheet_id="",
-                worksheet="",
-                range="",
-                updated_cells=0,
-                shape="(0,0)",
-                error=str(e),
-                message=f"Failed to update range: {e}"
-            )
+            raise Exception(f"Failed to update range in {uri}: {e}") from e
 
     async def update_by_lookup(
         self,
@@ -822,61 +919,21 @@ class GoogleSheetDataTable(DataTableInterface):
         try:
             # Validate input
             if not isinstance(data, list) or not data:
-                return UpdateResponse(
-                    success=False,
-                    spreadsheet_url="",
-                    spreadsheet_id="",
-                    worksheet="",
-                    range="",
-                    updated_cells=0,
-                    shape="(0,0)",
-                    error="Invalid data: must be non-empty list of dicts",
-                    message="Failed to update by lookup: invalid data"
-                )
+                raise ValueError("Invalid data: must be non-empty list of dicts")
 
             if not all(isinstance(row, dict) for row in data):
-                return UpdateResponse(
-                    success=False,
-                    spreadsheet_url="",
-                    spreadsheet_id="",
-                    worksheet="",
-                    range="",
-                    updated_cells=0,
-                    shape="(0,0)",
-                    error="Invalid data: all items must be dicts",
-                    message="Failed to update by lookup: invalid data format"
-                )
+                raise ValueError("Invalid data: all items must be dicts")
 
             # Check if lookup column exists in update data
             if not all(on in row for row in data):
-                return UpdateResponse(
-                    success=False,
-                    spreadsheet_url="",
-                    spreadsheet_id="",
-                    worksheet="",
-                    range="",
-                    updated_cells=0,
-                    shape="(0,0)",
-                    error=f"Lookup column '{on}' not found in all rows of update data",
-                    message=f"Failed to update by lookup: missing lookup column '{on}'"
-                )
+                raise ValueError(f"Lookup column '{on}' not found in all rows of update data")
 
             # Load existing sheet data
             logger.info(f"Loading existing sheet data from {uri}")
             load_response = await self.load_data_table(service, uri)
 
             if not load_response.success:
-                return UpdateResponse(
-                    success=False,
-                    spreadsheet_url="",
-                    spreadsheet_id="",
-                    worksheet="",
-                    range="",
-                    updated_cells=0,
-                    shape="(0,0)",
-                    error=f"Failed to load sheet: {load_response.error}",
-                    message="Failed to update by lookup: could not load sheet"
-                )
+                raise Exception(f"Failed to load sheet for update by lookup: {load_response.error}")
 
             existing_data = load_response.data  # List of dicts
             existing_headers = list(existing_data[0].keys()) if existing_data else []
@@ -887,16 +944,8 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Validate lookup column exists in sheet
             if on not in existing_headers:
-                return UpdateResponse(
-                    success=False,
-                    spreadsheet_url=metadata.get('worksheet_url', ''),
-                    spreadsheet_id=spreadsheet_id,
-                    worksheet=sheet_title,
-                    range="",
-                    updated_cells=0,
-                    shape="(0,0)",
-                    error=f"Lookup column '{on}' not found in sheet. Available columns: {existing_headers}",
-                    message=f"Failed to update by lookup: lookup column '{on}' not in sheet"
+                raise ValueError(
+                    f"Lookup column '{on}' not found in sheet. Available columns: {existing_headers}"
                 )
 
             # Build case-insensitive lookup index: {lookup_value.lower(): row_index}
@@ -1012,14 +1061,4 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error updating by lookup: {e}")
-            return UpdateResponse(
-                success=False,
-                spreadsheet_url="",
-                spreadsheet_id="",
-                worksheet="",
-                range="",
-                updated_cells=0,
-                shape="(0,0)",
-                error=str(e),
-                message=f"Failed to update by lookup: {e}"
-            )
+            raise Exception(f"Failed to update by lookup on '{on}': {e}") from e
