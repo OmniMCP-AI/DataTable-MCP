@@ -748,6 +748,13 @@ class GoogleSheetDataTable(DataTableInterface):
 
         Implementation of DataTableInterface.append_columns() for Google Sheets.
 
+        Enhanced logic:
+        - Reads existing sheet columns first
+        - Matches column names (case-insensitive)
+        - Skips columns that already exist
+        - Only appends new columns that don't exist yet
+        - If input is empty DataFrame with columns only: won't duplicate existing headers
+
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
@@ -761,6 +768,27 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_props['title']
             sheet_id = sheet_props['sheetId']
+
+            # Read existing sheet data to get current column headers
+            range_name = f"'{sheet_title}'!A:ZZ"
+            result = await asyncio.to_thread(
+                service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name
+                ).execute
+            )
+
+            all_data = result.get('values', [])
+
+            # Extract existing headers (first row)
+            existing_headers = []
+            if all_data and len(all_data) > 0:
+                existing_headers = [str(h) for h in all_data[0]]
+
+            # Create case-insensitive lookup for existing headers
+            existing_headers_lower = {h.lower(): h for h in existing_headers}
+
+            logger.info(f"Existing headers in sheet: {existing_headers}")
 
             # Process input data (handles both 2D array and list of dicts)
             extracted_headers, data_rows = process_data_input(data)
@@ -777,28 +805,78 @@ class GoogleSheetDataTable(DataTableInterface):
                 final_headers = detected_headers
                 final_data = processed_rows if detected_headers else data_rows
 
-            # Convert to strings for Google Sheets API
-            values_only = [[str(cell) if cell is not None else "" for cell in row] for row in final_data]
+            logger.info(f"Input headers: {final_headers}")
+            logger.info(f"Input data rows count: {len(final_data)}")
 
-            # Prepare write data with headers
+            # Determine which columns are new (case-insensitive matching)
+            new_column_indices = []
+            new_column_headers = []
+            existing_column_headers = []
+
+            for idx, header in enumerate(final_headers):
+                header_lower = str(header).lower()
+                if header_lower in existing_headers_lower:
+                    # Column already exists
+                    existing_column_headers.append(header)
+                    logger.info(f"Column '{header}' already exists in sheet (matched with '{existing_headers_lower[header_lower]}')")
+                else:
+                    # New column
+                    new_column_indices.append(idx)
+                    new_column_headers.append(header)
+                    logger.info(f"Column '{header}' is new and will be appended")
+
+            # Handle different scenarios
+            if len(new_column_indices) == 0:
+                # All columns already exist
+                if len(final_data) == 0:
+                    # Empty DataFrame with existing columns only - skip append
+                    spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+                    logger.info(f"All columns already exist and input is empty DataFrame. Skipping append.")
+                    return UpdateResponse(
+                        success=True,
+                        spreadsheet_url=spreadsheet_url,
+                        spreadsheet_id=spreadsheet_id,
+                        worksheet=sheet_title,
+                        range="N/A",
+                        updated_cells=0,
+                        shape="(0,0)",
+                        error=None,
+                        message=f"All columns already exist in worksheet '{sheet_title}'. No append needed. Existing columns: {existing_column_headers}"
+                    )
+                else:
+                    # Has data rows but all columns exist - this is ambiguous, skip for now
+                    spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+                    logger.warning(f"All columns already exist but input has {len(final_data)} data rows. Skipping append to avoid confusion.")
+                    return UpdateResponse(
+                        success=True,
+                        spreadsheet_url=spreadsheet_url,
+                        spreadsheet_id=spreadsheet_id,
+                        worksheet=sheet_title,
+                        range="N/A",
+                        updated_cells=0,
+                        shape="(0,0)",
+                        error=None,
+                        message=f"All columns already exist in worksheet '{sheet_title}'. Cannot append data without new columns. Existing columns: {existing_column_headers}"
+                    )
+
+            # Filter data to only include new columns
+            filtered_data = []
+            for row in final_data:
+                filtered_row = [row[idx] if idx < len(row) else "" for idx in new_column_indices]
+                filtered_data.append(filtered_row)
+
+            # Convert to strings for Google Sheets API
+            values_only = [[str(cell) if cell is not None else "" for cell in row] for row in filtered_data]
+
+            # Prepare write data with headers (only new columns)
             values = []
-            if final_headers:
-                values.append([str(h) for h in final_headers])
+            if new_column_headers:
+                values.append([str(h) for h in new_column_headers])
             values.extend(values_only)
 
             if not values:
                 values = [[""]]
 
-            # Get current data to determine last column
-            range_name = f"'{sheet_title}'!A:ZZ"
-            result = await asyncio.to_thread(
-                service.spreadsheets().values().get(
-                    spreadsheetId=spreadsheet_id,
-                    range=range_name
-                ).execute
-            )
-
-            all_data = result.get('values', [])
             col_count = max(len(row) for row in all_data) if all_data else 0
 
             # Calculate append position (start from next column after last data)
@@ -826,7 +904,11 @@ class GoogleSheetDataTable(DataTableInterface):
             )
 
             spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
-            
+
+            message_parts = [f"Successfully appended {len(new_column_headers)} new column(s) at {range_address} in worksheet '{sheet_title}'"]
+            if existing_column_headers:
+                message_parts.append(f"Skipped {len(existing_column_headers)} existing column(s): {existing_column_headers}")
+
             return UpdateResponse(
                 success=True,
                 spreadsheet_url=spreadsheet_url,
@@ -836,7 +918,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 updated_cells=sum(len(row) for row in values),
                 shape=f"({len(values)},{len(values[0]) if values else 0})",
                 error=None,
-                message=f"Successfully appended columns at {range_address} in worksheet '{sheet_title}'"
+                message=". ".join(message_parts)
             )
 
         except Exception as e:
