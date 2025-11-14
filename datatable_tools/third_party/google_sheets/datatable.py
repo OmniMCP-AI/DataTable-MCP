@@ -83,7 +83,8 @@ class GoogleSheetDataTable(DataTableInterface):
         data_rows = []
 
         if all_data:
-            headers = all_data[0] if all_data else []
+            # Convert all headers to strings (in case they are numbers or other types)
+            headers = [str(h) if h is not None else "" for h in all_data[0]] if all_data else []
             data_rows = all_data[1:] if len(all_data) > 1 else []
 
             # Ensure consistent column count
@@ -183,7 +184,8 @@ class GoogleSheetDataTable(DataTableInterface):
         data_rows = []
 
         if all_data:
-            headers = all_data[0] if all_data else []
+            # Convert all headers to strings (in case they are numbers or other types)
+            headers = [str(h) if h is not None else "" for h in all_data[0]] if all_data else []
             data_rows = all_data[1:] if len(all_data) > 1 else []
 
             # Ensure consistent column count
@@ -291,7 +293,8 @@ class GoogleSheetDataTable(DataTableInterface):
         data_rows = []
 
         if all_data:
-            headers = all_data[0] if all_data else []
+            # Convert all headers to strings (in case they are numbers or other types)
+            headers = [str(h) if h is not None else "" for h in all_data[0]] if all_data else []
             data_rows = all_data[1:] if len(all_data) > 1 else []
 
             # Ensure consistent column count
