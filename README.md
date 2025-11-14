@@ -16,7 +16,7 @@ A comprehensive Model Context Protocol (MCP) server for in-memory tabular data m
 #### 📥 Data Loading (3 tools)
 - `load_data_table` - Load table data from Google Sheets (returns calculated values)
 - `read_worksheet_with_formulas` - Read worksheet data with raw formulas (returns formula strings like "=SUM(A1:A10)")
-- `preview_worksheet_formulas` - Preview first N rows with formulas (quick preview, default 5 rows)
+- `preview_worksheet_with_formulas` - Preview first N rows with formulas (quick preview, default 5 rows)
 
 #### 📤 Data Writing (3 tools)
 - `write_new_sheet` - Create new Google Sheets spreadsheet with data

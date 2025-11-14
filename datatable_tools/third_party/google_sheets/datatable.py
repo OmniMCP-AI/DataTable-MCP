@@ -231,7 +231,7 @@ class GoogleSheetDataTable(DataTableInterface):
             message=f"Loaded table with formulas from Google Sheets with {len(data)} rows and {len(headers)} columns"
         )
 
-    async def preview_worksheet_formulas(
+    async def preview_worksheet_with_formulas(
         self,
         service,  # Authenticated Google Sheets service
         uri: str,

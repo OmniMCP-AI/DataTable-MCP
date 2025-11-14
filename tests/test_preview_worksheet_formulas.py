@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test suite for preview_worksheet_formulas functionality
+Test suite for preview_worksheet_with_formulas functionality
 
 Tests cover:
 1. Basic preview with default limit (5 rows)
@@ -11,12 +11,12 @@ Tests cover:
 
 Usage:
     # Run all preview tests
-    python test_preview_worksheet_formulas.py --env=local --test=all
+    python test_preview_worksheet_with_formulas.py --env=local --test=all
 
     # Run specific test
-    python test_preview_worksheet_formulas.py --env=local --test=basic
-    python test_preview_worksheet_formulas.py --env=local --test=limits
-    python test_preview_worksheet_formulas.py --env=local --test=compare
+    python test_preview_worksheet_with_formulas.py --env=local --test=basic
+    python test_preview_worksheet_with_formulas.py --env=local --test=limits
+    python test_preview_worksheet_with_formulas.py --env=local --test=compare
 
 Environment Variables Required:
 - TEST_GOOGLE_OAUTH_REFRESH_TOKEN
@@ -50,8 +50,8 @@ async def test_basic_preview(url, headers):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            print("\n📋 Step 1: Calling preview_worksheet_formulas with default limit...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            print("\n📋 Step 1: Calling preview_worksheet_with_formulas with default limit...")
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI
             })
 
@@ -155,7 +155,7 @@ async def test_custom_limits(url, headers):
             for limit in test_limits:
                 print(f"\n📋 Testing limit={limit}...")
 
-                preview_res = await session.call_tool("preview_worksheet_formulas", {
+                preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                     "uri": TEST_SHEET_URI,
                     "limit": limit
                 })
@@ -214,7 +214,7 @@ async def test_preview_vs_full_load(url, headers):
 
             # Step 2: Preview load
             print("\n📋 Step 2: Loading preview (5 rows)...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI,
                 "limit": 5
             })
@@ -265,7 +265,7 @@ async def test_formula_content(url, headers):
             await session.initialize()
 
             print("\n📋 Loading preview with formulas...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI,
                 "limit": 10
             })
@@ -328,7 +328,7 @@ async def test_edge_cases(url, headers):
 
             # Test 1: limit=1 (minimum)
             print(f"\n📋 Test 5a: limit=1 (minimum)...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI,
                 "limit": 1
             })
@@ -345,7 +345,7 @@ async def test_edge_cases(url, headers):
 
             # Test 2: limit=100 (maximum)
             print(f"\n📋 Test 5b: limit=100 (maximum)...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI,
                 "limit": 100
             })
@@ -362,7 +362,7 @@ async def test_edge_cases(url, headers):
 
             # Test 3: limit=0 (should be capped to 1)
             print(f"\n📋 Test 5c: limit=0 (should be capped to 1)...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI,
                 "limit": 0
             })
@@ -382,7 +382,7 @@ async def test_edge_cases(url, headers):
 
             # Test 4: limit=200 (should be capped to 100)
             print(f"\n📋 Test 5d: limit=200 (should be capped to 100)...")
-            preview_res = await session.call_tool("preview_worksheet_formulas", {
+            preview_res = await session.call_tool("preview_worksheet_with_formulas", {
                 "uri": TEST_SHEET_URI,
                 "limit": 200
             })
@@ -406,7 +406,7 @@ async def test_edge_cases(url, headers):
 async def run_all_tests(url, headers):
     """Run all tests"""
     print(f"\n{'#'*60}")
-    print(f"# Running All preview_worksheet_formulas Tests")
+    print(f"# Running All preview_worksheet_with_formulas Tests")
     print(f"# Test Sheet: {TEST_SHEET_URI}")
     print(f"{'#'*60}")
 
@@ -428,7 +428,7 @@ async def run_all_tests(url, headers):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Test preview_worksheet_formulas functionality')
+    parser = argparse.ArgumentParser(description='Test preview_worksheet_with_formulas functionality')
     parser.add_argument('--env', choices=['local', 'test', 'prod'], default='local',
                        help='Environment to test against')
     parser.add_argument('--test', choices=['all', 'basic', 'limits', 'compare', 'formulas', 'edge'],

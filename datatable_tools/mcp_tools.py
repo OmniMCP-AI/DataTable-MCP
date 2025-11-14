@@ -128,7 +128,7 @@ async def read_worksheet_with_formulas(
 
 @mcp.tool
 @require_google_service("sheets", "sheets_read")
-async def preview_worksheet_formulas(
+async def preview_worksheet_with_formulas(
     service,  # Injected by @require_google_service
     ctx: Context,
     uri: str = Field(
@@ -175,13 +175,13 @@ async def preview_worksheet_formulas(
 
     Examples:
         # Preview first 5 rows with formulas (default)
-        result = preview_worksheet_formulas(
+        result = preview_worksheet_with_formulas(
             ctx,
             uri="https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0"
         )
 
         # Preview first 10 rows with formulas
-        result = preview_worksheet_formulas(
+        result = preview_worksheet_with_formulas(
             ctx,
             uri="https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0",
             limit=10
@@ -194,7 +194,7 @@ async def preview_worksheet_formulas(
                 print(row)  # {"Total": "=SUM(A2:A10)", "Average": "=AVERAGE(B2:B10)"}
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.preview_worksheet_formulas(service, uri, limit)
+    return await google_sheet.preview_worksheet_with_formulas(service, uri, limit)
 
 
 @mcp.tool
