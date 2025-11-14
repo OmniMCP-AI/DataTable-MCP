@@ -231,6 +231,114 @@ class GoogleSheetDataTable(DataTableInterface):
             message=f"Loaded table with formulas from Google Sheets with {len(data)} rows and {len(headers)} columns"
         )
 
+    async def preview_worksheet_formulas(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str,
+        limit: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Preview the first N rows of a worksheet with formulas (quick preview).
+
+        Specifically returns formula strings instead of calculated values.
+        Useful for quickly inspecting the beginning of a large sheet without loading all data.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            limit: Number of data rows to preview (default: 5, max: 100)
+
+        Returns:
+            TableResponse with limited rows containing formulas
+        """
+        # Validate and cap limit
+        limit = max(1, min(limit, 100))  # Between 1 and 100
+
+        # Parse URI to extract spreadsheet_id and gid
+        spreadsheet_id, gid = parse_google_sheets_uri(uri)
+
+        logger.info(f"Previewing worksheet formulas: {spreadsheet_id}, gid={gid}, limit={limit}")
+
+        # Get sheet properties by gid (or first sheet if no gid)
+        sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
+        sheet_title = sheet_props['title']
+        sheet_id = sheet_props['sheetId']
+
+        # Read only the first N+1 rows (N data rows + 1 header row)
+        # Use A1 notation to limit the range: A1:ZZ{limit+1}
+        range_name = f"'{sheet_title}'!A1:ZZ{limit + 1}"
+
+        result = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueRenderOption='FORMULA'  # Get formulas instead of values
+            ).execute
+        )
+
+        all_data = result.get('values', [])
+
+        # Calculate dimensions
+        if all_data:
+            row_count = len(all_data)
+            col_count = max(len(row) for row in all_data) if all_data else 0
+        else:
+            row_count = 0
+            col_count = 0
+
+        # Process headers and data (first row = headers)
+        headers = []
+        data_rows = []
+
+        if all_data:
+            headers = all_data[0] if all_data else []
+            data_rows = all_data[1:] if len(all_data) > 1 else []
+
+            # Ensure consistent column count
+            if headers:
+                max_cols = len(headers)
+                for row in data_rows:
+                    # Pad short rows
+                    while len(row) < max_cols:
+                        row.append("")
+                    # Truncate long rows
+                    if len(row) > max_cols:
+                        row[:] = row[:max_cols]
+
+        # Convert data from list of lists to list of dicts
+        data = []
+        if headers and data_rows:
+            for row in data_rows:
+                row_dict = {}
+                for i, header in enumerate(headers):
+                    row_dict[header] = row[i] if i < len(row) else ""
+                data.append(row_dict)
+
+        # Build metadata
+        metadata = {
+            "type": "google_sheets",
+            "spreadsheet_id": spreadsheet_id,
+            "original_uri": uri,
+            "worksheet": sheet_title,
+            "worksheet_url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}",
+            "preview_limit": limit,
+            "is_preview": True,
+            "value_render_option": "FORMULA",
+            "row_count": len(data),
+            "column_count": len(headers)
+        }
+
+        return TableResponse(
+            success=True,
+            table_id=f"gs_{spreadsheet_id}_{gid or '0'}_preview_formulas",
+            name=f"Preview (Formulas): {sheet_title}",
+            shape=f"({len(data)},{len(headers)})",
+            data=data,
+            source_info=metadata,
+            error=None,
+            message=f"Preview loaded {len(data)} row(s) with formulas from Google Sheets (limit: {limit})"
+        )
+
     async def write_new_sheet(
         self,
         service,  # Authenticated Google Sheets service

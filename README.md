@@ -11,11 +11,12 @@ A comprehensive Model Context Protocol (MCP) server for in-memory tabular data m
 - **Pandas-like Interface**: Familiar DataFrame-style operations
 - **Column Name Focused**: Use semantic column names to reduce LLM errors
 
-### 🛠️ Google Sheets Tools (9 Total)
+### 🛠️ Google Sheets Tools (10 Total)
 
-#### 📥 Data Loading (2 tools)
+#### 📥 Data Loading (3 tools)
 - `load_data_table` - Load table data from Google Sheets (returns calculated values)
 - `read_worksheet_with_formulas` - Read worksheet data with raw formulas (returns formula strings like "=SUM(A1:A10)")
+- `preview_worksheet_formulas` - Preview first N rows with formulas (quick preview, default 5 rows)
 
 #### 📤 Data Writing (3 tools)
 - `write_new_sheet` - Create new Google Sheets spreadsheet with data

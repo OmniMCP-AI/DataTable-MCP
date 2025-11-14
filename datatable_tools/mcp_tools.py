@@ -127,6 +127,77 @@ async def read_worksheet_with_formulas(
 
 
 @mcp.tool
+@require_google_service("sheets", "sheets_read")
+async def preview_worksheet_formulas(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    limit: int = Field(
+        default=5,
+        description="Number of data rows to preview (default: 5, max: 100). Does not include header row."
+    )
+) -> TableResponse:
+    """
+    Preview the first N rows of a worksheet with formulas (quick preview).
+
+    Returns only the first few rows with formula strings instead of calculated values.
+    Useful for quickly inspecting the beginning of a large sheet without loading all data.
+
+    <description>Quick preview of worksheet data with formulas. Returns only the first N rows (default 5) with raw formula strings. Ideal for inspecting large sheets without loading full data.</description>
+
+    <use_case>Use when you need to:
+    - Quickly check what formulas are at the top of a large sheet
+    - Inspect formula patterns without loading thousands of rows
+    - Get a sample of the data structure and formulas
+    - Reduce loading time for large worksheets
+    </use_case>
+
+    <limitation>Only returns the first N rows (max 100). For full data with formulas, use read_worksheet_with_formulas instead.</limitation>
+
+    <failure_cases>Fails if URI is invalid, spreadsheet doesn't exist, or user lacks read permissions.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI. Supports full URL with gid parameter
+        limit: Number of data rows to preview (default: 5, max: 100)
+
+    Returns:
+        TableResponse containing:
+            - success: Whether the operation succeeded
+            - table_id: Unique identifier (with "_preview_formulas" suffix)
+            - name: Sheet name with "Preview (Formulas)" indicator
+            - shape: String of "(rows,columns)"
+            - data: List of dicts with column names as keys and formula strings as values (limited rows)
+            - source_info: Metadata including "preview_limit", "is_preview": true, "value_render_option": "FORMULA"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result with preview info
+
+    Examples:
+        # Preview first 5 rows with formulas (default)
+        result = preview_worksheet_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0"
+        )
+
+        # Preview first 10 rows with formulas
+        result = preview_worksheet_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0",
+            limit=10
+        )
+
+        # Access preview data
+        if result.success:
+            print(f"Preview: {result.source_info['preview_limit']} rows")
+            for row in result.data:
+                print(row)  # {"Total": "=SUM(A2:A10)", "Average": "=AVERAGE(B2:B10)"}
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.preview_worksheet_formulas(service, uri, limit)
+
+
+@mcp.tool
 @require_google_service("sheets", "sheets_write")
 async def write_new_sheet(
     service,  # Injected by @require_google_service
