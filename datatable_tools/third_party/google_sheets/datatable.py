@@ -930,7 +930,8 @@ class GoogleSheetDataTable(DataTableInterface):
         service,  # Authenticated Google Sheets service
         uri: str,
         data: List[List[Any]],
-        range_address: Optional[str] = None
+        range_address: Optional[str] = None,
+        value_input_option: str = 'RAW'
     ) -> Dict[str, Any]:
         """
         Writes cell values to a Google Sheets range, replacing existing content.
@@ -946,6 +947,10 @@ class GoogleSheetDataTable(DataTableInterface):
             uri: Google Sheets URI
             data: 2D array of cell values or list of dicts (DataFrame-like)
             range_address: A1 notation range address
+            value_input_option: How input data should be interpreted:
+                - 'RAW': Values are stored as-is (literal text, no parsing)
+                - 'USER_ENTERED': Values are parsed as if typed by user (formulas, numbers, dates parsed)
+                Default is 'RAW' for backwards compatibility.
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -1126,12 +1131,15 @@ class GoogleSheetDataTable(DataTableInterface):
             full_range = f"'{sheet_title}'!{final_range}"
 
             # Update the range
+            # Use value_input_option parameter to control how data is interpreted:
+            # - RAW: literal text (default for backwards compatibility)
+            # - USER_ENTERED: parses formulas, numbers, dates, etc.
             body = {'values': values}
             await asyncio.to_thread(
                 service.spreadsheets().values().update(
                     spreadsheetId=spreadsheet_id,
                     range=full_range,
-                    valueInputOption='RAW',
+                    valueInputOption=value_input_option,
                     body=body
                 ).execute
             )
@@ -1157,6 +1165,142 @@ class GoogleSheetDataTable(DataTableInterface):
         except Exception as e:
             logger.error(f"Error updating data to {uri}: {e}")
             raise Exception(f"Failed to update range in {uri}: {e}") from e
+
+    async def insert_image_in_cell(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str,
+        image_url: str,
+        cell_address: str,
+        width_pixels: int = 400,
+        height_pixels: int = 300
+    ) -> Dict[str, Any]:
+        """
+        Insert an image into a cell using IMAGE formula (mode 4) and auto-resize the cell.
+
+        This function:
+        1. Inserts =IMAGE(url, 4, height, width) formula into the specified cell
+        2. Automatically resizes the row height and column width to fit the image
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            image_url: Public URL of the image (must be accessible without authentication)
+            cell_address: Cell address in A1 notation (e.g., "A1", "B5", "C10")
+            width_pixels: Image and cell width in pixels (default: 400)
+            height_pixels: Image and cell height in pixels (default: 300)
+
+        Returns:
+            Dict with success status and details
+
+        Example:
+            # Insert 600x400 image in cell B5
+            insert_image_in_cell(service, uri,
+                                "https://example.com/image.jpg",
+                                "B5", width_pixels=600, height_pixels=400)
+        """
+        try:
+            # Parse URI to extract spreadsheet_id and gid
+            spreadsheet_id, gid = parse_google_sheets_uri(uri)
+
+            # Get sheet properties by gid
+            sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
+            sheet_id = sheet_props['sheetId']
+            sheet_title = sheet_props['title']
+
+            # Parse cell address to get row and column indices
+            import re
+            match = re.match(r'^([A-Z]+)(\d+)$', cell_address.upper())
+            if not match:
+                raise ValueError(f"Invalid cell address: {cell_address}. Expected format like 'A1', 'B5', etc.")
+
+            col_letter = match.group(1)
+            row_number = int(match.group(2))
+
+            # Convert to 0-indexed
+            from datatable_tools.google_sheets_helpers import column_letter_to_index
+            col_index = column_letter_to_index(col_letter)
+            row_index = row_number - 1  # Convert to 0-indexed
+
+            # Step 1: Insert IMAGE formula with mode 4 (custom size)
+            image_formula = f'=IMAGE("{image_url}", 4, {height_pixels}, {width_pixels})'
+            logger.info(f"Inserting IMAGE formula: {image_formula} into cell {cell_address}")
+
+            # Use update_range to insert the formula
+            range_name = f"'{sheet_title}'!{cell_address}"
+            body = {'values': [[image_formula]]}
+            await asyncio.to_thread(
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name,
+                    valueInputOption='USER_ENTERED',  # Parse as formula
+                    body=body
+                ).execute
+            )
+
+            # Step 2: Resize the row height and column width
+            logger.info(f"Resizing cell: row {row_index} to {height_pixels}px, column {col_index} to {width_pixels}px")
+
+            resize_requests = [
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": row_index,
+                            "endIndex": row_index + 1
+                        },
+                        "properties": {
+                            "pixelSize": height_pixels
+                        },
+                        "fields": "pixelSize"
+                    }
+                },
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": col_index,
+                            "endIndex": col_index + 1
+                        },
+                        "properties": {
+                            "pixelSize": width_pixels
+                        },
+                        "fields": "pixelSize"
+                    }
+                }
+            ]
+
+            # Execute batch update for resizing
+            resize_body = {"requests": resize_requests}
+            await asyncio.to_thread(
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body=resize_body
+                ).execute
+            )
+
+            spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+            logger.info(f"Successfully inserted image and resized cell {cell_address}")
+            logger.info(f"Spreadsheet URL: {spreadsheet_url}")
+
+            return UpdateResponse(
+                success=True,
+                spreadsheet_url=spreadsheet_url,
+                spreadsheet_id=spreadsheet_id,
+                worksheet=sheet_title,
+                range=cell_address,
+                updated_cells=1,
+                shape=f"{width_pixels}x{height_pixels}px",
+                error=None,
+                message=f"Successfully inserted {width_pixels}x{height_pixels}px image in cell {cell_address} with auto-resized dimensions"
+            )
+
+        except Exception as e:
+            logger.error(f"Error inserting image in {uri}: {e}")
+            raise Exception(f"Failed to insert image in {uri}: {e}") from e
 
     async def update_by_lookup(
         self,

@@ -338,6 +338,19 @@ async def append_columns(
     """
     Append data as new columns to the right of existing data in Google Sheets.
     Automatically detects the last column and appends to its right starting from row 1.
+    case: multiple columns with empty data rows.
+    [
+        ["formatted_date", "days_diff", "status",
+    "unfollow_success"]  # All column headers in ONE row
+    ]
+
+    Or if you have data for these columns:
+    [
+        {"formatted_date": "2025-01-01", "days_diff": 5,
+    "status": "active", "unfollow_success": True},
+        {"formatted_date": "2025-01-02", "days_diff": 6,
+    "status": "inactive", "unfollow_success": False}
+    ]
 
     Args:
         uri: Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})
@@ -391,6 +404,14 @@ async def update_range(
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
+    ),
+    value_input_option: str = Field(
+        default='RAW',
+        description=(
+            "How input data should be interpreted:\n"
+            "- 'RAW' (default): Values stored as literal text, no parsing. Use for preserving exact text (e.g., '000123', '=not a formula').\n"
+            "- 'USER_ENTERED': Parses as if typed by user. Formulas (=IMAGE, =SUM), numbers, dates are interpreted. Use for inserting formulas or smart data entry."
+        )
     )
 ) -> UpdateResponse:
     """
@@ -414,6 +435,7 @@ async def update_range(
               CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
+        value_input_option: 'RAW' (default, literal text) or 'USER_ENTERED' (parse formulas/numbers/dates)
 
     Returns:
         UpdateResponse containing:
@@ -436,9 +458,105 @@ async def update_range(
 
         # Write table from A1 with auto-expansion
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
+
+        # Insert image formula (requires USER_ENTERED mode)
+        update_range(ctx, uri, data=[['=IMAGE("https://example.com/image.jpg", 1)']],
+                    range_address="A1", value_input_option="USER_ENTERED")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_range(service, uri, data, range_address)
+    return await google_sheet.update_range(service, uri, data, range_address, value_input_option)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_write")
+async def insert_image_in_cell(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    image_url: str = Field(
+        description="Public URL of the image to insert. Must be accessible without authentication."
+    ),
+    cell_address: str = Field(
+        description="Cell address in A1 notation where image should be inserted (e.g., 'A1', 'B5', 'C10')."
+    ),
+    width_pixels: int = Field(
+        default=400,
+        description="Image and cell width in pixels. Default: 400. The cell column will be auto-resized to this width."
+    ),
+    height_pixels: int = Field(
+        default=300,
+        description="Image and cell height in pixels. Default: 300. The cell row will be auto-resized to this height."
+    )
+) -> UpdateResponse:
+    """
+    Insert an image into a cell with automatic cell resizing.
+
+    This tool combines two operations:
+    1. Inserts IMAGE formula with mode 4 (custom dimensions) into the specified cell
+    2. Automatically resizes the row height and column width to match the image dimensions
+
+    The result is a perfectly fitted image that displays at the exact size specified,
+    without requiring manual cell resizing.
+
+    <description>Inserts an image into a Google Sheets cell using the IMAGE formula with custom dimensions,
+    then automatically resizes the cell to perfectly fit the image. This is a one-step solution for
+    adding properly sized images to spreadsheets.</description>
+
+    <use_case>Use when you need to:
+    - Add logos, charts, or photos to spreadsheets with exact dimensions
+    - Create visual reports or dashboards with properly sized images
+    - Insert product images, profile photos, or illustrations
+    - Ensure images display at intended size without manual resizing
+    - Programmatically add images with consistent sizing
+    </use_case>
+
+    <limitation>
+    - Image URL must be publicly accessible (no authentication required)
+    - Image is placed inside the cell (not floating over cells)
+    - Resizing affects the entire row height and column width (all cells in that row/column)
+    - Maximum dimensions depend on Google Sheets limits (typically ~1000px recommended)
+    - Uses IMAGE formula mode 4 for custom sizing
+    </limitation>
+
+    <failure_cases>Fails if: image URL is not publicly accessible, URI is invalid, cell_address format is incorrect,
+    dimensions exceed reasonable limits, or image format is not supported by Google Sheets.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI
+        image_url: Public URL of image (must be accessible without auth)
+        cell_address: Cell address in A1 notation (e.g., "A1", "B5")
+        width_pixels: Image and cell width in pixels (default: 400)
+        height_pixels: Image and cell height in pixels (default: 300)
+
+    Returns:
+        UpdateResponse containing success status and details
+
+    Examples:
+        # Insert 400x300 image in cell A1 (default size)
+        insert_image_in_cell(ctx, uri,
+                            image_url="https://example.com/logo.png",
+                            cell_address="A1")
+
+        # Insert large 800x600 image in cell B5
+        insert_image_in_cell(ctx, uri,
+                            image_url="https://example.com/photo.jpg",
+                            cell_address="B5",
+                            width_pixels=800,
+                            height_pixels=600)
+
+        # Insert small 200x150 thumbnail in cell C10
+        insert_image_in_cell(ctx, uri,
+                            image_url="https://example.com/thumb.jpg",
+                            cell_address="C10",
+                            width_pixels=200,
+                            height_pixels=150)
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.insert_image_in_cell(
+        service, uri, image_url, cell_address, width_pixels, height_pixels
+    )
 
 
 @mcp.tool
