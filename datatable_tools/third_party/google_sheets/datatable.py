@@ -785,8 +785,8 @@ class GoogleSheetDataTable(DataTableInterface):
             if all_data and len(all_data) > 0:
                 existing_headers = [str(h) for h in all_data[0]]
 
-            # Create case-insensitive lookup for existing headers
-            existing_headers_lower = {h.lower(): h for h in existing_headers}
+            # Create case-insensitive lookup for existing headers (filter out empty/whitespace-only headers)
+            existing_headers_lower = {h.lower(): h for h in existing_headers if h.strip()}
 
             logger.info(f"Existing headers in sheet: {existing_headers}")
 
