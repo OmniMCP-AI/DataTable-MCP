@@ -805,6 +805,13 @@ class GoogleSheetDataTable(DataTableInterface):
                 final_headers = detected_headers
                 final_data = processed_rows if detected_headers else data_rows
 
+            # Special case for append_columns: if we have a single row with no headers detected,
+            # treat that row as column headers (not data)
+            if not final_headers and len(final_data) == 1 and final_data[0]:
+                logger.info(f"Single row detected with no headers - treating as column headers for append_columns")
+                final_headers = [str(x) for x in final_data[0]]
+                final_data = []
+
             logger.info(f"Input headers: {final_headers}")
             logger.info(f"Input data rows count: {len(final_data)}")
 
@@ -827,9 +834,24 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Handle different scenarios
             if len(new_column_indices) == 0:
-                # All columns already exist
-                if len(final_data) == 0:
-                    # Empty DataFrame with existing columns only - skip append
+                # No new columns to append
+                if len(final_headers) == 0:
+                    # No headers provided at all - nothing to do
+                    spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+                    logger.info(f"No headers provided for append_columns. Skipping.")
+                    return UpdateResponse(
+                        success=True,
+                        spreadsheet_url=spreadsheet_url,
+                        spreadsheet_id=spreadsheet_id,
+                        worksheet=sheet_title,
+                        range="N/A",
+                        updated_cells=0,
+                        shape="(0,0)",
+                        error=None,
+                        message=f"No headers provided for append_columns. Nothing to append."
+                    )
+                elif len(final_data) == 0:
+                    # Headers provided but all already exist, no data - skip append
                     spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
                     logger.info(f"All columns already exist and input is empty DataFrame. Skipping append.")
                     return UpdateResponse(
