@@ -19,6 +19,7 @@ from datatable_tools.google_sheets_helpers import (
     parse_google_sheets_uri,
     get_sheet_by_gid,
     auto_detect_headers,
+    detect_header_row,
     column_index_to_letter,
     column_letter_to_index,
     process_data_input
@@ -38,7 +39,9 @@ class GoogleSheetDataTable(DataTableInterface):
     async def load_data_table(
         self,
         service,  # Authenticated Google Sheets service
-        uri: str
+        uri: str,
+        range_address: Optional[str] = None,
+        auto_detect_header_row: bool = True
     ) -> Dict[str, Any]:
         """
         Load a table from Google Sheets.
@@ -48,6 +51,8 @@ class GoogleSheetDataTable(DataTableInterface):
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
+            range_address: Optional range in A1 notation (e.g., "A2:M1000", "2:1000", "B:Z")
+            auto_detect_header_row: Automatically detect header row by analyzing first 5 rows (default: True)
         """
         # Parse URI to extract spreadsheet_id and gid
         spreadsheet_id, gid = parse_google_sheets_uri(uri)
@@ -59,8 +64,16 @@ class GoogleSheetDataTable(DataTableInterface):
         sheet_title = sheet_props['title']
         sheet_id = sheet_props['sheetId']
 
+        # Construct range based on user input or default
+        if range_address:
+            # User specified a range (e.g., "A2:M1000", "2:1000", "B:Z")
+            range_name = f"'{sheet_title}'!{range_address}"
+            logger.info(f"Using user-specified range: {range_name}")
+        else:
+            # Default to full sheet
+            range_name = f"'{sheet_title}'!A:ZZ"
+
         # Read data from sheet using Google API directly
-        range_name = f"'{sheet_title}'!A:ZZ"
         result = await asyncio.to_thread(
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
@@ -78,14 +91,20 @@ class GoogleSheetDataTable(DataTableInterface):
             row_count = 0
             col_count = 0
 
-        # Process headers and data (first row = headers)
+        # Process headers and data with smart detection
         headers = []
         data_rows = []
 
         if all_data:
-            # Convert all headers to strings (in case they are numbers or other types)
-            headers = [str(h) if h is not None else "" for h in all_data[0]] if all_data else []
-            data_rows = all_data[1:] if len(all_data) > 1 else []
+            if auto_detect_header_row:
+                # Use smart header detection (analyzes first 5 rows)
+                header_row_idx, headers, data_rows = detect_header_row(all_data)
+                logger.info(f"Smart detection: header at row {header_row_idx}, {len(headers)} columns, {len(data_rows)} data rows")
+            else:
+                # Old behavior: assume row 0 is header
+                headers = [str(h) if h is not None else "" for h in all_data[0]] if all_data else []
+                data_rows = all_data[1:] if len(all_data) > 1 else []
+                logger.info(f"Manual mode: using row 0 as header")
 
             # Ensure consistent column count
             if headers:

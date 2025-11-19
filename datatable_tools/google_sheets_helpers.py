@@ -39,7 +39,8 @@ def parse_google_sheets_uri(uri: str) -> Tuple[str, Optional[str]]:
         >>> parse_google_sheets_uri("https://docs.google.com/spreadsheets/d/ABC123/edit?gid=456#gid=456")
         ("ABC123", "456")
     """
-    pattern = r'/spreadsheets/d/([a-zA-Z0-9-_]+)'
+    # Handle both /spreadsheets/d/ and /spreadsheets/u/0/d/ patterns
+    pattern = r'/spreadsheets(?:/u/\d+)?/d/([a-zA-Z0-9-_]+)'
     match = re.search(pattern, uri)
     if not match:
         raise ValueError(f"Invalid Google Sheets URI: {uri}")
@@ -187,6 +188,117 @@ def auto_detect_headers(values: list[list]) -> Tuple[list[str], list[list]]:
 
     # Headers not detected
     return [], values
+
+
+def detect_header_row(values: list[list]) -> Tuple[int, list[str], list[list]]:
+    """
+    Simplified header detection: analyze first 5 rows to find the real header.
+
+    Solves merged cell issues by scanning multiple rows instead of assuming row 0 is the header.
+
+    Simple heuristic:
+    - Skip rows with significantly fewer columns than subsequent rows (merged cells)
+    - Skip rows with too many empty cells (>50% empty)
+    - Pick the first row that looks like a header (short strings, unique values)
+    - Fallback to row 0 if nothing detected
+
+    **LIMITATION**: If Google Sheets API returns ALL rows with collapsed columns due to
+    heavy merging (e.g., entire row 1 merged), this function cannot detect the correct
+    header. In such cases, use `range_address` parameter to skip the merged row manually.
+
+    Args:
+        values: 2D array of cell values (first 5+ rows)
+
+    Returns:
+        (header_row_index, headers, data_rows)
+
+    Example:
+        >>> # Row 0 has merged cells (mostly empty), Row 1 is real header
+        >>> data = [["", "", "Merged Title", "", ""],
+        ...         ["Name", "Age", "City", "Status", "Score"],
+        ...         ["Alice", "30", "NYC", "Active", "95"]]
+        >>> idx, headers, data = detect_header_row(data)
+        >>> idx
+        1
+        >>> headers
+        ["Name", "Age", "City", "Status", "Score"]
+        >>> len(data)
+        1
+    """
+    if not values or len(values) < 1:
+        return 0, [], []
+
+    # Analyze first 5 rows (or less if sheet is smaller)
+    sample_size = min(5, len(values))
+
+    # Calculate max column count from sample rows (to detect merged cell rows)
+    max_cols = max(len(row) for row in values[:sample_size])
+
+    # CRITICAL PATTERN: If row 0 has 1-2 columns but later rows have 10+ columns,
+    # this indicates heavily merged row 1 (e.g., "每日库存报表" merged across ALL columns)
+    # Google Sheets API collapses it to 1-2 columns instead of full width
+    if len(values) > 1 and len(values[0]) <= 2 and max_cols >= 10:
+        logger.warning(
+            f"Detected heavily merged row 0: {len(values[0])} columns vs {max_cols} max. "
+            f"Automatically using row 1 as header. "
+            f"Row 0 value: '{values[0][0] if values[0] else 'empty'}'"
+        )
+        # Skip row 0, analyze from row 1 onwards
+        for row_idx in range(1, sample_size):
+            row = values[row_idx]
+            if not row:
+                continue
+            # Use first valid row after the merged row as header
+            headers = [str(h) if h else "" for h in row]
+            data_rows = values[row_idx + 1:]
+            logger.info(f"Using row {row_idx} as header (auto-skipped merged row 0)")
+            return row_idx, headers, data_rows
+
+    # WARNING: If ALL rows have 1-2 columns, this indicates Google Sheets API
+    # has collapsed heavily merged data. Smart detection CANNOT fix this.
+    if max_cols <= 2 and len(values) > 10:
+        logger.error(
+            f"WARNING: All rows have only {max_cols} columns but {len(values)} data rows detected. "
+            f"This indicates heavily merged cells that Google Sheets API has collapsed. "
+            f"Smart detection cannot fix this. RECOMMENDATION: Use range_address='2:10000' "
+            f"to skip the merged title row manually."
+        )
+        # Fall through to regular detection, which will use row 0 as fallback
+
+    for row_idx in range(sample_size):
+        row = values[row_idx]
+
+        if not row:
+            continue
+
+        # CRITICAL: Skip rows with significantly fewer columns than later rows
+        # This catches merged title rows that Google Sheets API returns as 1-2 columns
+        if len(row) < max_cols * 0.5:  # Less than 50% of max columns
+            logger.debug(f"Row {row_idx} skipped: too few columns ({len(row)}/{max_cols}) - likely merged cells")
+            continue
+
+        # Skip if too many empty cells
+        non_empty = [x for x in row if x]
+        if len(non_empty) < len(row) * 0.5:  # Less than 50% filled
+            logger.debug(f"Row {row_idx} skipped: too many empty cells ({len(non_empty)}/{len(row)})")
+            continue
+
+        # Calculate average string length
+        avg_len = sum(len(str(x)) for x in non_empty) / len(non_empty)
+
+        # Headers are typically short (<30 chars average)
+        if avg_len < 30:
+            # Found likely header row
+            headers = [str(h) if h else "" for h in row]
+            data_rows = values[row_idx + 1:]
+            logger.info(f"Detected header row at index {row_idx} (avg length: {avg_len:.1f}, columns: {len(row)})")
+            return row_idx, headers, data_rows
+
+    # Fallback: use row 0 (original behavior)
+    logger.debug("No clear header detected, falling back to row 0")
+    headers = [str(h) if h else "" for h in values[0]]
+    data_rows = values[1:] if len(values) > 1 else []
+    return 0, headers, data_rows
 
 
 def calculate_range_notation(

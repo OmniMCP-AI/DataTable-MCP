@@ -42,24 +42,72 @@ async def load_data_table(
     ctx: Context,
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    range_address: Optional[str] = Field(
+        default=None,
+        description="Optional range in A1 notation (e.g., 'A2:M1000' for specific range, '2:1000' for rows 2-1000, 'B:Z' for columns B-Z). If not provided, reads entire sheet."
+    ),
+    auto_detect_header_row: bool = Field(
+        default=True,
+        description="Automatically detect header row by analyzing first 5 rows. Skips rows with merged cells or too many empty cells. Set to False to force using row 0 as header (old behavior)."
     )
 ) -> TableResponse:
     """
     Load a table from Google Sheets using URI-based auto-detection
 
+    **New in OM-4244**: Enhanced to handle merged cell headers and custom ranges.
+    - Smart header detection: Analyzes first 5 rows to find real headers (skips merged cells)
+    - Range support: Specify custom ranges to skip problematic rows or limit data
+
+    **IMPORTANT - Critical Pattern for Heavily Merged Sheets**:
+
+    IF your sheet has:
+    - ✅ Row 1 merged across ALL columns (e.g., "每日库存报表" spanning entire row)
+    - ✅ Expected columns: 20-30, but getting only 1-2 columns
+    - ✅ Thousands of data rows
+
+    THEN you MUST use: `range_address="2:10000"`
+
+    WHY: Google Sheets API collapses heavily merged rows to 1-2 columns.
+    Smart detection cannot fix what the API doesn't provide.
+
+    SOLUTION: Skip the merged row entirely by starting from row 2.
+
     Args:
         uri: Google Sheets URI. Supports:
              - Google Sheets: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
+        range_address: Optional range in A1 notation:
+             - "A2:M1000" - Read specific rectangular range
+             - "2:1000" - Read rows 2 to 1000 (all columns)
+             - "B:Z" - Read columns B to Z (all rows)
+             - None (default) - Read entire sheet
+        auto_detect_header_row: Enable smart header detection (default: True)
+             - True: Analyzes first 5 rows, skips merged/empty rows, finds real header
+             - False: Uses row 0 as header (original behavior)
 
     Returns:
         Dict containing table_id and loaded Google Sheets table information
 
     Examples:
-        # Google Sheets URL
-        uri = "https://docs.google.com/spreadsheets/d/16cLx4H72h8RqCklk2pfKLEixt6D0UIrt62MMOufrU60/edit?gid=0#gid=0"
+        # Basic usage with smart header detection (works for partially merged cells)
+        uri = "https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0"
+        result = load_data_table(ctx, uri)
+
+        # RECOMMENDED for heavily merged title rows: Skip row 1, start from row 2
+        # Use this when row 1 is merged across all columns (e.g., "每日库存报表")
+        result = load_data_table(ctx, uri, range_address="2:10000")
+
+        # Read specific range only
+        result = load_data_table(ctx, uri, range_address="A2:M1000")
+
+        # Disable smart detection, force row 0 as header (old behavior)
+        result = load_data_table(ctx, uri, auto_detect_header_row=False)
+
+        # Combine: read specific range with smart detection
+        result = load_data_table(ctx, uri, range_address="A1:Z5000", auto_detect_header_row=True)
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.load_data_table(service, uri)
+    return await google_sheet.load_data_table(service, uri, range_address, auto_detect_header_row)
 
 
 @mcp.tool
