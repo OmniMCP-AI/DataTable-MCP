@@ -1611,3 +1611,240 @@ class GoogleSheetDataTable(DataTableInterface):
                 error=str(e),
                 message=f"Failed to list worksheets: {e}"
             )
+
+    async def copy_range_with_formulas(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str,
+        from_range: str,
+        to_range: str,
+        value_input_option: str = "USER_ENTERED"
+    ) -> UpdateResponse:
+        """
+        Copy a range with formulas, adapting cell references based on position change.
+
+        Reads formulas from source range, adapts them based on row/column offsets,
+        and writes to destination range. Respects absolute ($) references.
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI
+            from_range: Source range in A1 notation (e.g., "B5:Z5", "L1:L100")
+            to_range: Destination range in A1 notation (must be same dimensions)
+            value_input_option: How to interpret data (default: "USER_ENTERED" to parse formulas)
+
+        Returns:
+            UpdateResponse with success status and details
+
+        Examples:
+            # Copy row 5 to row 6
+            copy_range_with_formulas(service, uri, "B5:Z5", "B6:Z6")
+
+            # Copy column L to column I
+            copy_range_with_formulas(service, uri, "L1:L100", "I1:I100")
+        """
+        from datatable_tools.formula_adapter import adapt_formula
+
+        try:
+            # Parse URI
+            spreadsheet_id, gid = parse_google_sheets_uri(uri)
+            sheet_properties = await get_sheet_by_gid(service, spreadsheet_id, gid)
+            sheet_title = sheet_properties['title']
+
+            # Parse from_range and to_range
+            from_range_parsed = self._parse_range_address(from_range)
+            to_range_parsed = self._parse_range_address(to_range)
+
+            # Calculate dimensions
+            from_rows = from_range_parsed['end_row'] - from_range_parsed['start_row'] + 1
+            from_cols = from_range_parsed['end_col_idx'] - from_range_parsed['start_col_idx'] + 1
+
+            to_rows = to_range_parsed['end_row'] - to_range_parsed['start_row'] + 1
+            to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
+
+            # Validate dimensions match
+            if from_rows != to_rows or from_cols != to_cols:
+                raise ValueError(
+                    f"Source range dimensions ({from_rows}x{from_cols}) must match "
+                    f"destination range dimensions ({to_rows}x{to_cols})"
+                )
+
+            # Calculate offsets
+            row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
+            col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
+
+            logger.info(f"Copying range with offsets: row_offset={row_offset}, col_offset={col_offset}")
+
+            # Read source range with formulas
+            full_from_range = f"'{sheet_title}'!{from_range}"
+            result = await asyncio.to_thread(
+                service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=full_from_range,
+                    valueRenderOption='FORMULA'  # Get formulas instead of values
+                ).execute
+            )
+
+            source_values = result.get('values', [])
+            if not source_values:
+                raise ValueError(f"Source range {from_range} is empty")
+
+            # Adapt formulas for each cell with error tracking
+            adapted_values = []
+            formula_errors = []
+
+            for row_idx, row in enumerate(source_values):
+                adapted_row = []
+                for col_idx, cell_value in enumerate(row):
+                    if cell_value and isinstance(cell_value, str) and cell_value.startswith('='):
+                        # This is a formula, adapt it
+                        try:
+                            adapted_formula = adapt_formula(cell_value, row_offset, col_offset)
+                            adapted_row.append(adapted_formula)
+                        except Exception as formula_error:
+                            # Calculate the actual cell address for error reporting
+                            source_col = column_index_to_letter(from_range_parsed['start_col_idx'] + col_idx)
+                            source_row = from_range_parsed['start_row'] + row_idx
+                            dest_col = column_index_to_letter(to_range_parsed['start_col_idx'] + col_idx)
+                            dest_row = to_range_parsed['start_row'] + row_idx
+
+                            error_info = {
+                                'source_cell': f"{source_col}{source_row}",
+                                'dest_cell': f"{dest_col}{dest_row}",
+                                'formula': cell_value,
+                                'error': str(formula_error)
+                            }
+                            formula_errors.append(error_info)
+
+                            # Still append the original formula to continue processing
+                            adapted_row.append(cell_value)
+                            logger.warning(f"Formula adaptation error at {source_col}{source_row}: {formula_error}")
+                    else:
+                        # Regular value, keep as-is
+                        adapted_row.append(cell_value)
+                adapted_values.append(adapted_row)
+
+            # If there were formula errors, raise with details
+            if formula_errors:
+                error_details = "; ".join([
+                    f"{err['source_cell']}->{err['dest_cell']}: {err['error']} (formula: {err['formula'][:50]}{'...' if len(err['formula']) > 50 else ''})"
+                    for err in formula_errors[:5]  # Show first 5 errors
+                ])
+                if len(formula_errors) > 5:
+                    error_details += f"; ... and {len(formula_errors) - 5} more errors"
+                raise ValueError(f"Formula adaptation errors in {len(formula_errors)} cell(s): {error_details}")
+
+            # Check if we need to expand grid
+            grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
+            grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
+
+            max_row_needed = to_range_parsed['end_row']
+            max_col_needed = to_range_parsed['end_col_idx'] + 1
+
+            if max_row_needed > grid_rows or max_col_needed > grid_cols:
+                # Expand grid
+                new_rows = max(grid_rows, max_row_needed)
+                new_cols = max(grid_cols, max_col_needed)
+
+                logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
+
+                await asyncio.to_thread(
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={
+                            'requests': [{
+                                'updateSheetProperties': {
+                                    'properties': {
+                                        'sheetId': sheet_properties['sheetId'],
+                                        'gridProperties': {
+                                            'rowCount': new_rows,
+                                            'columnCount': new_cols
+                                        }
+                                    },
+                                    'fields': 'gridProperties(rowCount,columnCount)'
+                                }
+                            }]
+                        }
+                    ).execute
+                )
+
+            # Write adapted values to destination range
+            full_to_range = f"'{sheet_title}'!{to_range}"
+            update_result = await asyncio.to_thread(
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=full_to_range,
+                    valueInputOption=value_input_option,
+                    body={'values': adapted_values}
+                ).execute
+            )
+
+            updated_cells = update_result.get('updatedCells', 0)
+            updated_range = update_result.get('updatedRange', to_range)
+
+            logger.info(f"Successfully copied range {from_range} to {to_range} with {updated_cells} cells updated")
+
+            return UpdateResponse(
+                success=True,
+                spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_properties['sheetId']}",
+                spreadsheet_id=spreadsheet_id,
+                worksheet=sheet_title,
+                range=updated_range,
+                updated_cells=updated_cells,
+                shape=f"({from_rows},{from_cols})",
+                error=None,
+                message=f"Successfully copied range {from_range} to {to_range} with formulas adapted (row offset: {row_offset}, col offset: {col_offset}). {updated_cells} cells updated."
+            )
+
+        except Exception as e:
+            logger.error(f"Error copying range with formulas in {uri}: {e}")
+            raise Exception(f"Failed to copy range {from_range} to {to_range} in {uri}: {e}") from e
+
+    def _parse_range_address(self, range_address: str) -> Dict[str, Any]:
+        """
+        Parse A1 notation range address into components.
+
+        Args:
+            range_address: A1 notation (e.g., "B5:Z5", "L1:L100", "A1")
+
+        Returns:
+            Dict with keys: start_col, start_row, end_col, end_row, start_col_idx, end_col_idx
+
+        Examples:
+            >>> _parse_range_address("B5:Z5")
+            {'start_col': 'B', 'start_row': 5, 'end_col': 'Z', 'end_row': 5, 'start_col_idx': 1, 'end_col_idx': 25}
+        """
+        # Remove sheet name if present
+        if '!' in range_address:
+            range_address = range_address.split('!')[-1]
+
+        # Check if it's a range or single cell
+        if ':' in range_address:
+            start_cell, end_cell = range_address.split(':')
+        else:
+            start_cell = end_cell = range_address
+
+        # Parse start cell
+        match = re.match(r'^([A-Z]+)(\d+)$', start_cell, re.IGNORECASE)
+        if not match:
+            raise ValueError(f"Invalid cell address: {start_cell}")
+
+        start_col = match.group(1).upper()
+        start_row = int(match.group(2))
+
+        # Parse end cell
+        match = re.match(r'^([A-Z]+)(\d+)$', end_cell, re.IGNORECASE)
+        if not match:
+            raise ValueError(f"Invalid cell address: {end_cell}")
+
+        end_col = match.group(1).upper()
+        end_row = int(match.group(2))
+
+        return {
+            'start_col': start_col,
+            'start_row': start_row,
+            'end_col': end_col,
+            'end_row': end_row,
+            'start_col_idx': column_letter_to_index(start_col),
+            'end_col_idx': column_letter_to_index(end_col)
+        }

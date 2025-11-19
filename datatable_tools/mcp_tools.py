@@ -789,3 +789,115 @@ async def list_worksheets(
     """
     google_sheet = GoogleSheetDataTable()
     return await google_sheet.list_worksheets(service, uri)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_write")
+async def copy_range_with_formulas(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    from_range: str = Field(
+        description="Source range in A1 notation (e.g., 'B5:Z5' for row 5, 'L1:L100' for column L)"
+    ),
+    to_range: str = Field(
+        description="Destination range in A1 notation (e.g., 'B6:Z6' for row 6, 'I1:I100' for column I). MUST HAVE SAME DIMENSIONS AS from_range."
+    ),
+    value_input_option: str = Field(
+        default='USER_ENTERED',
+        description="How to interpret data: 'USER_ENTERED' (default, parses formulas) or 'RAW' (literal text)"
+    )
+) -> UpdateResponse:
+    """
+    Copy a range with formulas, automatically adapting cell references based on position change.
+
+    This tool copies data from one range to another, intelligently adapting formulas
+    based on row and column offsets. It respects absolute ($) and relative cell references:
+
+    <description>Copies a range with formulas from one location to another, automatically adapting
+    cell references based on the position change. Respects absolute ($) references. Ideal for
+    replicating formula patterns across rows or columns.</description>
+
+    <use_case>Use when you need to:
+    - Copy a row with formulas to another row (formulas adapt to new row)
+    - Copy a column with formulas to another column (formulas adapt to new column)
+    - Duplicate formula templates while preserving relative/absolute reference behavior
+    - Replicate complex formula patterns without manual editing
+    - Copy formula logic from one section of a sheet to another
+    </use_case>
+
+    <limitation>
+    - Source and destination ranges must have identical dimensions
+    - Only adapts standard A1 notation references
+    - Named ranges and structured references are copied as-is (not adapted)
+    - Auto-expands grid if destination exceeds current sheet bounds
+    - Overwrites existing data in destination range without warning
+    </limitation>
+
+    <failure_cases>Fails if: ranges have different dimensions, range addresses are invalid A1 notation,
+    source range is empty, or URI is invalid.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI
+        from_range: Source range (e.g., "B5:Z5" for row, "L1:L100" for column)
+        to_range: Destination range (must match source dimensions)
+        value_input_option: 'USER_ENTERED' (parse formulas, default) or 'RAW' (literal text)
+
+    Returns:
+        UpdateResponse containing:
+            - success: Whether the operation succeeded
+            - spreadsheet_url: Full URL to the spreadsheet with gid
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - range: The range that was updated
+            - updated_cells: Number of cells updated
+            - shape: String of "(rows,columns)"
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result with offset information
+
+    Examples:
+        # Copy row 5 to row 6 (formulas adapt to row 6)
+        # B5: =SUMIFS($J:$J,$F:$F,$A5,$A:$A,B$1)
+        # -> B6: =SUMIFS($J:$J,$F:$F,$A6,$A:$A,B$1)
+        copy_range_with_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
+            from_range="B5:Z5",
+            to_range="B6:Z6"
+        )
+
+        # Copy column L to column I (formulas adapt to column I)
+        copy_range_with_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
+            from_range="L1:L100",
+            to_range="I1:I100"
+        )
+
+        # Copy a 2D block of formulas
+        copy_range_with_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
+            from_range="B5:E10",
+            to_range="B15:E20"
+        )
+
+        # How formula adaptation works:
+        # Source B5: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A5,'Sheet1'!$A:$A,B$1)
+        # When copied from B5 to B6 (row offset +1, col offset 0):
+        #   - $J:$J stays (absolute column range)
+        #   - $F:$F stays (absolute column range)
+        #   - $A5 -> $A6 (absolute column, relative row increments)
+        #   - $A:$A stays (absolute column range)
+        #   - B$1 stays (relative column same, absolute row)
+        # Result B6: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A6,'Sheet1'!$A:$A,B$1)
+        #
+        # When copied from B5 to C5 (row offset 0, col offset +1):
+        #   - $A5 stays (absolute column, same row)
+        #   - B$1 -> C$1 (relative column increments, absolute row)
+        # Result C5: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A5,'Sheet1'!$A:$A,C$1)
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.copy_range_with_formulas(service, uri, from_range, to_range, value_input_option)
