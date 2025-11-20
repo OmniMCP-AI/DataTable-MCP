@@ -3,9 +3,8 @@
 Test script for OM-4244: Merged cell header detection
 
 Tests the enhanced load_data_table with:
-1. Smart header detection (auto_detect_header_row=True)
+1. Smart header detection (default when no range_address)
 2. Range address support (range_address parameter)
-3. Manual header selection (auto_detect_header_row=False)
 
 Usage:
     # Run all tests
@@ -14,7 +13,6 @@ Usage:
     # Run specific test
     python tests/test_merged_cell_header.py --env=local --test=smart
     python tests/test_merged_cell_header.py --env=local --test=range
-    python tests/test_merged_cell_header.py --env=local --test=manual
 
 Environment Variables Required:
 - TEST_GOOGLE_OAUTH_REFRESH_TOKEN
@@ -44,9 +42,9 @@ TEST_URI_MERGED = "https://docs.google.com/spreadsheets/d/1zWJhzLl4sdaEVfkvoEL7O
 TEST_URI_NORMAL = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=0#gid=0"
 
 async def test_smart_detection(url, headers, test_uri):
-    """Test 1: Smart header detection (default behavior)"""
+    """Test 1: Smart header detection (default behavior when no range_address)"""
     print("\n" + "="*80)
-    print("TEST 1: Smart Header Detection (auto_detect_header_row=True)")
+    print("TEST 1: Smart Header Detection (default, no range_address)")
     print("="*80)
 
     async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
@@ -54,11 +52,11 @@ async def test_smart_detection(url, headers, test_uri):
             await session.initialize()
 
             print(f"📎 URI: {test_uri}")
-            print("🔍 Calling load_data_table with smart detection enabled...")
+            print("🔍 Calling load_data_table without range_address (smart detection enabled)...")
 
             result = await session.call_tool("load_data_table", {
-                "uri": test_uri,
-                "auto_detect_header_row": True  # Default: smart detection
+                "uri": test_uri
+                # No range_address = smart detection enabled automatically
             })
 
             if result.isError:
@@ -85,7 +83,7 @@ async def test_smart_detection(url, headers, test_uri):
 
 
 async def test_range_address(url, headers, test_uri):
-    """Test 2: Using range_address to skip row 1"""
+    """Test 2: Using range_address to skip row 1 (disables smart detection)"""
     print("\n" + "="*80)
     print("TEST 2: Range Address (range_address='2:100')")
     print("="*80)
@@ -96,11 +94,11 @@ async def test_range_address(url, headers, test_uri):
 
             print(f"📎 URI: {test_uri}")
             print("🔍 Calling load_data_table with range_address='2:100'...")
+            print("    (Smart detection automatically disabled when range_address is provided)")
 
             result = await session.call_tool("load_data_table", {
                 "uri": test_uri,
-                "range_address": "2:100",  # Skip row 1, start from row 2
-                "auto_detect_header_row": True
+                "range_address": "2:100"  # Skip row 1, start from row 2. First row of range = header
             })
 
             if result.isError:
@@ -127,9 +125,9 @@ async def test_range_address(url, headers, test_uri):
 
 
 async def test_manual_mode(url, headers, test_uri):
-    """Test 3: Manual mode (force row 0 as header)"""
+    """Test 3: Manual mode using range_address='1:100' to force row 1 as header"""
     print("\n" + "="*80)
-    print("TEST 3: Manual Mode (auto_detect_header_row=False)")
+    print("TEST 3: Manual Mode (range_address='1:100' forces row 1 as header)")
     print("="*80)
 
     async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
@@ -137,11 +135,12 @@ async def test_manual_mode(url, headers, test_uri):
             await session.initialize()
 
             print(f"📎 URI: {test_uri}")
-            print("🔍 Calling load_data_table with auto_detect_header_row=False...")
+            print("🔍 Calling load_data_table with range_address='1:100'...")
+            print("    (Forces row 1 as header without smart detection)")
 
             result = await session.call_tool("load_data_table", {
                 "uri": test_uri,
-                "auto_detect_header_row": False  # Force row 0 as header (old behavior)
+                "range_address": "1:100"  # Start from row 1, force row 1 as header (old behavior)
             })
 
             if result.isError:
@@ -154,7 +153,7 @@ async def test_manual_mode(url, headers, test_uri):
             print(f"✅ Success: {content.get('success')}")
             print(f"📊 Table Name: {content.get('name')}")
             print(f"📏 Shape: {content.get('shape')}")
-            print(f"⚠️  Note: This should show merged cells issue if row 0 has merged cells")
+            print(f"⚠️  Note: This should show merged cells issue if row 1 has merged cells")
 
             if content.get('data'):
                 headers = list(content['data'][0].keys()) if content['data'] else []
@@ -169,7 +168,7 @@ async def test_manual_mode(url, headers, test_uri):
 
 
 async def test_specific_range(url, headers, test_uri):
-    """Test 4: Specific range address"""
+    """Test 4: Specific range address (disables smart detection)"""
     print("\n" + "="*80)
     print("TEST 4: Specific Range (range_address='A2:M100')")
     print("="*80)
@@ -180,11 +179,11 @@ async def test_specific_range(url, headers, test_uri):
 
             print(f"📎 URI: {test_uri}")
             print("🔍 Calling load_data_table with range_address='A2:M100'...")
+            print("    (Smart detection automatically disabled when range_address is provided)")
 
             result = await session.call_tool("load_data_table", {
                 "uri": test_uri,
-                "range_address": "A2:M100",  # Specific rectangular range
-                "auto_detect_header_row": True
+                "range_address": "A2:M100"  # Specific rectangular range, first row of range = header
             })
 
             if result.isError:
@@ -225,8 +224,8 @@ async def test_comparison(url, headers):
             print(f"📎 URI: {TEST_URI_MERGED}")
 
             merged_result = await session.call_tool("load_data_table", {
-                "uri": TEST_URI_MERGED,
-                "auto_detect_header_row": True
+                "uri": TEST_URI_MERGED
+                # No range_address = smart detection enabled automatically
             })
 
             if not merged_result.isError:
@@ -251,8 +250,8 @@ async def test_comparison(url, headers):
             print(f"📎 URI: {TEST_URI_NORMAL}")
 
             normal_result = await session.call_tool("load_data_table", {
-                "uri": TEST_URI_NORMAL,
-                "auto_detect_header_row": True
+                "uri": TEST_URI_NORMAL
+                # No range_address = smart detection enabled automatically
             })
 
             if not normal_result.isError:
