@@ -77,7 +77,8 @@ class GoogleSheetDataTable(DataTableInterface):
         result = await asyncio.to_thread(
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
-                range=range_name
+                range=range_name,
+                valueRenderOption='UNFORMATTED_VALUE'  # Get raw values (numbers as numbers, not strings)
             ).execute
         )
 
@@ -120,12 +121,15 @@ class GoogleSheetDataTable(DataTableInterface):
         # Convert data from list of lists to list of dicts
         data = []
         if headers and data_rows:
-            for row in data_rows:
+            for row_idx, row in enumerate(data_rows):
                 row_dict = {}
                 for i, header in enumerate(headers):
                     # Use the header as key, and the corresponding cell value
                     row_dict[header] = row[i] if i < len(row) else ""
                 data.append(row_dict)
+                # Debug: Log types of first row
+                if row_idx == 0:
+                    logger.debug(f"First row data types: {[(k, type(v).__name__, repr(v)) for k, v in row_dict.items()]}")
 
         # Build metadata
         metadata = {
@@ -656,7 +660,8 @@ class GoogleSheetDataTable(DataTableInterface):
             result = await asyncio.to_thread(
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=range_name
+                    range=range_name,
+                    valueRenderOption='UNFORMATTED_VALUE'
                 ).execute
             )
 
@@ -793,7 +798,8 @@ class GoogleSheetDataTable(DataTableInterface):
             result = await asyncio.to_thread(
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=range_name
+                    range=range_name,
+                    valueRenderOption='UNFORMATTED_VALUE'
                 ).execute
             )
 
@@ -1007,7 +1013,8 @@ class GoogleSheetDataTable(DataTableInterface):
             result = await asyncio.to_thread(
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=range_name
+                    range=range_name,
+                    valueRenderOption='UNFORMATTED_VALUE'
                 ).execute
             )
             original_data = result.get('values', [])
