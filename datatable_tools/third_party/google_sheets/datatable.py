@@ -975,7 +975,7 @@ class GoogleSheetDataTable(DataTableInterface):
         uri: str,
         data: List[List[Any]],
         range_address: Optional[str] = None,
-        value_input_option: str = 'RAW'
+        value_input_option: str = 'USER_ENTERED'
     ) -> Dict[str, Any]:
         """
         Writes cell values to a Google Sheets range, replacing existing content.
