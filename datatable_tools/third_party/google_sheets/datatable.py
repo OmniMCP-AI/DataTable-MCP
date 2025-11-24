@@ -8,7 +8,7 @@ Stage 4.2: Framework-agnostic implementation with NO FastMCP dependency.
 Decorators moved to MCP layer (mcp_tools.py).
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 import logging
 import asyncio
 import re
@@ -1336,21 +1336,26 @@ class GoogleSheetDataTable(DataTableInterface):
         service,  # Authenticated Google Sheets service
         uri: str,
         data: List[Dict[str, Any]],
-        on: str,
+        on: Union[str, List[str]],
         override: bool = False
     ) -> Dict[str, Any]:
         """
-        Update Google Sheets data by looking up rows using a key column.
+        Update Google Sheets data by looking up rows using one or more key columns.
 
-        Similar to SQL UPDATE with JOIN - matches rows by a lookup key and updates
+        Similar to SQL UPDATE with JOIN - matches rows by lookup key(s) and updates
         only the columns present in the new data, preserving other columns.
         New columns are automatically added at the end if they don't exist.
+
+        Supports both single and composite (multiple) lookup keys for flexible matching.
 
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
             data: List of dicts containing update data (DataFrame-like)
-            on: Column name to use as lookup key (must exist in both sheet and data)
+            on: Column name(s) to use as lookup key. Can be:
+                - Single string: "username"
+                - List of strings: ["first_name", "last_name"]
+                All specified columns must exist in both sheet and data.
             override: If True, empty/null values in data will clear existing cells;
                      If False, empty/null values will preserve existing values
 
@@ -1359,13 +1364,14 @@ class GoogleSheetDataTable(DataTableInterface):
 
         Behavior:
             - Lookup matching: Case-insensitive
-            - Duplicate keys: Updates first match only
+            - Multiple keys: ALL must match (AND logic)
+            - Duplicate keys: Updates all matching rows
             - Unmatched rows: Ignored (skipped silently)
             - New columns: Automatically added at the end
             - Empty values: Clears cell if override=True, preserves if override=False
 
         Examples:
-            # Basic update by username
+            # Basic update by single key
             await update_by_lookup(
                 service, uri,
                 data=[
@@ -1375,7 +1381,17 @@ class GoogleSheetDataTable(DataTableInterface):
                 on="username"
             )
 
-            # Update with new columns (automatically added) and override empty values
+            # Update by composite key (multiple columns)
+            await update_by_lookup(
+                service, uri,
+                data=[
+                    {"first_name": "John", "last_name": "Doe", "status": "active"},
+                    {"first_name": "Jane", "last_name": "Smith", "status": "inactive"}
+                ],
+                on=["first_name", "last_name"]
+            )
+
+            # Update with new columns and override empty values
             await update_by_lookup(
                 service, uri,
                 data=[{"username": "@user1", "new_col": "value", "old_col": ""}],
@@ -1384,6 +1400,9 @@ class GoogleSheetDataTable(DataTableInterface):
             )
         """
         try:
+            # Normalize 'on' to always be a list for consistent handling
+            lookup_keys = [on] if isinstance(on, str) else on
+
             # Validate input
             if not isinstance(data, list) or not data:
                 raise ValueError("Invalid data: must be non-empty list of dicts")
@@ -1391,9 +1410,10 @@ class GoogleSheetDataTable(DataTableInterface):
             if not all(isinstance(row, dict) for row in data):
                 raise ValueError("Invalid data: all items must be dicts")
 
-            # Check if lookup column exists in update data
-            if not all(on in row for row in data):
-                raise ValueError(f"Lookup column '{on}' not found in all rows of update data")
+            # Check if all lookup columns exist in update data
+            for key in lookup_keys:
+                if not all(key in row for row in data):
+                    raise ValueError(f"Lookup column '{key}' not found in all rows of update data")
 
             # Load existing sheet data
             logger.info(f"Loading existing sheet data from {uri}")
@@ -1403,28 +1423,49 @@ class GoogleSheetDataTable(DataTableInterface):
                 raise Exception(f"Failed to load sheet for update by lookup: {load_response.error}")
 
             existing_data = load_response.data  # List of dicts
-            existing_headers = list(existing_data[0].keys()) if existing_data else []
+
+            # Better validation for empty sheet data
+            if not existing_data:
+                raise ValueError(
+                    f"Cannot update by lookup: Sheet appears to be empty or has no detectable data rows. "
+                    f"Please ensure the sheet has:\n"
+                    f"  1. A header row with column names\n"
+                    f"  2. At least one data row\n"
+                    f"  3. No excessive merged cells in the header area\n"
+                    f"Sheet info: {load_response.source_info.get('worksheet', 'unknown')}, "
+                    f"Row count: {load_response.source_info.get('row_count', 0)}, "
+                    f"Col count: {load_response.source_info.get('column_count', 0)}"
+                )
+
+            existing_headers = list(existing_data[0].keys())
             metadata = load_response.source_info
             spreadsheet_id = metadata['spreadsheet_id']
             sheet_title = metadata['worksheet']
             sheet_id = metadata.get('worksheet_url', '').split('gid=')[-1] if 'worksheet_url' in metadata else '0'
 
-            # Validate lookup column exists in sheet
-            if on not in existing_headers:
+            # Validate all lookup columns exist in sheet
+            missing_keys = [key for key in lookup_keys if key not in existing_headers]
+            if missing_keys:
                 raise ValueError(
-                    f"Lookup column '{on}' not found in sheet. Available columns: {existing_headers}"
+                    f"Lookup column(s) {missing_keys} not found in sheet. Available columns: {existing_headers}"
                 )
 
-            # Build case-insensitive lookup index: {lookup_value.lower(): row_index}
-            logger.info(f"Building lookup index on column '{on}' (case-insensitive)")
+            # Build case-insensitive lookup index for composite keys
+            # Format: {(key1_value.lower(), key2_value.lower(), ...): [row_indices]}
+            logger.info(f"Building lookup index on column(s) {lookup_keys} (case-insensitive)")
             lookup_index = {}
             for idx, row in enumerate(existing_data):
-                lookup_value = str(row.get(on, "")).lower()
-                if lookup_value and lookup_value not in lookup_index:
-                    # Store first occurrence only (handle duplicates)
-                    lookup_index[lookup_value] = idx
+                # Create composite key tuple from all lookup columns
+                lookup_tuple = tuple(str(row.get(key, "")).lower() for key in lookup_keys)
 
-            logger.info(f"Built lookup index with {len(lookup_index)} unique keys")
+                # Skip rows where any lookup key is empty
+                if all(val for val in lookup_tuple):
+                    # Store list of row indices for each unique composite key (supports duplicates)
+                    if lookup_tuple not in lookup_index:
+                        lookup_index[lookup_tuple] = []
+                    lookup_index[lookup_tuple].append(idx)
+
+            logger.info(f"Built lookup index with {len(lookup_index)} unique key combinations")
 
             # Identify columns in update data
             update_columns = set()
@@ -1454,43 +1495,48 @@ class GoogleSheetDataTable(DataTableInterface):
                     while len(row_list) < len(final_headers):
                         row_list.append("")
 
-            # Perform lookup and update
+            # Perform lookup and update with composite key support
             matched_count = 0
+            matched_rows = 0
             unmatched_count = 0
             updated_cells = 0
 
             for update_row in data:
-                lookup_value = str(update_row.get(on, "")).lower()
+                # Create composite lookup tuple from the update row
+                lookup_tuple = tuple(str(update_row.get(key, "")).lower() for key in lookup_keys)
 
-                if lookup_value not in lookup_index:
+                if lookup_tuple not in lookup_index:
                     unmatched_count += 1
                     continue
 
-                # Get row index in existing data
-                row_idx = lookup_index[lookup_value]
+                # Get all row indices that match this composite key
+                row_indices = lookup_index[lookup_tuple]
                 matched_count += 1
+                matched_rows += len(row_indices)
 
-                # Update columns in this row
-                for col_name, new_value in update_row.items():
-                    if col_name not in final_headers:
-                        # Column not in final headers (should not happen as we add all columns)
-                        continue
+                # Update all matching rows
+                for row_idx in row_indices:
+                    # Update columns in this row
+                    for col_name, new_value in update_row.items():
+                        if col_name not in final_headers:
+                            # Column not in final headers (should not happen as we add all columns)
+                            continue
 
-                    col_idx = final_headers.index(col_name)
+                        col_idx = final_headers.index(col_name)
 
-                    # Handle empty/null values based on override flag
-                    if new_value is None or new_value == "":
-                        if override:
-                            # Clear the cell
-                            result_data[row_idx][col_idx] = ""
+                        # Handle empty/null values based on override flag
+                        if new_value is None or new_value == "":
+                            if override:
+                                # Clear the cell
+                                result_data[row_idx][col_idx] = ""
+                                updated_cells += 1
+                            # else: preserve existing value (do nothing)
+                        else:
+                            # Update with new value
+                            result_data[row_idx][col_idx] = new_value
                             updated_cells += 1
-                        # else: preserve existing value (do nothing)
-                    else:
-                        # Update with new value
-                        result_data[row_idx][col_idx] = new_value
-                        updated_cells += 1
 
-            logger.info(f"Lookup results: {matched_count} matched, {unmatched_count} unmatched")
+            logger.info(f"Lookup results: {matched_count} lookup keys matched {matched_rows} rows, {unmatched_count} unmatched")
             logger.info(f"Updated {updated_cells} cells")
 
             if matched_count == 0:
@@ -1507,6 +1553,9 @@ class GoogleSheetDataTable(DataTableInterface):
             if response.success:
                 spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
 
+                # Format lookup keys display
+                keys_display = str(lookup_keys) if len(lookup_keys) > 1 else lookup_keys[0]
+
                 # Create new UpdateResponse with enhanced message
                 return UpdateResponse(
                     success=True,
@@ -1518,9 +1567,9 @@ class GoogleSheetDataTable(DataTableInterface):
                     shape=response.shape,
                     error=None,
                     message=(
-                        f"Successfully updated by lookup on '{on}': "
-                        f"{matched_count} rows matched, {unmatched_count} unmatched, "
-                        f"{updated_cells} cells updated"
+                        f"Successfully updated by lookup on {keys_display}: "
+                        f"{matched_count} unique lookup keys matched {matched_rows} rows, "
+                        f"{unmatched_count} unmatched, {updated_cells} cells updated"
                     )
                 )
 
@@ -1528,7 +1577,9 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error updating by lookup: {e}")
-            raise Exception(f"Failed to update by lookup on '{on}': {e}") from e
+            # Format lookup keys display for error message
+            keys_display = str(on) if isinstance(on, list) else on
+            raise Exception(f"Failed to update by lookup on {keys_display}: {e}") from e
 
     async def list_worksheets(
         self,

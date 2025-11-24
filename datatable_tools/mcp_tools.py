@@ -14,7 +14,7 @@ Contains all core MCP tools:
 - update_range_by_lookup: Update rows by lookup key
 """
 
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Union
 import logging
 from pydantic import Field
 from fastmcp import Context
@@ -22,6 +22,7 @@ from core.server import mcp
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 from datatable_tools.auth.service_decorator import require_google_service
 from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, TableData, WorksheetsListResponse
+from datatable_tools.google_sheets_helpers import process_data_input
 
 # Optional Polars import for type hints
 try:
@@ -666,15 +667,22 @@ async def update_range_by_lookup(
     uri: str = Field(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
-    data: List[Dict[str, Any]] = Field(
+    data: Union[List[Dict[str, Any]], str, Any] = Field(
         description=(
             "Update data as list of dicts (DataFrame-like). Each dict represents a row with column names as keys.\n"
-            "Must include the lookup column specified in 'on' parameter.\n"
+            "Also supports Polars DataFrame or its string representation (automatically converted).\n"
+            "Must include the lookup column(s) specified in 'on' parameter.\n"
             "Example: [{'username': '@user1', 'status': 'active'}, {'username': '@user2', 'status': 'inactive'}]"
         )
     ),
-    on: str = Field(
-        description="Column name to use as lookup key for matching rows (e.g., 'username', 'id', 'email'). Must exist in both the sheet and update data. Matching is case-insensitive."
+    on: Union[str, List[str]] = Field(
+        description=(
+            "Column name(s) to use as lookup key for matching rows. Can be:\n"
+            "  - Single column: 'username' or ['username']\n"
+            "  - Multiple columns (composite key): ['first_name', 'last_name']\n"
+            "All specified columns must exist in both the sheet and update data.\n"
+            "Matching is case-insensitive. When multiple keys are provided, ALL must match (AND logic)."
+        )
     ),
     override: bool = Field(
         default=False,
@@ -682,21 +690,24 @@ async def update_range_by_lookup(
     )
 ) -> UpdateResponse:
     """
-    Update Google Sheets data by looking up rows using a key column, similar to SQL UPDATE with JOIN.
+    Update Google Sheets data by looking up rows using one or more key columns, similar to SQL UPDATE with JOIN.
 
-    <description>Performs selective column updates by matching rows via a lookup key. Only updates columns present in the new data while preserving other columns and unmatched rows. Similar to a database UPDATE with JOIN operation.</description>
+    <description>Performs selective column updates by matching rows via lookup key(s). Supports both single and composite keys (multiple columns). Only updates columns present in the new data while preserving other columns and unmatched rows. Similar to a database UPDATE with JOIN operation.</description>
 
-    <use_case>Use for updating specific columns in a sheet based on a key column (like username or ID), enriching existing data with new fields, or syncing partial data from external sources without overwriting the entire sheet.</use_case>
+    <use_case>Use for updating specific columns in a sheet based on key column(s) (like username, ID, or composite keys like first_name+last_name), enriching existing data with new fields, or syncing partial data from external sources without overwriting the entire sheet.</use_case>
 
-    <limitation>Duplicate lookup keys: only first match is updated. Unmatched rows in update data are silently ignored. Case-insensitive matching only.</limitation>
+    <limitation>Unmatched rows in update data are silently ignored. Case-insensitive matching only. When multiple lookup keys are provided, all rows matching the composite key are updated (not just the first).</limitation>
 
-    <failure_cases>Fails if lookup column doesn't exist in sheet or update data, if data is not list of dicts, or if sheet cannot be loaded. Returns warning if no matching rows found.</failure_cases>
+    <failure_cases>Fails if any lookup column doesn't exist in sheet or update data, if data is not list of dicts, or if sheet cannot be loaded. Returns warning if no matching rows found.</failure_cases>
 
     Args:
         uri: Google Sheets URI (supports full URL pattern)
-        data: List of dicts with update data. Must include the lookup column.
+        data: List of dicts with update data. Must include all lookup column(s).
+              Also supports Polars DataFrame or its string representation (automatically converted).
               Example: [{"username": "@user1", "latest_tweet": "2025-09-18"}, ...]
-        on: Lookup column name (must exist in both sheet and data). Case-insensitive matching.
+        on: Lookup column name(s). Can be single string or list of strings for composite keys.
+            Examples: "username" or ["first_name", "last_name"]
+            All specified columns must exist in both sheet and data. Case-insensitive matching.
         override: If True, empty values clear cells. If False, empty values preserve existing values. Default False.
 
     Returns:
@@ -713,13 +724,14 @@ async def update_range_by_lookup(
 
     Behavior:
         - Lookup matching: Case-insensitive
-        - Duplicate keys: Updates first match only
+        - Multiple lookup keys: ALL keys must match (AND logic)
+        - Duplicate keys: Updates all matching rows
         - Unmatched rows: Ignored (skipped silently)
         - New columns: Automatically added at the end
         - Empty values: Clears cell if override=True, preserves if override=False
 
     Examples:
-        # Basic update by username
+        # Basic update by single key
         update_range_by_lookup(
             ctx, uri,
             data=[
@@ -727,6 +739,16 @@ async def update_range_by_lookup(
                 {"username": "@user2", "status": "inactive"}
             ],
             on="username"
+        )
+
+        # Update by composite key (multiple columns)
+        update_range_by_lookup(
+            ctx, uri,
+            data=[
+                {"first_name": "John", "last_name": "Doe", "status": "active"},
+                {"first_name": "Jane", "last_name": "Smith", "status": "inactive"}
+            ],
+            on=["first_name", "last_name"]
         )
 
         # Update with new columns (automatically added) and override empty values
@@ -740,8 +762,29 @@ async def update_range_by_lookup(
             override=True  # Empty values will clear existing cells
         )
     """
+    # Preprocess data to handle DataFrame inputs (Polars DataFrame, string repr, etc.)
+    # This allows the tool to accept Polars DataFrames or their string representations
+    # in addition to the standard List[Dict[str, Any]] format
+    processed_data = data
+    if isinstance(data, str) or (POLARS_AVAILABLE and isinstance(data, pl.DataFrame)):
+        logger.info(f"Preprocessing DataFrame input for update_range_by_lookup")
+        # Use process_data_input to convert to (headers, rows) format
+        headers, data_rows = process_data_input(data)
+
+        # Convert back to list of dicts format expected by update_by_lookup
+        if headers and data_rows:
+            processed_data = []
+            for row in data_rows:
+                row_dict = {}
+                for i, header in enumerate(headers):
+                    row_dict[header] = row[i] if i < len(row) else ""
+                processed_data.append(row_dict)
+            logger.info(f"Converted DataFrame to {len(processed_data)} rows with columns: {headers}")
+        else:
+            raise ValueError("Failed to process DataFrame input: no headers or data rows found")
+
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_by_lookup(service, uri, data, on, override)
+    return await google_sheet.update_by_lookup(service, uri, processed_data, on, override)
 
 
 @mcp.tool
