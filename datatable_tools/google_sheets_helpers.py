@@ -717,3 +717,85 @@ def process_data_input(data: Union[list, str, Any]) -> Tuple[Optional[list[str]]
 
     # Already a 2D array (list of lists)
     return None, data
+
+
+async def parse_range_address(
+    service,
+    spreadsheet_id: str,
+    range_address: Optional[str],
+    sheet_title: str,
+    sheet_id: int
+) -> Tuple[str, str, int]:
+    """
+    Parse range_address to handle worksheet!range format.
+
+    This function handles cases where range_address includes a worksheet name
+    (e.g., "Sheet1!A1:D10") by parsing it and validating the worksheet exists.
+
+    Args:
+        service: Authenticated Google Sheets API service object
+        spreadsheet_id: The spreadsheet ID
+        range_address: Optional range in A1 notation, may include worksheet name
+                      (e.g., "A2:M1000", "Sheet1!A1:D10", "'My Sheet'!B:Z")
+        sheet_title: Default sheet title from URI (used as fallback)
+        sheet_id: Default sheet ID from URI (used as fallback)
+
+    Returns:
+        Tuple of (range_name, final_sheet_title, final_sheet_id):
+            - range_name: Full range notation for API call (e.g., "'Sheet1'!A1:D10")
+            - final_sheet_title: The sheet title to use (either parsed or default)
+            - final_sheet_id: The sheet ID to use (either parsed or default)
+
+    Examples:
+        >>> # Range with sheet name
+        >>> parse_range_address(service, "ABC123", "Sheet1!A:D", "DefaultSheet", 0)
+        ("'Sheet1'!A:D", "Sheet1", 123456)
+
+        >>> # Range without sheet name
+        >>> parse_range_address(service, "ABC123", "A:D", "DefaultSheet", 0)
+        ("'DefaultSheet'!A:D", "DefaultSheet", 0)
+    """
+    if not range_address:
+        # No range specified, use default full sheet
+        return f"'{sheet_title}'!A:ZZ", sheet_title, sheet_id
+
+    # Parse worksheet name from range_address if present (e.g., "Sheet1!A1:J6")
+    final_range = range_address
+    final_sheet_title = sheet_title
+    final_sheet_id = sheet_id
+
+    if '!' in range_address:
+        worksheet_from_range, final_range = range_address.split('!', 1)
+        worksheet_from_range = worksheet_from_range.strip("'\"")
+        logger.info(f"Parsed worksheet '{worksheet_from_range}' from range_address")
+
+        # Validate if worksheet exists and use it if found
+        try:
+            metadata = await asyncio.to_thread(
+                service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute
+            )
+            sheets = metadata.get('sheets', [])
+            found = False
+            for sheet in sheets:
+                if sheet.get('properties', {}).get('title') == worksheet_from_range:
+                    final_sheet_title = worksheet_from_range
+                    final_sheet_id = sheet.get('properties', {}).get('sheetId')
+                    found = True
+                    break
+
+            if not found:
+                logger.warning(
+                    f"Worksheet '{worksheet_from_range}' from range_address not found. "
+                    f"Falling back to worksheet from URI: '{sheet_title}'."
+                )
+        except Exception as e:
+            logger.warning(
+                f"Error validating worksheet '{worksheet_from_range}': {e}. "
+                f"Falling back to worksheet from URI: '{sheet_title}'."
+            )
+
+    # Construct full range notation
+    range_name = f"'{final_sheet_title}'!{final_range}"
+    logger.info(f"Using range: {range_name}")
+
+    return range_name, final_sheet_title, final_sheet_id

@@ -4,7 +4,7 @@ Google Sheets MCP Integration Tests
 Separated into focused test functions for better maintainability:
 
 Test Functions:
-- test_basic_operations: Tool listing, data loading, error handling, data format verification
+- test_basic_operations: Tool listing, data loading, error handling, data format verification, range address parsing
 - test_write_operations: Range updates, row/column appends
 - test_advanced_operations: New sheet creation, complex data formats
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
@@ -45,6 +45,7 @@ READ_WRITE_URI = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod
 READ_WRITE_URI2 = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqsod5NcoF9-mm4zaYutt-i95M/edit?gid=1852099269#gid=1852099269"
 READ_WRITE_URI3 = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=244346339#gid=244346339"
 READ_WRITE_URI_1D = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=509803551#gid=509803551"
+RANGE_ADDRESS_TEST_URI = "https://docs.google.com/spreadsheets/d/18iaWb8OUFdNldk03ESY6indsfrURlMsyBwqwMIRkYJY/edit?gid=1435041919#gid=1435041919"
 
 async def test_basic_operations(url, headers):
     """Test basic MCP operations: tool listing, data loading, error handling"""
@@ -153,7 +154,70 @@ async def test_basic_operations(url, headers):
                     print(f"   ❌ Failed to load data: {content.get('message', 'Unknown error')}")
             else:
                 print(f"   ❌ Failed to get valid response")
-                
+
+            # Test 4: Range address parsing with worksheet!range format
+            print(f"\n📘 Test 4: Range address parsing (worksheet!range format)")
+            print(f"   Testing that 'country-sales!A:D' correctly parses sheet name")
+            print(f"   URI: {RANGE_ADDRESS_TEST_URI}")
+
+            test_cases = [
+                {
+                    "name": "With sheet name in range_address",
+                    "range_address": "country-sales!A:D",
+                    "description": "Should parse 'country-sales' as sheet name and 'A:D' as range"
+                },
+                {
+                    "name": "Without sheet name in range_address",
+                    "range_address": "A:D",
+                    "description": "Should use sheet from URI (country-sales) and 'A:D' as range"
+                },
+                {
+                    "name": "With quoted sheet name",
+                    "range_address": "'country-sales'!A:D",
+                    "description": "Should handle quoted sheet names"
+                }
+            ]
+
+            all_passed = True
+            for i, test_case in enumerate(test_cases, 1):
+                print(f"\n   Test 4.{i}: {test_case['name']}")
+                print(f"   Description: {test_case['description']}")
+                print(f"   Range: {test_case['range_address']}")
+
+                try:
+                    range_test_res = await session.call_tool("load_data_table", {
+                        "uri": RANGE_ADDRESS_TEST_URI,
+                        "range_address": test_case['range_address']
+                    })
+
+                    if not range_test_res.isError and range_test_res.content and range_test_res.content[0].text:
+                        content = json.loads(range_test_res.content[0].text)
+                        if content.get('success'):
+                            headers = content.get('headers', [])
+                            data = content.get('data', [])
+                            print(f"   ✅ PASS: Loaded successfully")
+                            print(f"   📊 Headers: {headers}")
+                            print(f"   📊 Data rows: {len(data)}")
+                        else:
+                            print(f"   ❌ FAIL: Load failed: {content.get('message', 'Unknown error')}")
+                            all_passed = False
+                    else:
+                        error_msg = range_test_res.content[0].text if range_test_res.content else "Unknown error"
+                        print(f"   ❌ FAIL: Error occurred: {error_msg}")
+                        # Check for the specific bug we're testing for
+                        if "Unable to parse range" in error_msg and "!country-sales!" in error_msg:
+                            print(f"   ⚠️  BUG DETECTED: Sheet name was duplicated in range!")
+                        all_passed = False
+
+                except Exception as e:
+                    print(f"   ❌ FAIL: Exception occurred: {e}")
+                    all_passed = False
+
+            if all_passed:
+                print(f"\n   ✅ All range address parsing tests passed!")
+            else:
+                print(f"\n   ❌ Some range address parsing tests failed!")
+
             print(f"\n✅ Basic operations test completed!")
             return table_id
 

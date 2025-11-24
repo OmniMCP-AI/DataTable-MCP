@@ -22,7 +22,8 @@ from datatable_tools.google_sheets_helpers import (
     detect_header_row,
     column_index_to_letter,
     column_letter_to_index,
-    process_data_input
+    process_data_input,
+    parse_range_address
 )
 
 logger = logging.getLogger(__name__)
@@ -64,14 +65,10 @@ class GoogleSheetDataTable(DataTableInterface):
         sheet_title = sheet_props['title']
         sheet_id = sheet_props['sheetId']
 
-        # Construct range based on user input or default
-        if range_address:
-            # User specified a range (e.g., "A2:M1000", "2:1000", "B:Z")
-            range_name = f"'{sheet_title}'!{range_address}"
-            logger.info(f"Using user-specified range: {range_name}")
-        else:
-            # Default to full sheet
-            range_name = f"'{sheet_title}'!A:ZZ"
+        # Parse range address to handle worksheet!range format
+        range_name, sheet_title, sheet_id = await parse_range_address(
+            service, spreadsheet_id, range_address, sheet_title, sheet_id
+        )
 
         # Read data from sheet using Google API directly
         result = await asyncio.to_thread(
@@ -1085,35 +1082,19 @@ class GoogleSheetDataTable(DataTableInterface):
                 values = [[""]]
 
             # Parse worksheet name from range_address if present (e.g., "Sheet1!A1:J6")
+            # This returns the basic parsed range, we'll auto-expand it next
+            _, parsed_sheet_title, parsed_sheet_id = await parse_range_address(
+                service, spreadsheet_id, range_address, sheet_title, sheet_id
+            )
+
+            # Extract just the range part (without sheet name) for auto-expansion
             final_range = range_address
             if range_address and '!' in range_address:
-                worksheet_from_range, final_range = range_address.split('!', 1)
-                worksheet_from_range = worksheet_from_range.strip("'\"")
-                logger.info(f"Parsed worksheet '{worksheet_from_range}' from range_address")
+                _, final_range = range_address.split('!', 1)
 
-                # Validate if worksheet exists
-                try:
-                    metadata = await asyncio.to_thread(
-                        service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute
-                    )
-                    sheets = metadata.get('sheets', [])
-                    found = False
-                    for sheet in sheets:
-                        if sheet.get('properties', {}).get('title') == worksheet_from_range:
-                            sheet_title = worksheet_from_range
-                            found = True
-                            break
-
-                    if not found:
-                        logger.warning(
-                            f"Worksheet '{worksheet_from_range}' from range_address not found. "
-                            f"Falling back to worksheet from URI: '{sheet_title}'."
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Error validating worksheet '{worksheet_from_range}': {e}. "
-                        f"Falling back to worksheet from URI: '{sheet_title}'."
-                    )
+            # Update sheet_title and sheet_id with parsed values
+            sheet_title = parsed_sheet_title
+            sheet_id = parsed_sheet_id
 
             # Auto-expand range if single cell provided
             def auto_expand_range(range_addr: str, data_values: list[list]) -> str:
@@ -1678,8 +1659,8 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_title = sheet_properties['title']
 
             # Parse from_range and to_range
-            from_range_parsed = self._parse_range_address(from_range)
-            to_range_parsed = self._parse_range_address(to_range)
+            from_range_parsed = self._parse_simple_range_address(from_range)
+            to_range_parsed = self._parse_simple_range_address(to_range)
 
             # Calculate dimensions
             from_rows = from_range_parsed['end_row'] - from_range_parsed['start_row'] + 1
@@ -1826,7 +1807,7 @@ class GoogleSheetDataTable(DataTableInterface):
             logger.error(f"Error copying range with formulas in {uri}: {e}")
             raise Exception(f"Failed to copy range {from_range} to {to_range} in {uri}: {e}") from e
 
-    def _parse_range_address(self, range_address: str) -> Dict[str, Any]:
+    def _parse_simple_range_address(self, range_address: str) -> Dict[str, Any]:
         """
         Parse A1 notation range address into components.
 
@@ -1837,7 +1818,7 @@ class GoogleSheetDataTable(DataTableInterface):
             Dict with keys: start_col, start_row, end_col, end_row, start_col_idx, end_col_idx
 
         Examples:
-            >>> _parse_range_address("B5:Z5")
+            >>> _parse_simple_range_address("B5:Z5")
             {'start_col': 'B', 'start_row': 5, 'end_col': 'Z', 'end_row': 5, 'start_col_idx': 1, 'end_col_idx': 25}
         """
         # Remove sheet name if present
