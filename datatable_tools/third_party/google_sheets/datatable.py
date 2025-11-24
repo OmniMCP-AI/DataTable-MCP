@@ -76,6 +76,18 @@ class GoogleSheetDataTable(DataTableInterface):
                 spreadsheetId=spreadsheet_id,
                 range=range_name,
                 valueRenderOption='UNFORMATTED_VALUE'  # Get raw values (numbers as numbers, not strings)
+                # UNFORMATTED_VALUE (currently used in your code)
+                # Returns raw values without formatting
+                # Numbers are returned as numbers, not strings
+                # Formulas are calculated and return their computed values
+
+                # FORMATTED_VALUE
+                # Returns values calculated and formatted according to the cell's formatting
+
+                # FORMULA
+                # Returns the actual formula as a string instead of the calculated value
+                # Example: A cell containing =SUM(A1:A10) returns "=SUM(A1:A10)" instead of the calculated result
+
             ).execute
         )
 
