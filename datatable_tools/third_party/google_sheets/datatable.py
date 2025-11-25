@@ -14,7 +14,7 @@ import asyncio
 import re
 
 from datatable_tools.interfaces.datatable import DataTableInterface
-from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse
+from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, ValueRenderOption
 from datatable_tools.google_sheets_helpers import (
     parse_google_sheets_uri,
     get_sheet_by_gid,
@@ -75,19 +75,7 @@ class GoogleSheetDataTable(DataTableInterface):
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name,
-                valueRenderOption='UNFORMATTED_VALUE'  # Get raw values (numbers as numbers, not strings)
-                # UNFORMATTED_VALUE (currently used in your code)
-                # Returns raw values without formatting
-                # Numbers are returned as numbers, not strings
-                # Formulas are calculated and return their computed values
-
-                # FORMATTED_VALUE
-                # Returns values calculated and formatted according to the cell's formatting
-
-                # FORMULA
-                # Returns the actual formula as a string instead of the calculated value
-                # Example: A cell containing =SUM(A1:A10) returns "=SUM(A1:A10)" instead of the calculated result
-
+                valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
             ).execute
         )
 
@@ -197,7 +185,7 @@ class GoogleSheetDataTable(DataTableInterface):
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name,
-                valueRenderOption='FORMULA'  # KEY DIFFERENCE: Get formulas instead of values
+                valueRenderOption=ValueRenderOption.FORMULA.value
             ).execute
         )
 
@@ -251,7 +239,7 @@ class GoogleSheetDataTable(DataTableInterface):
             "worksheet_url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}",
             "row_count": row_count,
             "column_count": col_count,
-            "value_render_option": "FORMULA"  # Indicate that this contains formulas
+            "value_render_option": ValueRenderOption.FORMULA.value
         }
 
         return TableResponse(
@@ -306,7 +294,7 @@ class GoogleSheetDataTable(DataTableInterface):
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name,
-                valueRenderOption='FORMULA'  # Get formulas instead of values
+                valueRenderOption=ValueRenderOption.FORMULA.value
             ).execute
         )
 
@@ -358,7 +346,7 @@ class GoogleSheetDataTable(DataTableInterface):
             "worksheet_url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}",
             "preview_limit": limit,
             "is_preview": True,
-            "value_render_option": "FORMULA",
+            "value_render_option": ValueRenderOption.FORMULA.value,
             "row_count": len(data),
             "column_count": len(headers)
         }
@@ -670,7 +658,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
-                    valueRenderOption='UNFORMATTED_VALUE'
+                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
                 ).execute
             )
 
@@ -808,7 +796,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
-                    valueRenderOption='UNFORMATTED_VALUE'
+                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
                 ).execute
             )
 
@@ -1023,7 +1011,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
-                    valueRenderOption='UNFORMATTED_VALUE'
+                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
                 ).execute
             )
             original_data = result.get('values', [])
@@ -1751,7 +1739,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=full_from_range,
-                    valueRenderOption='FORMULA'  # Get formulas instead of values
+                    valueRenderOption=ValueRenderOption.FORMULA.value
                 ).execute
             )
 

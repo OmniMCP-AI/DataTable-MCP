@@ -7,6 +7,35 @@ Also defines shared type aliases for data input formats.
 
 from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel
+from enum import Enum
+
+
+# ============================================================================
+# Enums for Google Sheets API Options
+# ============================================================================
+
+
+class ValueRenderOption(str, Enum):
+    """
+    Determines how values should be rendered in the Google Sheets API output.
+
+    Enum values:
+    - FORMATTED_VALUE: Values will be calculated & formatted according to the cell's
+      formatting. Based on the spreadsheet's locale, not the requesting user's locale.
+      Example: If A1 is 1.23 and A2 is =A1 and formatted as currency, then A2 returns "$1.23".
+
+    - UNFORMATTED_VALUE: Values will be calculated, but not formatted in the reply.
+      Example: If A1 is 1.23 and A2 is =A1 and formatted as currency, then A2 returns 1.23.
+
+    - FORMULA: Values will not be calculated. The reply will include the formulas.
+      Example: If A1 is 1.23 and A2 is =A1 and formatted as currency, then A2 returns "=A1".
+
+    Note: Sheets treats date and time values as decimal values. This lets you perform
+    arithmetic on them in formulas.
+    """
+    FORMATTED_VALUE = "FORMATTED_VALUE"
+    UNFORMATTED_VALUE = "UNFORMATTED_VALUE"
+    FORMULA = "FORMULA"
 
 
 # ============================================================================
