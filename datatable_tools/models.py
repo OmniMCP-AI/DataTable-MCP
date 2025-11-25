@@ -38,6 +38,26 @@ class ValueRenderOption(str, Enum):
     FORMULA = "FORMULA"
 
 
+class ValueInputOption(str, Enum):
+    """
+    Determines how input data should be interpreted when writing to Google Sheets.
+
+    Enum values:
+    - RAW: Values are stored as literal text, no parsing. Use for preserving exact text
+      (e.g., '000123', '=not a formula').
+      Example: "=SUM(A1:A10)" is stored as the text "=SUM(A1:A10)", not as a formula.
+
+    - USER_ENTERED: Values are parsed as if typed by user. Formulas (=IMAGE, =SUM),
+      numbers, dates are interpreted. Use for inserting formulas or smart data entry.
+      Example: "=SUM(A1:A10)" is stored as a formula and will calculate the sum.
+
+    Note: USER_ENTERED is the recommended default for most write operations as it
+    provides the most natural behavior (numbers stay as numbers, formulas work, etc.).
+    """
+    RAW = "RAW"
+    USER_ENTERED = "USER_ENTERED"
+
+
 # ============================================================================
 # Type Aliases for Data Input Formats
 # ============================================================================

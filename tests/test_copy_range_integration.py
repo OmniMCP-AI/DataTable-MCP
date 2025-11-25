@@ -91,8 +91,7 @@ async def test_copy_row_with_formulas(service, uri):
         service,
         uri=uri,
         from_range="A2:F2",
-        to_range="A5:F5",
-        value_input_option="USER_ENTERED"
+        to_range="A5:F5"
     )
 
     if result.success:
@@ -137,8 +136,7 @@ async def test_copy_column_with_formulas(service, uri):
         service,
         uri=uri,
         from_range="D1:D4",
-        to_range="G1:G4",
-        value_input_option="USER_ENTERED"
+        to_range="G1:G4"
     )
 
     if result.success:
@@ -176,8 +174,7 @@ async def test_dimension_mismatch_error(service, uri):
         service,
         uri=uri,
         from_range="A2:F2",  # 1 row x 6 cols
-        to_range="A6:C6",    # 1 row x 3 cols (mismatch!)
-        value_input_option="USER_ENTERED"
+        to_range="A6:C6"    # 1 row x 3 cols (mismatch!)
     )
 
     if not result.success:
@@ -202,8 +199,7 @@ async def test_auto_expand_grid(service, uri):
         service,
         uri=uri,
         from_range="A2:F2",
-        to_range="A100:F100",
-        value_input_option="USER_ENTERED"
+        to_range="A100:F100"
     )
 
     if result.success:

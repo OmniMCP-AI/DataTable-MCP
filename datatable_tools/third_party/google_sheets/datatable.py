@@ -14,7 +14,7 @@ import asyncio
 import re
 
 from datatable_tools.interfaces.datatable import DataTableInterface
-from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, ValueRenderOption
+from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, ValueRenderOption, ValueInputOption
 from datatable_tools.google_sheets_helpers import (
     parse_google_sheets_uri,
     get_sheet_by_gid,
@@ -731,7 +731,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().update(
                     spreadsheetId=spreadsheet_id,
                     range=full_range,
-                    valueInputOption='RAW',
+                    valueInputOption=ValueInputOption.USER_ENTERED.value,
                     body=body
                 ).execute
             )
@@ -942,7 +942,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().update(
                     spreadsheetId=spreadsheet_id,
                     range=full_range,
-                    valueInputOption='RAW',
+                    valueInputOption=ValueInputOption.USER_ENTERED.value,
                     body=body
                 ).execute
             )

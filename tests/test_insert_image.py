@@ -131,14 +131,13 @@ async def test_insert_image_formula(url, headers):
             print(f"   Data: {data_to_write}")
 
             # Step 3: Write the formula to the cell
-            # IMPORTANT: Use value_input_option='USER_ENTERED' to parse the formula
+            # Note: Formulas are automatically parsed with USER_ENTERED mode (default)
             write_res = await session.call_tool(
                 "update_range",
                 {
                     "uri": TEST_SPREADSHEET_URI,
                     "data": data_to_write,
-                    "range_address": TEST_CELL,
-                    "value_input_option": "USER_ENTERED"
+                    "range_address": TEST_CELL
                 }
             )
 

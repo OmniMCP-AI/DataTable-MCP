@@ -475,14 +475,6 @@ async def update_range(
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
-    ),
-    value_input_option: str = Field(
-        default='RAW',
-        description=(
-            "How input data should be interpreted:\n"
-            "- 'RAW' (default): Values stored as literal text, no parsing. Use for preserving exact text (e.g., '000123', '=not a formula').\n"
-            "- 'USER_ENTERED': Parses as if typed by user. Formulas (=IMAGE, =SUM), numbers, dates are interpreted. Use for inserting formulas or smart data entry."
-        )
     )
 ) -> UpdateResponse:
     """
@@ -491,6 +483,11 @@ async def update_range(
     Automatically detects if the original URI data has headers and handles updates accordingly:
     - If original data has headers and new data has headers: skips header and updates only data rows
     - If original data has no headers: updates all data including first row
+
+    Values are automatically parsed as if typed by user (USER_ENTERED mode):
+    - Formulas (=IMAGE, =SUM, etc.) are interpreted as formulas
+    - Numbers are stored as numbers (not text)
+    - Dates are recognized and formatted appropriately
 
     <description>Overwrites cell values in a specified range with provided 2D array data or list of dicts. Replaces existing content completely - does not merge or append. Auto-expands range when data dimensions exceed specified range.</description>
 
@@ -506,7 +503,6 @@ async def update_range(
               CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
-        value_input_option: 'RAW' (default, literal text) or 'USER_ENTERED' (parse formulas/numbers/dates)
 
     Returns:
         UpdateResponse containing:
@@ -530,12 +526,12 @@ async def update_range(
         # Write table from A1 with auto-expansion
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
 
-        # Insert image formula (requires USER_ENTERED mode)
+        # Insert image formula (formulas are automatically interpreted)
         update_range(ctx, uri, data=[['=IMAGE("https://example.com/image.jpg", 1)']],
-                    range_address="A1", value_input_option="USER_ENTERED")
+                    range_address="A1")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_range(service, uri, data, range_address, value_input_option)
+    return await google_sheet.update_range(service, uri, data, range_address)
 
 
 @mcp.tool
@@ -917,17 +913,15 @@ async def copy_range_with_formulas(
     ),
     to_range: str = Field(
         description="Destination range in A1 notation (e.g., 'B6:Z6' for row 6, 'I1:I100' for column I). MUST HAVE SAME DIMENSIONS AS from_range."
-    ),
-    value_input_option: str = Field(
-        default='USER_ENTERED',
-        description="How to interpret data: 'USER_ENTERED' (default, parses formulas) or 'RAW' (literal text)"
     )
 ) -> UpdateResponse:
     """
     Copy a range with formulas, automatically adapting cell references based on position change.
 
     This tool copies data from one range to another, intelligently adapting formulas
-    based on row and column offsets. It respects absolute ($) and relative cell references:
+    based on row and column offsets. It respects absolute ($) and relative cell references.
+
+    Formulas are automatically parsed and interpreted (USER_ENTERED mode).
 
     <description>Copies a range with formulas from one location to another, automatically adapting
     cell references based on the position change. Respects absolute ($) references. Ideal for
@@ -956,7 +950,6 @@ async def copy_range_with_formulas(
         uri: Google Sheets URI
         from_range: Source range (e.g., "B5:Z5" for row, "L1:L100" for column)
         to_range: Destination range (must match source dimensions)
-        value_input_option: 'USER_ENTERED' (parse formulas, default) or 'RAW' (literal text)
 
     Returns:
         UpdateResponse containing:
@@ -1013,4 +1006,4 @@ async def copy_range_with_formulas(
         # Result C5: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A5,'Sheet1'!$A:$A,C$1)
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.copy_range_with_formulas(service, uri, from_range, to_range, value_input_option)
+    return await google_sheet.copy_range_with_formulas(service, uri, from_range, to_range)
