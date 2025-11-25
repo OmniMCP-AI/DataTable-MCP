@@ -75,7 +75,7 @@ class GoogleSheetDataTable(DataTableInterface):
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name,
-                valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+                valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
             ).execute
         )
 
@@ -658,7 +658,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
-                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+                    valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
                 ).execute
             )
 
@@ -796,7 +796,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
-                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+                    valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
                 ).execute
             )
 
@@ -1011,7 +1011,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
-                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+                    valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
                 ).execute
             )
             original_data = result.get('values', [])

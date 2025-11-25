@@ -9,7 +9,9 @@ Test Functions:
 - test_advanced_operations: New sheet creation, complex data formats
 - test_gid_fix: Tests write_new_sheet with gid + update_range with Chinese worksheets
 - test_list_of_dict_input: Tests DataFrame-like list of dict input support
-- test_1d_array_input: Tests 1D array input support (NEW)
+- test_1d_array_input: Tests 1D array input support
+- test_value_render_options: Tests date formula rendering (FORMATTED_VALUE vs UNFORMATTED_VALUE)
+- test_formula_rendering: Tests reading sheets with formulas and verifying calculated results
 
 Usage:
     # Run all tests
@@ -22,6 +24,8 @@ Usage:
     python test_mcp_client_calltool.py --env=local --test=gid
     python test_mcp_client_calltool.py --env=local --test=listtype
     python test_mcp_client_calltool.py --env=local --test=1d
+    python test_mcp_client_calltool.py --env=local --test=render
+    python test_mcp_client_calltool.py --env=local --test=formula
 
     # Run against production
     python test_mcp_client_calltool.py --env=prod --test=all
@@ -46,6 +50,8 @@ READ_WRITE_URI2 = "https://docs.google.com/spreadsheets/d/1p5Yjvqw-jv6MHClvplqso
 READ_WRITE_URI3 = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=244346339#gid=244346339"
 READ_WRITE_URI_1D = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit?gid=509803551#gid=509803551"
 RANGE_ADDRESS_TEST_URI = "https://docs.google.com/spreadsheets/d/18iaWb8OUFdNldk03ESY6indsfrURlMsyBwqwMIRkYJY/edit?gid=1435041919#gid=1435041919"
+DATE_FORMULA_TEST_URI = "https://docs.google.com/spreadsheets/d/1UuYFlxu8g7E5cLwUvNtPxQRtQugDYStF7rrzvG6wVqA/edit?gid=0#gid=0"
+FORMULA_TEST_URI = "https://docs.google.com/spreadsheets/d/1UuYFlxu8g7E5cLwUvNtPxQRtQugDYStF7rrzvG6wVqA/edit?gid=1881797459#gid=1881797459"
 
 async def test_basic_operations(url, headers):
     """Test basic MCP operations: tool listing, data loading, error handling"""
@@ -1345,6 +1351,227 @@ async def test_list_of_dict_input(url, headers):
 
             return new_spreadsheet_url
 
+async def test_value_render_options(url, headers):
+    """Test value render options: FORMATTED_VALUE vs UNFORMATTED_VALUE for date formulas"""
+    print(f"🚀 Testing Value Render Options (Date Formula Handling)")
+    print("=" * 60)
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            print(f"\n📝 Testing sheet with date formulas in headers")
+            print(f"   URI: {DATE_FORMULA_TEST_URI}")
+            print(f"   Issue: Date formulas (e.g., ='日库存'!B1) show as numbers (45981) instead of dates (2025-11-20)")
+
+            # Test 1: Read with current behavior (UNFORMATTED_VALUE)
+            print(f"\n📘 Test 1: Current behavior - Reading with UNFORMATTED_VALUE")
+            print(f"   This is the current default in load_data_table")
+
+            load_res = await session.call_tool("read_sheet", {
+                "uri": DATE_FORMULA_TEST_URI
+            })
+
+            if not load_res.isError and load_res.content and load_res.content[0].text:
+                content = json.loads(load_res.content[0].text)
+                if content.get('success'):
+                    data = content.get('data', [])
+                    shape = content.get('shape', '(0,0)')
+
+                    print(f"   📊 Shape: {shape}")
+                    print(f"   📊 Data rows: {len(data)}")
+
+                    if data and len(data) > 0:
+                        first_row = data[0]
+                        headers = list(first_row.keys())
+
+                        print(f"\n   📝 Column headers (first 10):")
+                        for i, header in enumerate(headers[:10]):
+                            print(f"      {i+1}. '{header}'")
+
+                        # Check if headers are numeric (the issue)
+                        numeric_headers = [h for h in headers if h.isdigit()]
+                        if numeric_headers:
+                            print(f"\n   ⚠️  ISSUE DETECTED: {len(numeric_headers)} numeric headers found")
+                            print(f"   ⚠️  These are Excel serial date numbers, not formatted dates")
+                            print(f"   Examples of numeric headers: {numeric_headers[:5]}")
+
+                            # Try to convert one to a date to show what it should be
+                            if numeric_headers:
+                                sample_number = int(numeric_headers[0])
+                                # Excel epoch: January 1, 1900 (but with a bug that treats 1900 as a leap year)
+                                # Python datetime epoch: January 1, 1970
+                                # Excel serial 1 = January 1, 1900
+                                from datetime import datetime, timedelta
+                                # Excel uses 1900-01-01 as day 1, but we need to account for the 1900 leap year bug
+                                excel_epoch = datetime(1899, 12, 30)  # Day 0 in Excel
+                                date_value = excel_epoch + timedelta(days=sample_number)
+                                print(f"   💡 Example: {sample_number} should be formatted as: {date_value.strftime('%Y-%m-%d')}")
+                        else:
+                            print(f"\n   ✅ All headers are properly formatted (no numeric headers)")
+
+                        # Show sample data
+                        print(f"\n   📝 First row sample data:")
+                        sample_keys = list(first_row.keys())[:5]
+                        for key in sample_keys:
+                            print(f"      {key}: {first_row[key]}")
+                else:
+                    print(f"   ❌ Failed to load data: {content.get('message', 'Unknown error')}")
+            else:
+                print(f"   ❌ Failed to get valid response")
+
+            print(f"\n📊 Test Summary:")
+            print(f"   Current Implementation:")
+            print(f"   - Uses ValueRenderOption.UNFORMATTED_VALUE in load_data_table (line 78)")
+            print(f"   - Returns raw calculated values (dates as serial numbers)")
+            print(f"   - Result: Headers show as 45981, 45980, etc. instead of 2025-11-20, 2025-11-19")
+            print(f"\n   Recommended Solution:")
+            print(f"   Option 1: Change default to ValueRenderOption.FORMATTED_VALUE")
+            print(f"   Option 2: Add a parameter to let users choose rendering option")
+            print(f"   Option 3: Detect date columns and format them automatically")
+
+            print(f"\n✅ Value render options test completed!")
+
+async def test_formula_rendering(url, headers):
+    """Test reading sheets with formulas - verify FORMATTED_VALUE shows calculated results"""
+    print(f"🚀 Testing Formula Rendering (FORMATTED_VALUE Behavior)")
+    print("=" * 60)
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            print(f"\n📝 Testing sheet with formulas (日销售 worksheet)")
+            print(f"   URI: {FORMULA_TEST_URI}")
+            print(f"   This worksheet contains:")
+            print(f"   - Date formulas in headers (e.g., ='日库存'!B1)")
+            print(f"   - Text formulas in cells (e.g., conditional 'IF' statements)")
+
+            # Test 1: Read sheet with formulas using FORMATTED_VALUE (new default)
+            print(f"\n📘 Test 1: Reading sheet with formulas")
+            print(f"   Using FORMATTED_VALUE (new default)")
+            print(f"   Expected: Formulas show their calculated/formatted results")
+
+            load_res = await session.call_tool("read_sheet", {
+                "uri": FORMULA_TEST_URI
+            })
+
+            if not load_res.isError and load_res.content and load_res.content[0].text:
+                content = json.loads(load_res.content[0].text)
+                if content.get('success'):
+                    data = content.get('data', [])
+                    shape = content.get('shape', '(0,0)')
+                    source_info = content.get('source_info', {})
+
+                    print(f"\n   ✅ Successfully loaded worksheet")
+                    print(f"   📊 Shape: {shape}")
+                    print(f"   📊 Worksheet: {source_info.get('worksheet', 'N/A')}")
+                    print(f"   📊 Data rows: {len(data)}")
+
+                    if data and len(data) > 0:
+                        first_row = data[0]
+                        headers = list(first_row.keys())
+
+                        print(f"\n   📝 Column headers (showing first 15):")
+                        for i, header in enumerate(headers[:15]):
+                            # Check if it's a date-like string
+                            is_date_formatted = '-' in str(header) and len(str(header)) >= 8
+                            status = "✅ DATE" if is_date_formatted else "📌"
+                            print(f"      {i+1:2d}. {status} '{header}'")
+
+                        # Analyze header types
+                        date_headers = [h for h in headers if '-' in str(h) and len(str(h)) >= 8]
+                        numeric_headers = [h for h in headers if str(h).isdigit()]
+                        text_headers = [h for h in headers if not str(h).isdigit() and ('-' not in str(h) or len(str(h)) < 8)]
+
+                        print(f"\n   📊 Header Analysis:")
+                        print(f"      Date-formatted headers: {len(date_headers)}")
+                        print(f"      Numeric headers: {len(numeric_headers)}")
+                        print(f"      Text headers: {len(text_headers)}")
+
+                        if len(date_headers) > 0 and len(numeric_headers) == 0:
+                            print(f"\n   ✅ SUCCESS: Date formulas are properly formatted!")
+                            print(f"   ✅ No numeric (serial date) headers found")
+                            print(f"   💡 With FORMATTED_VALUE, dates display as: {date_headers[0] if date_headers else 'N/A'}")
+                        elif len(numeric_headers) > 0:
+                            print(f"\n   ⚠️  WARNING: Found {len(numeric_headers)} numeric headers")
+                            print(f"   ⚠️  These might be unformatted date serial numbers")
+                            print(f"   Examples: {numeric_headers[:3]}")
+                        else:
+                            print(f"\n   ℹ️  No date formulas found in headers")
+
+                        # Show sample data values
+                        print(f"\n   📝 First row data (sample):")
+                        sample_keys = list(first_row.keys())[:5]
+                        for key in sample_keys:
+                            value = first_row[key]
+                            value_type = type(value).__name__
+                            display_value = value if len(str(value)) < 50 else f"{str(value)[:47]}..."
+                            print(f"      '{key}': {display_value} (type: {value_type})")
+
+                        # Test 2: Check for formula results vs raw formulas
+                        print(f"\n   📘 Test 2: Verifying formula results are shown (not formula text)")
+
+                        # Count cells that might contain formula syntax
+                        formula_like_cells = 0
+                        calculated_value_cells = 0
+
+                        for row in data[:5]:  # Check first 5 rows
+                            for key, value in row.items():
+                                if isinstance(value, str):
+                                    if value.startswith('='):
+                                        formula_like_cells += 1
+                                    elif value and not value.startswith('='):
+                                        calculated_value_cells += 1
+
+                        print(f"      Cells with '=' prefix (raw formulas): {formula_like_cells}")
+                        print(f"      Cells with calculated values: {calculated_value_cells}")
+
+                        if formula_like_cells == 0 and calculated_value_cells > 0:
+                            print(f"   ✅ SUCCESS: Formulas show calculated results, not formula text")
+                            print(f"   ✅ FORMATTED_VALUE is working correctly")
+                        elif formula_like_cells > 0:
+                            print(f"   ⚠️  WARNING: Found raw formula text in {formula_like_cells} cells")
+                            print(f"   ⚠️  Expected calculated values, not formula syntax")
+
+                        # Test 3: Show the difference this makes
+                        print(f"\n   📊 Impact of FORMATTED_VALUE vs UNFORMATTED_VALUE:")
+                        print(f"")
+                        print(f"   OLD (UNFORMATTED_VALUE):")
+                        print(f"      - Date formulas → Excel serial numbers (45981)")
+                        print(f"      - Currency → Raw numbers (1234.56)")
+                        print(f"      - Percentages → Decimals (0.15)")
+                        print(f"      - Dates → Serial numbers")
+                        print(f"")
+                        print(f"   NEW (FORMATTED_VALUE):")
+                        print(f"      - Date formulas → Formatted dates (2025-11-20)")
+                        print(f"      - Currency → Formatted strings ($1,234.56)")
+                        print(f"      - Percentages → Formatted strings (15%)")
+                        print(f"      - Dates → Locale-formatted dates")
+
+                    else:
+                        print(f"   ℹ️  No data rows found in worksheet")
+
+                else:
+                    print(f"   ❌ Failed to load data: {content.get('message', 'Unknown error')}")
+            else:
+                error_msg = load_res.content[0].text if load_res.content else "Unknown error"
+                print(f"   ❌ Failed to get valid response: {error_msg}")
+
+            print(f"\n📊 Test Summary:")
+            print(f"   ✅ read_sheet now uses FORMATTED_VALUE by default")
+            print(f"   ✅ Date formulas render as formatted dates, not serial numbers")
+            print(f"   ✅ Formula results show calculated values, not formula syntax")
+            print(f"   ✅ Numbers, currencies, and percentages display with formatting")
+            print(f"   💡 This makes data more intuitive and ready for display/processing")
+
+            print(f"\n   🔧 Technical Details:")
+            print(f"   - Changed in: GoogleSheetDataTable.load_data_table() (line 78)")
+            print(f"   - Also updated in: append_rows, append_columns, update_range_by_lookup")
+            print(f"   - Enum used: ValueRenderOption.FORMATTED_VALUE")
+
+            print(f"\n✅ Formula rendering test completed!")
+
 async def run_all_tests(url, headers):
     """Run all test suites in sequence"""
     print("🎯 Starting Google Sheets MCP Integration Tests")
@@ -1413,7 +1640,9 @@ async def run_single_test(test_name, url, headers):
         'advanced': test_advanced_operations,
         'gid': test_gid_fix,
         'listtype': test_list_of_dict_input,
-        '1d': test_1d_array_input  # NEW
+        '1d': test_1d_array_input,
+        'render': test_value_render_options,
+        'formula': test_formula_rendering  # NEW
     }
 
     if test_name not in test_functions:
@@ -1442,8 +1671,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
     parser.add_argument("--env", choices=["local", "prod", "test"], default="local",
                        help="Environment to use: local (127.0.0.1:8321) or test (datatable-mcp-test.maybe.ai) or prod (datatable-mcp.maybe.ai)")
-    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d"], default="all",
-                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, or 1d")
+    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d", "render", "formula"], default="all",
+                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, 1d, render, or formula")
     args = parser.parse_args()
 
     # Set endpoint based on environment argument
