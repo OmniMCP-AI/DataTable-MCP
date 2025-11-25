@@ -12,7 +12,8 @@
     "Environment variables are always stored in `.env`.",
     "All code must follow PEP8 style.",
     "put the test case in  ./tests/ folder",
-    "after debug is finished, clean up the debug purpose py file"
+    "after debug is finished, clean up the debug purpose py file",
+    "using @tests/test_mcp_client_calltool.py  same pattern to write new test "
   ]
 }
 

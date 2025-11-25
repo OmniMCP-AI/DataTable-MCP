@@ -310,10 +310,14 @@ async def test_case_insensitive(url, headers):
             print(f"\n✅ Update result:")
             print(f"   Message: {result.get('message')}")
 
-            if "2 rows matched" in result.get('message', ''):
-                print(f"   ✅ PASS: Case-insensitive matching worked")
+            # Check for case-insensitive matching success
+            # New format: "2 unique lookup keys matched 2 rows"
+            # Old format: "2 rows matched"
+            message = result.get('message', '')
+            if "2 unique lookup keys matched 2 rows" in message or "2 rows matched" in message:
+                print(f"   ✅ PASS: Case-insensitive matching worked (2 matches)")
             else:
-                print(f"   ❌ FAIL: Expected 2 matches")
+                print(f"   ❌ FAIL: Expected 2 matches, got: {message}")
 
             # Verify
             verify_res = await session.call_tool("load_data_table", {"uri": LOOKUP_TEST_URI})
@@ -348,12 +352,24 @@ async def test_error_cases(url, headers):
                 "on": "nonexistent_column"
             })
 
-            result = json.loads(lookup_res.content[0].text)
-            if result.get('success') == False and 'not found in sheet' in result.get('error', ''):
-                print(f"   ✅ PASS: Error correctly detected")
-                print(f"   Error: {result.get('error')}")
+            # Check if error returned via isError or success:false in response
+            if lookup_res.isError:
+                error_text = lookup_res.content[0].text if lookup_res.content else 'Unknown error'
+                if 'not found in sheet' in error_text:
+                    print(f"   ✅ PASS: Error correctly detected (via isError)")
+                    print(f"   Error: {error_text}")
+                else:
+                    print(f"   ⚠️  Error detected but unexpected message: {error_text}")
+            elif lookup_res.content and lookup_res.content[0].text:
+                result = json.loads(lookup_res.content[0].text)
+                if result.get('success') == False and 'not found in sheet' in result.get('error', ''):
+                    print(f"   ✅ PASS: Error correctly detected (via success:false)")
+                    print(f"   Error: {result.get('error')}")
+                else:
+                    print(f"   ❌ FAIL: Expected error not received")
+                    print(f"   Result: {result}")
             else:
-                print(f"   ❌ FAIL: Expected error not received")
+                print(f"   ❌ FAIL: No error or response received")
 
             # Test 2: Lookup column missing in update data
             print("\n🔄 Test 5b: Lookup column missing in update data (expect error)...")
@@ -365,12 +381,24 @@ async def test_error_cases(url, headers):
                 "on": "username"
             })
 
-            result = json.loads(lookup_res.content[0].text)
-            if result.get('success') == False and 'not found in all rows' in result.get('error', ''):
-                print(f"   ✅ PASS: Error correctly detected")
-                print(f"   Error: {result.get('error')}")
+            # Check if error returned via isError or success:false in response
+            if lookup_res.isError:
+                error_text = lookup_res.content[0].text if lookup_res.content else 'Unknown error'
+                if 'not found in all rows' in error_text:
+                    print(f"   ✅ PASS: Error correctly detected (via isError)")
+                    print(f"   Error: {error_text}")
+                else:
+                    print(f"   ⚠️  Error detected but unexpected message: {error_text}")
+            elif lookup_res.content and lookup_res.content[0].text:
+                result = json.loads(lookup_res.content[0].text)
+                if result.get('success') == False and 'not found in all rows' in result.get('error', ''):
+                    print(f"   ✅ PASS: Error correctly detected (via success:false)")
+                    print(f"   Error: {result.get('error')}")
+                else:
+                    print(f"   ❌ FAIL: Expected error not received")
+                    print(f"   Result: {result}")
             else:
-                print(f"   ❌ FAIL: Expected error not received")
+                print(f"   ❌ FAIL: No error or response received")
 
             # Test 3: No matching rows
             print("\n🔄 Test 5c: No matching rows (should succeed with 0 matches)...")

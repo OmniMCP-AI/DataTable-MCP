@@ -42,7 +42,8 @@ class GoogleSheetDataTable(DataTableInterface):
         service,  # Authenticated Google Sheets service
         uri: str,
         range_address: Optional[str] = None,
-        auto_detect_header_row: bool = True
+        auto_detect_header_row: bool = True,
+        value_render_option: str = 'FORMATTED_VALUE'
     ) -> Dict[str, Any]:
         """
         Load a table from Google Sheets.
@@ -54,11 +55,15 @@ class GoogleSheetDataTable(DataTableInterface):
             uri: Google Sheets URI
             range_address: Optional range in A1 notation (e.g., "A2:M1000", "2:1000", "B:Z")
             auto_detect_header_row: Automatically detect header row by analyzing first 5 rows (default: True)
+            value_render_option: How values should be represented in the output:
+                - 'FORMATTED_VALUE': Values formatted as they appear in the UI (default)
+                - 'UNFORMATTED_VALUE': Values with no formatting applied
+                - 'FORMULA': Returns formulas for cells with formulas, values for others
         """
         # Parse URI to extract spreadsheet_id and gid
         spreadsheet_id, gid = parse_google_sheets_uri(uri)
 
-        logger.info(f"Loading table from Google Sheets: {spreadsheet_id}, gid={gid}")
+        logger.info(f"Loading table from Google Sheets: {spreadsheet_id}, gid={gid}, render_option={value_render_option}")
 
         # Get sheet properties by gid (or first sheet if no gid)
         sheet_props = await get_sheet_by_gid(service, spreadsheet_id, gid)
@@ -75,7 +80,7 @@ class GoogleSheetDataTable(DataTableInterface):
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name,
-                valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
+                valueRenderOption=value_render_option
             ).execute
         )
 
@@ -1415,9 +1420,9 @@ class GoogleSheetDataTable(DataTableInterface):
                 if not all(key in row for row in data):
                     raise ValueError(f"Lookup column '{key}' not found in all rows of update data")
 
-            # Load existing sheet data
-            logger.info(f"Loading existing sheet data from {uri}")
-            load_response = await self.load_data_table(service, uri)
+            # Load existing sheet data with FORMULA render option to preserve formulas in headers
+            logger.info(f"Loading existing sheet data from {uri} with FORMULA render option")
+            load_response = await self.load_data_table(service, uri, value_render_option='FORMULA')
 
             if not load_response.success:
                 raise Exception(f"Failed to load sheet for update by lookup: {load_response.error}")
@@ -1578,6 +1583,7 @@ class GoogleSheetDataTable(DataTableInterface):
             matched_rows = 0
             unmatched_count = 0
             updated_cells = 0
+            unmatched_rows = []  # Collect unmatched rows to append later
 
             for update_row in data:
                 # Create composite lookup tuple from the update row
@@ -1585,6 +1591,8 @@ class GoogleSheetDataTable(DataTableInterface):
 
                 if lookup_tuple not in lookup_index:
                     unmatched_count += 1
+                    # Collect unmatched row for appending
+                    unmatched_rows.append(update_row)
                     continue
 
                 # Get all row indices that match this composite key
@@ -1620,12 +1628,21 @@ class GoogleSheetDataTable(DataTableInterface):
             if matched_count == 0:
                 logger.warning("No matching rows found")
 
-            # Prepare data for writing back to sheet (headers + data)
-            write_data = [final_headers] + result_data
+            # Write updated data rows back to sheet (starting from A2 to preserve header formulas)
+            # Note: We only write data rows, not headers, to avoid overwriting formula headers
+            range_address = "A2"
+            response = await self.update_range(service, uri, result_data, range_address, value_input_option='USER_ENTERED')
 
-            # Write back to sheet starting from A1
-            range_address = "A1"
-            response = await self.update_range(service, uri, write_data, range_address)
+            # Append unmatched rows as new data if any
+            appended_count = 0
+            if unmatched_rows:
+                logger.info(f"Appending {len(unmatched_rows)} unmatched rows as new data")
+                append_response = await self.append_rows(service, uri, unmatched_rows)
+                if append_response.success:
+                    appended_count = len(unmatched_rows)
+                    logger.info(f"Successfully appended {appended_count} unmatched rows")
+                else:
+                    logger.warning(f"Failed to append unmatched rows: {append_response.error}")
 
             # Enhance response message with lookup statistics
             if response.success:
@@ -1633,6 +1650,15 @@ class GoogleSheetDataTable(DataTableInterface):
 
                 # Format lookup keys display
                 keys_display = str(lookup_keys) if len(lookup_keys) > 1 else lookup_keys[0]
+
+                # Build message with appended rows info if applicable
+                message_parts = [
+                    f"Successfully updated by lookup on {keys_display}: "
+                    f"{matched_count} unique lookup keys matched {matched_rows} rows, "
+                    f"{unmatched_count} unmatched, {updated_cells} cells updated"
+                ]
+                if appended_count > 0:
+                    message_parts.append(f", {appended_count} new rows appended")
 
                 # Create new UpdateResponse with enhanced message
                 return UpdateResponse(
@@ -1644,11 +1670,7 @@ class GoogleSheetDataTable(DataTableInterface):
                     updated_cells=response.updated_cells,
                     shape=response.shape,
                     error=None,
-                    message=(
-                        f"Successfully updated by lookup on {keys_display}: "
-                        f"{matched_count} unique lookup keys matched {matched_rows} rows, "
-                        f"{unmatched_count} unmatched, {updated_cells} cells updated"
-                    )
+                    message="".join(message_parts)
                 )
 
             return response
