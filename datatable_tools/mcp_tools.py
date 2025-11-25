@@ -909,47 +909,65 @@ async def copy_range_with_formulas(
         description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
     ),
     from_range: str = Field(
-        description="Source range in A1 notation (e.g., 'B5:Z5' for row 5, 'L1:L100' for column L)"
+        description="Source range in A1 notation (e.g., 'B2:K2' for row 2, columns B-K)"
     ),
-    to_range: str = Field(
-        description="Destination range in A1 notation (e.g., 'B6:Z6' for row 6, 'I1:I100' for column I). MUST HAVE SAME DIMENSIONS AS from_range."
+    to_range: Optional[str] = Field(
+        default=None,
+        description="Destination range in A1 notation (e.g., 'B3:K3' for row 3). Required when auto_fill=False. Ignored when auto_fill=True."
+    ),
+    auto_fill: bool = Field(
+        default=False,
+        description="If True, automatically fills formulas down to all rows with data in lookup_column until first empty cell. Ignores to_range parameter."
+    ),
+    lookup_column: str = Field(
+        default="A",
+        description="Column to check for data when auto_fill=True. Continues copying until this column is empty. Default: 'A' (typically SKU/ID column)"
+    ),
+    skip_if_exists: bool = Field(
+        default=True,
+        description="When auto_fill=True, skips rows where the first destination cell already has a value. Default: True"
     )
 ) -> UpdateResponse:
     """
     Copy a range with formulas, automatically adapting cell references based on position change.
 
-    This tool copies data from one range to another, intelligently adapting formulas
-    based on row and column offsets. It respects absolute ($) and relative cell references.
+    This tool supports two modes:
+    1. Manual mode (auto_fill=False): Copy from_range to specific to_range
+    2. Auto-fill mode (auto_fill=True): Automatically copy formulas down to all data rows
 
-    Formulas are automatically parsed and interpreted (USER_ENTERED mode).
+    Formulas are automatically parsed and interpreted (USER_ENTERED mode), respecting
+    absolute ($) and relative cell references.
 
-    <description>Copies a range with formulas from one location to another, automatically adapting
-    cell references based on the position change. Respects absolute ($) references. Ideal for
-    replicating formula patterns across rows or columns.</description>
+    <description>Copies a range with formulas from one location to another (or multiple rows when auto-filling),
+    automatically adapting cell references based on position changes. Respects absolute ($) references.
+    Ideal for replicating formula patterns across rows or auto-filling formulas down to all data rows.</description>
 
     <use_case>Use when you need to:
-    - Copy a row with formulas to another row (formulas adapt to new row)
+    - Auto-fill formulas from a template row down to all data rows (typical: header set, first row has formulas)
+    - Copy a row with formulas to another specific row (formulas adapt to new row)
     - Copy a column with formulas to another column (formulas adapt to new column)
     - Duplicate formula templates while preserving relative/absolute reference behavior
     - Replicate complex formula patterns without manual editing
-    - Copy formula logic from one section of a sheet to another
     </use_case>
 
     <limitation>
-    - Source and destination ranges must have identical dimensions
+    - Manual mode: Source and destination ranges must have identical dimensions
     - Only adapts standard A1 notation references
     - Named ranges and structured references are copied as-is (not adapted)
     - Auto-expands grid if destination exceeds current sheet bounds
-    - Overwrites existing data in destination range without warning
+    - Auto-fill mode: Stops at first empty cell in lookup_column
     </limitation>
 
-    <failure_cases>Fails if: ranges have different dimensions, range addresses are invalid A1 notation,
-    source range is empty, or URI is invalid.</failure_cases>
+    <failure_cases>Fails if: ranges have different dimensions (manual mode), range addresses are invalid A1 notation,
+    source range is empty, to_range not provided when auto_fill=False, or URI is invalid.</failure_cases>
 
     Args:
         uri: Google Sheets URI
-        from_range: Source range (e.g., "B5:Z5" for row, "L1:L100" for column)
-        to_range: Destination range (must match source dimensions)
+        from_range: Source range (e.g., "B2:K2" for row 2, columns B-K)
+        to_range: Destination range (e.g., "B3:K3"). Required when auto_fill=False, ignored when auto_fill=True
+        auto_fill: If True, automatically fills down to all rows with data in lookup_column
+        lookup_column: Column to check for data when auto_fill=True (default: "A")
+        skip_if_exists: If True, skips rows where first destination cell has value (default: True)
 
     Returns:
         UpdateResponse containing:
@@ -957,24 +975,36 @@ async def copy_range_with_formulas(
             - spreadsheet_url: Full URL to the spreadsheet with gid
             - spreadsheet_id: The spreadsheet ID
             - worksheet: The worksheet name
-            - range: The range that was updated
+            - range: The range that was updated (or ranges in auto-fill mode)
             - updated_cells: Number of cells updated
             - shape: String of "(rows,columns)"
             - error: Error message if failed, None otherwise
-            - message: Human-readable result with offset information
+            - message: Human-readable result with offset information and rows filled
 
     Examples:
-        # Copy row 5 to row 6 (formulas adapt to row 6)
-        # B5: =SUMIFS($J:$J,$F:$F,$A5,$A:$A,B$1)
-        # -> B6: =SUMIFS($J:$J,$F:$F,$A6,$A:$A,B$1)
+        # Example 1: Auto-fill mode - Copy formulas from row 2 down to all data rows
+        # Typical use case: Header in row 1, formulas in row 2, data in rows 3+
+        # Automatically detects header row and fills down until column A is empty
         copy_range_with_formulas(
             ctx,
             uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
-            from_range="B5:Z5",
-            to_range="B6:Z6"
+            from_range="B2:K2",
+            auto_fill=True,
+            lookup_column="A",  # Check column A (SKU) for data
+            skip_if_exists=True  # Skip rows that already have formulas
         )
+        # Result: Copies B2:K2 → B3:K3, B4:K4, B5:K5... until A column is empty
 
-        # Copy column L to column I (formulas adapt to column I)
+        # Example 2: Manual mode - Copy specific row to another row
+        copy_range_with_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
+            from_range="B2:K2",
+            to_range="B3:K3"
+        )
+        # Result: Copies B2:K2 → B3:K3, formulas adapt to row 3
+
+        # Example 3: Copy column with formulas
         copy_range_with_formulas(
             ctx,
             uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
@@ -982,28 +1012,17 @@ async def copy_range_with_formulas(
             to_range="I1:I100"
         )
 
-        # Copy a 2D block of formulas
-        copy_range_with_formulas(
-            ctx,
-            uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
-            from_range="B5:E10",
-            to_range="B15:E20"
-        )
-
         # How formula adaptation works:
-        # Source B5: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A5,'Sheet1'!$A:$A,B$1)
-        # When copied from B5 to B6 (row offset +1, col offset 0):
+        # Source B2: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A2,'Sheet1'!$A:$A,B$1)
+        # When copied from B2 to B3 (row offset +1, col offset 0):
         #   - $J:$J stays (absolute column range)
         #   - $F:$F stays (absolute column range)
-        #   - $A5 -> $A6 (absolute column, relative row increments)
+        #   - $A2 -> $A3 (absolute column, relative row increments)
         #   - $A:$A stays (absolute column range)
         #   - B$1 stays (relative column same, absolute row)
-        # Result B6: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A6,'Sheet1'!$A:$A,B$1)
-        #
-        # When copied from B5 to C5 (row offset 0, col offset +1):
-        #   - $A5 stays (absolute column, same row)
-        #   - B$1 -> C$1 (relative column increments, absolute row)
-        # Result C5: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A5,'Sheet1'!$A:$A,C$1)
+        # Result B3: =SUMIFS('Sheet1'!$J:$J,'Sheet1'!$F:$F,$A3,'Sheet1'!$A:$A,B$1)
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.copy_range_with_formulas(service, uri, from_range, to_range)
+    return await google_sheet.copy_range_with_formulas(
+        service, uri, from_range, to_range, auto_fill, lookup_column, skip_if_exists
+    )

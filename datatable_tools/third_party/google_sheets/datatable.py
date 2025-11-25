@@ -1775,31 +1775,38 @@ class GoogleSheetDataTable(DataTableInterface):
         service,  # Authenticated Google Sheets service
         uri: str,
         from_range: str,
-        to_range: str,
+        to_range: Optional[str] = None,
+        auto_fill: bool = False,
+        lookup_column: str = "A",
+        skip_if_exists: bool = True,
         value_input_option: str = "USER_ENTERED"
     ) -> UpdateResponse:
         """
         Copy a range with formulas, adapting cell references based on position change.
 
-        Reads formulas from source range, adapts them based on row/column offsets,
-        and writes to destination range. Respects absolute ($) references.
+        Supports two modes:
+        1. Manual mode (auto_fill=False): Copy from_range to specific to_range
+        2. Auto-fill mode (auto_fill=True): Automatically copy formulas down to all data rows
 
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
-            from_range: Source range in A1 notation (e.g., "B5:Z5", "L1:L100")
-            to_range: Destination range in A1 notation (must be same dimensions)
+            from_range: Source range in A1 notation (e.g., "B2:K2", "L1:L100")
+            to_range: Destination range in A1 notation (required for manual mode, ignored for auto_fill)
+            auto_fill: If True, automatically fills down to all rows with data in lookup_column
+            lookup_column: Column to check for data when auto_fill=True (default: "A")
+            skip_if_exists: If True, skips rows where first destination cell has value (default: True)
             value_input_option: How to interpret data (default: "USER_ENTERED" to parse formulas)
 
         Returns:
             UpdateResponse with success status and details
 
         Examples:
-            # Copy row 5 to row 6
-            copy_range_with_formulas(service, uri, "B5:Z5", "B6:Z6")
+            # Auto-fill mode - copies formulas down to all data rows
+            copy_range_with_formulas(service, uri, "B2:K2", auto_fill=True)
 
-            # Copy column L to column I
-            copy_range_with_formulas(service, uri, "L1:L100", "I1:I100")
+            # Manual mode - copy row 5 to row 6
+            copy_range_with_formulas(service, uri, "B5:Z5", "B6:Z6")
         """
         from datatable_tools.formula_adapter import adapt_formula
 
@@ -1809,31 +1816,41 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_properties = await get_sheet_by_gid(service, spreadsheet_id, gid)
             sheet_title = sheet_properties['title']
 
-            # Parse from_range and to_range
+            # Validate parameters
+            if not auto_fill and not to_range:
+                raise ValueError("to_range is required when auto_fill=False")
+
+            # Parse from_range
             from_range_parsed = self._parse_simple_range_address(from_range)
-            to_range_parsed = self._parse_simple_range_address(to_range)
 
-            # Calculate dimensions
-            from_rows = from_range_parsed['end_row'] - from_range_parsed['start_row'] + 1
-            from_cols = from_range_parsed['end_col_idx'] - from_range_parsed['start_col_idx'] + 1
-
-            to_rows = to_range_parsed['end_row'] - to_range_parsed['start_row'] + 1
-            to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
-
-            # Validate dimensions match
-            if from_rows != to_rows or from_cols != to_cols:
-                raise ValueError(
-                    f"Source range dimensions ({from_rows}x{from_cols}) must match "
-                    f"destination range dimensions ({to_rows}x{to_cols})"
+            # Auto-fill mode: determine target ranges
+            if auto_fill:
+                target_ranges = await self._get_autofill_target_ranges(
+                    service, spreadsheet_id, sheet_title, from_range_parsed,
+                    lookup_column, skip_if_exists
                 )
 
-            # Calculate offsets
-            row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
-            col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
+                if not target_ranges:
+                    return UpdateResponse(
+                        success=True,
+                        spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_properties['sheetId']}",
+                        spreadsheet_id=spreadsheet_id,
+                        worksheet=sheet_title,
+                        range=from_range,
+                        updated_cells=0,
+                        shape="(0,0)",
+                        error=None,
+                        message=f"No rows to auto-fill. All rows in {lookup_column} either empty or already have formulas (skip_if_exists={skip_if_exists})."
+                    )
+            else:
+                # Manual mode: single target range
+                target_ranges = [to_range]
 
-            logger.info(f"Copying range with offsets: row_offset={row_offset}, col_offset={col_offset}")
+            # Process each target range
+            total_updated_cells = 0
+            all_updated_ranges = []
 
-            # Read source range with formulas
+            # Read source range with formulas once
             full_from_range = f"'{sheet_title}'!{from_range}"
             result = await asyncio.to_thread(
                 service.spreadsheets().values().get(
@@ -1847,116 +1864,263 @@ class GoogleSheetDataTable(DataTableInterface):
             if not source_values:
                 raise ValueError(f"Source range {from_range} is empty")
 
-            # Adapt formulas for each cell with error tracking
-            adapted_values = []
-            formula_errors = []
+            # Calculate source dimensions
+            from_rows = from_range_parsed['end_row'] - from_range_parsed['start_row'] + 1
+            from_cols = from_range_parsed['end_col_idx'] - from_range_parsed['start_col_idx'] + 1
 
-            for row_idx, row in enumerate(source_values):
-                adapted_row = []
-                for col_idx, cell_value in enumerate(row):
-                    if cell_value and isinstance(cell_value, str) and cell_value.startswith('='):
-                        # This is a formula, adapt it
-                        try:
-                            adapted_formula = adapt_formula(cell_value, row_offset, col_offset)
-                            adapted_row.append(adapted_formula)
-                        except Exception as formula_error:
-                            # Calculate the actual cell address for error reporting
-                            source_col = column_index_to_letter(from_range_parsed['start_col_idx'] + col_idx)
-                            source_row = from_range_parsed['start_row'] + row_idx
-                            dest_col = column_index_to_letter(to_range_parsed['start_col_idx'] + col_idx)
-                            dest_row = to_range_parsed['start_row'] + row_idx
+            for target_range in target_ranges:
+                to_range_parsed = self._parse_simple_range_address(target_range)
 
-                            error_info = {
-                                'source_cell': f"{source_col}{source_row}",
-                                'dest_cell': f"{dest_col}{dest_row}",
-                                'formula': cell_value,
-                                'error': str(formula_error)
-                            }
-                            formula_errors.append(error_info)
+                # Calculate dimensions
+                to_rows = to_range_parsed['end_row'] - to_range_parsed['start_row'] + 1
+                to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
 
-                            # Still append the original formula to continue processing
-                            adapted_row.append(cell_value)
-                            logger.warning(f"Formula adaptation error at {source_col}{source_row}: {formula_error}")
-                    else:
-                        # Regular value, keep as-is
-                        adapted_row.append(cell_value)
-                adapted_values.append(adapted_row)
+                # Validate dimensions match
+                if from_rows != to_rows or from_cols != to_cols:
+                    raise ValueError(
+                        f"Source range dimensions ({from_rows}x{from_cols}) must match "
+                        f"destination range dimensions ({to_rows}x{to_cols})"
+                    )
 
-            # If there were formula errors, raise with details
-            if formula_errors:
-                error_details = "; ".join([
-                    f"{err['source_cell']}->{err['dest_cell']}: {err['error']} (formula: {err['formula'][:50]}{'...' if len(err['formula']) > 50 else ''})"
-                    for err in formula_errors[:5]  # Show first 5 errors
-                ])
-                if len(formula_errors) > 5:
-                    error_details += f"; ... and {len(formula_errors) - 5} more errors"
-                raise ValueError(f"Formula adaptation errors in {len(formula_errors)} cell(s): {error_details}")
+                # Calculate offsets
+                row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
+                col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
 
-            # Check if we need to expand grid
-            grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
-            grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
+                logger.info(f"Copying range with offsets: row_offset={row_offset}, col_offset={col_offset}")
 
-            max_row_needed = to_range_parsed['end_row']
-            max_col_needed = to_range_parsed['end_col_idx'] + 1
+                # Adapt formulas for each cell with error tracking
+                adapted_values = []
+                formula_errors = []
 
-            if max_row_needed > grid_rows or max_col_needed > grid_cols:
-                # Expand grid
-                new_rows = max(grid_rows, max_row_needed)
-                new_cols = max(grid_cols, max_col_needed)
+                for row_idx, row in enumerate(source_values):
+                    adapted_row = []
+                    for col_idx, cell_value in enumerate(row):
+                        if cell_value and isinstance(cell_value, str) and cell_value.startswith('='):
+                            # This is a formula, adapt it
+                            try:
+                                adapted_formula = adapt_formula(cell_value, row_offset, col_offset)
+                                adapted_row.append(adapted_formula)
+                            except Exception as formula_error:
+                                # Calculate the actual cell address for error reporting
+                                source_col = column_index_to_letter(from_range_parsed['start_col_idx'] + col_idx)
+                                source_row = from_range_parsed['start_row'] + row_idx
+                                dest_col = column_index_to_letter(to_range_parsed['start_col_idx'] + col_idx)
+                                dest_row = to_range_parsed['start_row'] + row_idx
 
-                logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
-
-                await asyncio.to_thread(
-                    service.spreadsheets().batchUpdate(
-                        spreadsheetId=spreadsheet_id,
-                        body={
-                            'requests': [{
-                                'updateSheetProperties': {
-                                    'properties': {
-                                        'sheetId': sheet_properties['sheetId'],
-                                        'gridProperties': {
-                                            'rowCount': new_rows,
-                                            'columnCount': new_cols
-                                        }
-                                    },
-                                    'fields': 'gridProperties(rowCount,columnCount)'
+                                error_info = {
+                                    'source_cell': f"{source_col}{source_row}",
+                                    'dest_cell': f"{dest_col}{dest_row}",
+                                    'formula': cell_value,
+                                    'error': str(formula_error)
                                 }
-                            }]
-                        }
+                                formula_errors.append(error_info)
+
+                                # Still append the original formula to continue processing
+                                adapted_row.append(cell_value)
+                                logger.warning(f"Formula adaptation error at {source_col}{source_row}: {formula_error}")
+                        else:
+                            # Regular value, keep as-is
+                            adapted_row.append(cell_value)
+                    adapted_values.append(adapted_row)
+
+                # If there were formula errors, raise with details
+                if formula_errors:
+                    error_details = "; ".join([
+                        f"{err['source_cell']}->{err['dest_cell']}: {err['error']} (formula: {err['formula'][:50]}{'...' if len(err['formula']) > 50 else ''})"
+                        for err in formula_errors[:5]  # Show first 5 errors
+                    ])
+                    if len(formula_errors) > 5:
+                        error_details += f"; ... and {len(formula_errors) - 5} more errors"
+                    raise ValueError(f"Formula adaptation errors in {len(formula_errors)} cell(s): {error_details}")
+
+                # Check if we need to expand grid
+                grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
+                grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
+
+                max_row_needed = to_range_parsed['end_row']
+                max_col_needed = to_range_parsed['end_col_idx'] + 1
+
+                if max_row_needed > grid_rows or max_col_needed > grid_cols:
+                    # Expand grid
+                    new_rows = max(grid_rows, max_row_needed)
+                    new_cols = max(grid_cols, max_col_needed)
+
+                    logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
+
+                    await asyncio.to_thread(
+                        service.spreadsheets().batchUpdate(
+                            spreadsheetId=spreadsheet_id,
+                            body={
+                                'requests': [{
+                                    'updateSheetProperties': {
+                                        'properties': {
+                                            'sheetId': sheet_properties['sheetId'],
+                                            'gridProperties': {
+                                                'rowCount': new_rows,
+                                                'columnCount': new_cols
+                                            }
+                                        },
+                                        'fields': 'gridProperties(rowCount,columnCount)'
+                                    }
+                                }]
+                            }
+                        ).execute
+                    )
+
+                # Write adapted values to destination range
+                full_to_range = f"'{sheet_title}'!{target_range}"
+                update_result = await asyncio.to_thread(
+                    service.spreadsheets().values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=full_to_range,
+                        valueInputOption=value_input_option,
+                        body={'values': adapted_values}
                     ).execute
                 )
 
-            # Write adapted values to destination range
-            full_to_range = f"'{sheet_title}'!{to_range}"
-            update_result = await asyncio.to_thread(
-                service.spreadsheets().values().update(
-                    spreadsheetId=spreadsheet_id,
-                    range=full_to_range,
-                    valueInputOption=value_input_option,
-                    body={'values': adapted_values}
-                ).execute
-            )
+                updated_cells = update_result.get('updatedCells', 0)
+                updated_range = update_result.get('updatedRange', target_range)
 
-            updated_cells = update_result.get('updatedCells', 0)
-            updated_range = update_result.get('updatedRange', to_range)
+                total_updated_cells += updated_cells
+                all_updated_ranges.append(updated_range)
 
-            logger.info(f"Successfully copied range {from_range} to {to_range} with {updated_cells} cells updated")
+                logger.info(f"Successfully copied range {from_range} to {target_range} with {updated_cells} cells updated")
+
+            # Build result message
+            if auto_fill:
+                message = f"Auto-filled formulas from {from_range} to {len(target_ranges)} row(s). Total {total_updated_cells} cells updated. Ranges: {', '.join(all_updated_ranges)}"
+                result_range = f"{from_range} → {len(target_ranges)} ranges"
+            else:
+                message = f"Successfully copied range {from_range} to {target_ranges[0]} with formulas adapted. {total_updated_cells} cells updated."
+                result_range = all_updated_ranges[0] if all_updated_ranges else target_ranges[0]
 
             return UpdateResponse(
                 success=True,
                 spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_properties['sheetId']}",
                 spreadsheet_id=spreadsheet_id,
                 worksheet=sheet_title,
-                range=updated_range,
-                updated_cells=updated_cells,
+                range=result_range,
+                updated_cells=total_updated_cells,
                 shape=f"({from_rows},{from_cols})",
                 error=None,
-                message=f"Successfully copied range {from_range} to {to_range} with formulas adapted (row offset: {row_offset}, col offset: {col_offset}). {updated_cells} cells updated."
+                message=message
             )
 
         except Exception as e:
             logger.error(f"Error copying range with formulas in {uri}: {e}")
-            raise Exception(f"Failed to copy range {from_range} to {to_range} in {uri}: {e}") from e
+            target_info = f"auto-fill mode (lookup_column={lookup_column})" if auto_fill else f"to {to_range}"
+            raise Exception(f"Failed to copy range {from_range} {target_info} in {uri}: {e}") from e
+
+    async def _get_autofill_target_ranges(
+        self,
+        service,
+        spreadsheet_id: str,
+        sheet_title: str,
+        from_range_parsed: Dict[str, Any],
+        lookup_column: str,
+        skip_if_exists: bool
+    ) -> List[str]:
+        """
+        Helper method to determine target ranges for auto-fill mode.
+
+        Reads the sheet to:
+        1. Detect header row location
+        2. Find all rows with data in lookup_column
+        3. Build target range strings for each row (excluding source row)
+        4. Optionally skip rows that already have values (skip_if_exists)
+
+        Returns:
+            List of target range strings in A1 notation (e.g., ["B3:K3", "B4:K4"])
+        """
+        # Get source row and column range
+        source_row = from_range_parsed['start_row']
+        start_col = column_index_to_letter(from_range_parsed['start_col_idx'])
+        end_col = column_index_to_letter(from_range_parsed['end_col_idx'])
+
+        # Read entire lookup column and first destination column to determine:
+        # 1. Which rows have data in lookup column
+        # 2. Which rows already have values (if skip_if_exists=True)
+
+        # Use a generous range to read - from row 1 to 10000
+        lookup_range = f"'{sheet_title}'!{lookup_column}1:{lookup_column}10000"
+        first_dest_col = column_index_to_letter(from_range_parsed['start_col_idx'])
+        dest_range = f"'{sheet_title}'!{first_dest_col}1:{first_dest_col}10000"
+
+        # Read both columns in parallel
+        result_lookup = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=lookup_range,
+                valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+            ).execute
+        )
+
+        result_dest = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=dest_range,
+                valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+            ).execute
+        )
+
+        lookup_values = result_lookup.get('values', [])
+        dest_values = result_dest.get('values', [])
+
+        # Auto-detect header row: find first row with non-empty value in lookup_column
+        header_row = 0
+        for idx, row in enumerate(lookup_values):
+            if row and row[0]:  # Has value in lookup column
+                header_row = idx + 1  # Convert to 1-indexed
+                break
+
+        if header_row == 0:
+            logger.warning(f"Could not detect header row in {lookup_column}, assuming row 1")
+            header_row = 1
+
+        logger.info(f"Auto-detected header row: {header_row}")
+
+        # Build target ranges for rows with data in lookup_column
+        target_ranges = []
+
+        # Start checking from the row after header
+        for row_idx in range(header_row, len(lookup_values)):
+            actual_row_number = row_idx + 1  # Convert to 1-indexed
+
+            # Skip source row
+            if actual_row_number == source_row:
+                continue
+
+            # Check if lookup column has data
+            lookup_has_data = False
+            if row_idx < len(lookup_values):
+                row_data = lookup_values[row_idx]
+                if row_data and row_data[0]:  # Has value
+                    lookup_has_data = True
+
+            if not lookup_has_data:
+                # Stop at first empty cell in lookup column
+                logger.info(f"Stopping auto-fill at row {actual_row_number}: {lookup_column} is empty")
+                break
+
+            # Check if destination already has value (if skip_if_exists)
+            if skip_if_exists:
+                dest_has_value = False
+                if row_idx < len(dest_values):
+                    dest_row_data = dest_values[row_idx]
+                    if dest_row_data and dest_row_data[0]:  # Has value
+                        dest_has_value = True
+
+                if dest_has_value:
+                    logger.info(f"Skipping row {actual_row_number}: {first_dest_col}{actual_row_number} already has value")
+                    continue
+
+            # Add this row to target ranges
+            target_range = f"{start_col}{actual_row_number}:{end_col}{actual_row_number}"
+            target_ranges.append(target_range)
+
+        logger.info(f"Auto-fill determined {len(target_ranges)} target ranges: {target_ranges}")
+        return target_ranges
+
 
     def _parse_simple_range_address(self, range_address: str) -> Dict[str, Any]:
         """
