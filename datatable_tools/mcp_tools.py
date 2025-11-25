@@ -5,7 +5,8 @@ Thin wrapper layer that delegates to GoogleSheetDataTable implementation.
 These @mcp.tool functions serve as the API entry points for MCP clients.
 
 Contains all core MCP tools:
-- load_data_table: Load data from Google Sheets
+- read_sheet: Read data from Google Sheets (preferred name)
+- load_data_table: Load data from Google Sheets (legacy, use read_sheet instead)
 - write_new_sheet: Create new Google Sheets spreadsheet
 - write_new_worksheet: Create new worksheet in existing spreadsheet
 - append_rows: Append rows to existing sheet
@@ -38,6 +39,53 @@ logger = logging.getLogger(__name__)
 # MCP Tools
 @mcp.tool
 @require_google_service("sheets", "sheets_read")
+async def read_sheet(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid})"
+    ),
+    range_address: Optional[str] = Field(
+        default=None,
+        description="Optional range in A1 notation (e.g., 'A2:M1000' for specific range, '2:1000' for rows 2-1000, 'B:Z' for columns B-Z). If not provided, reads entire sheet."
+    )
+) -> TableResponse:
+    """
+    Read data from Google Sheets using URI-based auto-detection
+
+    Args:
+        uri: Google Sheets URI. Supports:
+             - Google Sheets: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
+        range_address: Optional range in A1 notation:
+             - "A2:M1000" - Read specific rectangular range
+             - "2:1000" - Read rows 2 to 1000 (all columns)
+             - "B:Z" - Read columns B to Z (all rows)
+             - None (default) - Read entire sheet with smart header detection
+
+    Returns:
+        Dict containing table_id and loaded Google Sheets table information
+
+    Examples:
+        # Basic usage with smart header detection (works for partially merged cells)
+        uri = "https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0"
+        result = read_sheet(ctx, uri)
+
+        # RECOMMENDED for heavily merged title rows: Skip row 1, start from row 2
+        # Use this when row 1 is merged across all columns (e.g., "每日库存报表")
+        result = read_sheet(ctx, uri, range_address="2:10000")
+
+        # Read specific range only (first row treated as header)
+        result = read_sheet(ctx, uri, range_address="A2:M1000")
+    """
+    google_sheet = GoogleSheetDataTable()
+    # When range_address is specified, user knows the exact range, so disable auto-detection
+    # When no range_address, use smart detection to find the real header row
+    auto_detect_header_row = range_address is None
+    return await google_sheet.load_data_table(service, uri, range_address, auto_detect_header_row)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_read")
 async def load_data_table(
     service,  # Injected by @require_google_service
     ctx: Context,
@@ -51,6 +99,8 @@ async def load_data_table(
 ) -> TableResponse:
     """
     Load a table from Google Sheets using URI-based auto-detection
+
+    DEPRECATED: Use read_sheet() instead. This function is maintained for backward compatibility.
 
     Args:
         uri: Google Sheets URI. Supports:
@@ -76,9 +126,9 @@ async def load_data_table(
         # Read specific range only (first row treated as header)
         result = load_data_table(ctx, uri, range_address="A2:M1000")
     """
+    # Delegate to GoogleSheetDataTable implementation for backward compatibility
+    # This ensures both read_sheet and load_data_table use the same underlying logic
     google_sheet = GoogleSheetDataTable()
-    # When range_address is specified, user knows the exact range, so disable auto-detection
-    # When no range_address, use smart detection to find the real header row
     auto_detect_header_row = range_address is None
     return await google_sheet.load_data_table(service, uri, range_address, auto_detect_header_row)
 

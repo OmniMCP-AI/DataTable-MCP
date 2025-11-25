@@ -82,7 +82,7 @@ async def test_basic_operations(url, headers):
             print(f"\n📘 Test 1: Loading data from Google Sheets")
             print(f"   URI: {READ_ONLY_URI}")
 
-            load_res = await session.call_tool("load_data_table", {
+            load_res = await session.call_tool("read_sheet", {
                 "uri": READ_ONLY_URI,
             })
             print(f"✅ Load result: {load_res}")
@@ -102,7 +102,7 @@ async def test_basic_operations(url, headers):
             invalid_uri = "https://invalid-uri-format"
             print(f"   URI: {invalid_uri}")
 
-            invalid_load_res = await session.call_tool("load_data_table", {
+            invalid_load_res = await session.call_tool("read_sheet", {
                 "uri": invalid_uri
             })
             print(f"Result: {invalid_load_res}")
@@ -119,7 +119,7 @@ async def test_basic_operations(url, headers):
             print(f"\n📘 Test 3: Verifying data format is list of dictionaries")
             print(f"   Testing improved data structure from TableResponse")
             
-            load_format_res = await session.call_tool("load_data_table", {
+            load_format_res = await session.call_tool("read_sheet", {
                 "uri": READ_ONLY_URI,
             })
             print()
@@ -185,7 +185,7 @@ async def test_basic_operations(url, headers):
                 print(f"   Range: {test_case['range_address']}")
 
                 try:
-                    range_test_res = await session.call_tool("load_data_table", {
+                    range_test_res = await session.call_tool("read_sheet", {
                         "uri": RANGE_ADDRESS_TEST_URI,
                         "range_address": test_case['range_address']
                     })
