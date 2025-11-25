@@ -1424,18 +1424,96 @@ class GoogleSheetDataTable(DataTableInterface):
 
             existing_data = load_response.data  # List of dicts
 
-            # Better validation for empty sheet data
+            # Special handling for empty sheet
             if not existing_data:
-                raise ValueError(
-                    f"Cannot update by lookup: Sheet appears to be empty or has no detectable data rows. "
-                    f"Please ensure the sheet has:\n"
-                    f"  1. A header row with column names\n"
-                    f"  2. At least one data row\n"
-                    f"  3. No excessive merged cells in the header area\n"
-                    f"Sheet info: {load_response.source_info.get('worksheet', 'unknown')}, "
-                    f"Row count: {load_response.source_info.get('row_count', 0)}, "
-                    f"Col count: {load_response.source_info.get('column_count', 0)}"
-                )
+                # Check if sheet is completely empty (no rows at all) or has only headers
+                row_count = load_response.source_info.get('row_count', 0)
+                is_completely_empty = row_count == 0
+
+                if is_completely_empty:
+                    # Sheet is completely empty (no headers, no data rows)
+                    # Use update_range to write headers + data from A1
+                    logger.info(
+                        f"Sheet is completely empty (no headers, no data). "
+                        f"Writing headers and data from A1. "
+                        f"Sheet info: {load_response.source_info.get('worksheet', 'unknown')}"
+                    )
+
+                    # Convert list of dicts to headers + rows format
+                    if data and isinstance(data[0], dict):
+                        headers = list(data[0].keys())
+                        data_rows = [[row.get(h, "") for h in headers] for row in data]
+                        write_data = [headers] + data_rows
+                    else:
+                        raise ValueError("Data must be a list of dicts for update_by_lookup")
+
+                    # Write headers + data using update_range
+                    response = await self.update_range(service, uri, write_data, "A1")
+
+                    # Enhance response message
+                    if response.success:
+                        metadata = load_response.source_info
+                        spreadsheet_id = metadata['spreadsheet_id']
+                        sheet_id = metadata.get('worksheet_url', '').split('gid=')[-1] if 'worksheet_url' in metadata else '0'
+                        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+                        keys_display = str(on) if isinstance(on, list) else on
+
+                        return UpdateResponse(
+                            success=True,
+                            spreadsheet_url=spreadsheet_url,
+                            spreadsheet_id=response.spreadsheet_id,
+                            worksheet=response.worksheet,
+                            range=response.range,
+                            updated_cells=response.updated_cells,
+                            shape=response.shape,
+                            error=None,
+                            message=(
+                                f"Sheet was completely empty. Wrote headers and {len(data)} rows as new data. "
+                                f"Lookup column: {keys_display}"
+                            )
+                        )
+
+                    return response
+                else:
+                    # Sheet has headers but no data rows - append all incoming data
+                    logger.info(
+                        f"Sheet has only headers (no data rows). "
+                        f"Converting update_by_lookup to append operation. "
+                        f"Sheet info: {load_response.source_info.get('worksheet', 'unknown')}, "
+                        f"Row count: {row_count}, "
+                        f"Col count: {load_response.source_info.get('column_count', 0)}"
+                    )
+
+                    # Use append_rows to add all data
+                    response = await self.append_rows(service, uri, data)
+
+                    # Enhance response message to indicate fallback behavior
+                    if response.success:
+                        metadata = load_response.source_info
+                        spreadsheet_id = metadata['spreadsheet_id']
+                        sheet_id = metadata.get('worksheet_url', '').split('gid=')[-1] if 'worksheet_url' in metadata else '0'
+                        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+                        # Format lookup keys display
+                        keys_display = str(on) if isinstance(on, list) else on
+
+                        return UpdateResponse(
+                            success=True,
+                            spreadsheet_url=spreadsheet_url,
+                            spreadsheet_id=response.spreadsheet_id,
+                            worksheet=response.worksheet,
+                            range=response.range,
+                            updated_cells=response.updated_cells,
+                            shape=response.shape,
+                            error=None,
+                            message=(
+                                f"Sheet had only headers. Appended {len(data)} rows as new data. "
+                                f"Lookup column: {keys_display}"
+                            )
+                        )
+
+                    return response
 
             existing_headers = list(existing_data[0].keys())
             metadata = load_response.source_info
