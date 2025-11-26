@@ -22,8 +22,14 @@ from fastmcp import Context
 from core.server import mcp
 from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataTable
 from datatable_tools.auth.service_decorator import require_google_service
-from datatable_tools.models import TableResponse, SpreadsheetResponse, UpdateResponse, TableData, WorksheetsListResponse
-from datatable_tools.google_sheets_helpers import process_data_input
+from datatable_tools.models import (
+    TableResponse, SpreadsheetResponse, UpdateResponse, TableData, WorksheetsListResponse,
+    GetLastRowResponse, GetUsedRangeResponse, GetLastColumnResponse
+)
+from datatable_tools.google_sheets_helpers import (
+    process_data_input, parse_google_sheets_uri, get_sheet_by_gid,
+    get_last_row_with_data, get_used_range_info, get_last_column_with_data
+)
 
 # Optional Polars import for type hints
 try:
@@ -1026,3 +1032,305 @@ async def copy_range_with_formulas(
     return await google_sheet.copy_range_with_formulas(
         service, uri, from_range, to_range, auto_fill, lookup_column, skip_if_exists
     )
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_read")
+async def get_last_row(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}#gid={gid})"
+    ),
+    column: Optional[str] = Field(
+        default=None,
+        description="Optional column letter (e.g., 'B', 'AA') to find last row in specific column only. If not provided, searches across all columns."
+    )
+) -> GetLastRowResponse:
+    """
+    Identifies and returns the bottom-most row containing any data.
+
+    Scans entire sheet to find last row with non-empty cells. Useful before appending
+    new records, calculating table size, or determining where data ends.
+
+    Optionally can search in a specific column only by providing the column parameter.
+
+    <description>Identifies and returns the bottom-most row containing any data. Scans entire sheet to find last row with non-empty cells. Optionally searches in specific column only.</description>
+
+    <use_case>Use before appending new records, calculating table size, or determining where data ends for processing boundaries. Use column parameter to find last row in specific column (e.g., to find last row in column B even if other columns have more data).</use_case>
+
+    <limitation>Scans entire sheet - slow on large datasets. Considers formatting/formulas as data. Cannot distinguish between actual data and artifacts.</limitation>
+
+    <failure_cases>May return unexpected high row numbers if sheet has trailing formatting. Slow performance on sheets >10,000 rows. Returns row 0 for completely empty sheets.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI (full URL with gid parameter)
+        column: Optional column letter (e.g., "B", "AA") to search in specific column only
+
+    Returns:
+        GetLastRowResponse containing:
+            - success: Whether the operation succeeded
+            - row_number: 1-based row number of last row with data (0 for empty sheet)
+            - spreadsheet_id: The spreadsheet ID
+            - spreadsheet_url: Full URL to the spreadsheet
+            - worksheet: The worksheet name
+            - message: Human-readable result message
+            - error: Error message if failed, None otherwise
+
+    Examples:
+        # Get last row across all columns
+        result = get_last_row(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/18iaWb8OUFdNldk03ESY6indsfrURlMsyBwqwMIRkYJY/edit?gid=1435041919#gid=1435041919"
+        )
+
+        if result.success:
+            print(f"Last row with data: {result.row_number}")
+            print(f"Next available row for append: {result.row_number + 1}")
+
+        # Get last row in column B only
+        result = get_last_row(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/18iaWb8OUFdNldk03ESY6indsfrURlMsyBwqwMIRkYJY/edit?gid=1435041919#gid=1435041919",
+            column="B"
+        )
+
+        if result.success:
+            print(f"Last row in column B: {result.row_number}")
+    """
+    try:
+        # Parse URI to extract spreadsheet_id and gid
+        spreadsheet_id, gid = parse_google_sheets_uri(uri)
+
+        # Get sheet properties (title, etc.)
+        sheet_properties = await get_sheet_by_gid(service, spreadsheet_id, gid)
+        sheet_title = sheet_properties['title']
+        sheet_id = sheet_properties['sheetId']
+
+        # Construct spreadsheet URL with gid
+        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+        # Get last row (with optional column parameter)
+        last_row = await get_last_row_with_data(service, spreadsheet_id, sheet_title, column)
+
+        # Customize message based on whether column was specified
+        if column:
+            if last_row > 0:
+                message = f"Successfully retrieved last row in column {column}: {last_row}"
+            else:
+                message = f"No data found in column {column}"
+        else:
+            if last_row > 0:
+                message = f"Successfully retrieved last row: {last_row}"
+            else:
+                message = "No data found in worksheet"
+
+        return GetLastRowResponse(
+            success=True,
+            row_number=last_row,
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_url=spreadsheet_url,
+            worksheet=sheet_title,
+            message=message
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting last row: {e}")
+        return GetLastRowResponse(
+            success=False,
+            row_number=0,
+            spreadsheet_id="",
+            spreadsheet_url="",
+            worksheet="",
+            message=f"Failed to get last row",
+            error=str(e)
+        )
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_read")
+async def get_used_range(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}#gid={gid})"
+    )
+) -> GetUsedRangeResponse:
+    """
+    Auto-detects and returns the minimal rectangular range containing all non-empty cells.
+
+    Returns only range boundary information (like A1:C10), row/column counts, and start cell -
+    does NOT return actual cell data or values.
+
+    <description>Auto-detects and returns the minimal rectangular range containing all non-empty cells. Returns only range boundary information (like A1:C10), row/column counts, and start cell - does NOT return actual cell data or values.</description>
+
+    <use_case>Use when you need to find actual data boundaries in unknown spreadsheets, before bulk operations, or to avoid processing empty regions. Combine with read_sheet to retrieve actual data from the detected range.</use_case>
+
+    <limitation>Includes cells with spaces or formulas as "used" - not just visible data. Cannot detect non-contiguous data regions. Returns range metadata only - no cell values. Slow on very large sheets (>100,000 cells).</limitation>
+
+    <failure_cases>Returns entire sheet range if contains scattered formatting. May include hidden or formula cells unexpectedly. Timeouts on sheets with extensive formatting but no data.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI (full URL with gid parameter)
+
+    Returns:
+        GetUsedRangeResponse containing:
+            - success: Whether the operation succeeded
+            - used_range: A1 notation like "A1:C10"
+            - row_count: Number of rows in used range
+            - column_count: Number of columns in used range
+            - start_cell: Top-left cell (always "A1")
+            - end_cell: Bottom-right cell like "C10"
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - message: Human-readable result message
+            - error: Error message if failed, None otherwise
+
+    Examples:
+        # Get used range for a Google Sheets
+        result = get_used_range(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/18iaWb8OUFdNldk03ESY6indsfrURlMsyBwqwMIRkYJY/edit?gid=1435041919#gid=1435041919"
+        )
+
+        if result.success:
+            print(f"Used range: {result.used_range}")
+            print(f"Dimensions: {result.row_count} rows x {result.column_count} columns")
+            print(f"From {result.start_cell} to {result.end_cell}")
+
+            # Now read the actual data from this range
+            data = read_sheet(ctx, uri, range_address=result.used_range)
+    """
+    try:
+        # Parse URI to extract spreadsheet_id and gid
+        spreadsheet_id, gid = parse_google_sheets_uri(uri)
+
+        # Get sheet properties (title, etc.)
+        sheet_properties = await get_sheet_by_gid(service, spreadsheet_id, gid)
+        sheet_title = sheet_properties['title']
+        sheet_id = sheet_properties['sheetId']
+
+        # Construct spreadsheet URL with gid
+        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+        # Get used range info
+        used_range, row_count, column_count, start_cell, end_cell = await get_used_range_info(
+            service, spreadsheet_id, sheet_title
+        )
+
+        return GetUsedRangeResponse(
+            success=True,
+            used_range=used_range,
+            row_count=row_count,
+            column_count=column_count,
+            start_cell=start_cell,
+            end_cell=end_cell,
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_url=spreadsheet_url,
+            worksheet=sheet_title,
+            message=f"Successfully retrieved used range: {used_range} ({row_count}x{column_count})" if row_count > 0 else "No data found in worksheet"
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting used range: {e}")
+        return GetUsedRangeResponse(
+            success=False,
+            used_range="A1:A1",
+            row_count=0,
+            column_count=0,
+            start_cell="A1",
+            end_cell="A1",
+            spreadsheet_id="",
+            spreadsheet_url="",
+            worksheet="",
+            message=f"Failed to get used range",
+            error=str(e)
+        )
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_read")
+async def get_last_column(
+    service,  # Injected by @require_google_service
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}#gid={gid})"
+    )
+) -> GetLastColumnResponse:
+    """
+    Identifies and returns the rightmost column containing any data.
+
+    Scans entire sheet to find last column with non-empty cells. Useful to determine
+    table width, before adding new columns, or finding data boundaries.
+
+    <description>Identifies and returns the rightmost column containing any data. Scans entire sheet to find last column with non-empty cells.</description>
+
+    <use_case>Use to determine table width, before adding new columns, or finding data boundaries for horizontal processing limits.</use_case>
+
+    <limitation>Scans entire sheet - slow on wide datasets. Considers formatting/formulas as data. Cannot distinguish between actual data and artifacts.</limitation>
+
+    <failure_cases>May return unexpected high column numbers if sheet has trailing formatting. Slow performance on sheets >1000 columns. Returns column A for completely empty sheets.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI (full URL with gid parameter)
+
+    Returns:
+        GetLastColumnResponse containing:
+            - success: Whether the operation succeeded
+            - column: Column letter like "A", "Z", "AA"
+            - column_index: 0-based column index
+            - spreadsheet_id: The spreadsheet ID
+            - worksheet: The worksheet name
+            - message: Human-readable result message
+            - error: Error message if failed, None otherwise
+
+    Examples:
+        # Get last column for a Google Sheets
+        result = get_last_column(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/18iaWb8OUFdNldk03ESY6indsfrURlMsyBwqwMIRkYJY/edit?gid=1435041919#gid=1435041919"
+        )
+
+        if result.success:
+            print(f"Last column with data: {result.column} (index {result.column_index})")
+            print(f"Table width: {result.column_index + 1} columns")
+    """
+    try:
+        # Parse URI to extract spreadsheet_id and gid
+        spreadsheet_id, gid = parse_google_sheets_uri(uri)
+
+        # Get sheet properties (title, etc.)
+        sheet_properties = await get_sheet_by_gid(service, spreadsheet_id, gid)
+        sheet_title = sheet_properties['title']
+        sheet_id = sheet_properties['sheetId']
+
+        # Construct spreadsheet URL with gid
+        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
+
+        # Get last column
+        last_column, column_index = await get_last_column_with_data(service, spreadsheet_id, sheet_title)
+
+        return GetLastColumnResponse(
+            success=True,
+            column=last_column,
+            column_index=column_index,
+            spreadsheet_id=spreadsheet_id,
+            spreadsheet_url=spreadsheet_url,
+            worksheet=sheet_title,
+            message=f"Successfully retrieved last column: {last_column} (index {column_index})" if last_column != "A" or column_index > 0 else "No data found in worksheet"
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting last column: {e}")
+        return GetLastColumnResponse(
+            success=False,
+            column="A",
+            column_index=0,
+            spreadsheet_id="",
+            spreadsheet_url="",
+            worksheet="",
+            message=f"Failed to get last column",
+            error=str(e)
+        )
+
+

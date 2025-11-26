@@ -167,3 +167,41 @@ class WorksheetsListResponse(BaseModel):
     error: Optional[str] = None
     message: str
 
+
+class GetLastRowResponse(BaseModel):
+    """Response type for get_last_row operation"""
+    success: bool
+    row_number: int
+    spreadsheet_id: str
+    spreadsheet_url: str
+    worksheet: str
+    message: str
+    error: Optional[str] = None
+
+
+class GetUsedRangeResponse(BaseModel):
+    """Response type for get_used_range operation"""
+    success: bool
+    used_range: str  # e.g., "A1:C10"
+    row_count: int
+    column_count: int
+    start_cell: str
+    end_cell: str
+    spreadsheet_id: str
+    spreadsheet_url: str
+    worksheet: str
+    message: str
+    error: Optional[str] = None
+
+
+class GetLastColumnResponse(BaseModel):
+    """Response type for get_last_column operation"""
+    success: bool
+    column: str  # e.g., "Z"
+    column_index: int  # 0-based
+    spreadsheet_id: str
+    spreadsheet_url: str
+    worksheet: str
+    message: str
+    error: Optional[str] = None
+

@@ -799,3 +799,227 @@ async def parse_range_address(
     logger.info(f"Using range: {range_name}")
 
     return range_name, final_sheet_title, final_sheet_id
+
+
+async def get_last_row_with_data(
+    service,
+    spreadsheet_id: str,
+    sheet_title: str,
+    column: Optional[str] = None
+) -> int:
+    """
+    Find the last row containing any non-empty data in a worksheet.
+
+    Scans the entire worksheet from top to bottom to find the last row
+    with at least one non-empty cell. Optionally can search in a specific column only.
+
+    Args:
+        service: Authenticated Google Sheets API service object
+        spreadsheet_id: The spreadsheet ID
+        sheet_title: The worksheet title/name
+        column: Optional column letter (e.g., "B", "AA") to search in specific column only
+
+    Returns:
+        int: 1-based row number of last row with data (returns 0 for empty sheet/column)
+
+    Examples:
+        >>> # Get last row with data in any column
+        >>> last_row = await get_last_row_with_data(service, "ABC123", "Sheet1")
+        >>> print(f"Last row with data: {last_row}")
+        Last row with data: 42
+
+        >>> # Get last row with data in column B only
+        >>> last_row = await get_last_row_with_data(service, "ABC123", "Sheet1", column="B")
+        >>> print(f"Last row in column B: {last_row}")
+        Last row in column B: 4
+    """
+    try:
+        # Escape sheet title for range notation
+        if ' ' in sheet_title or '!' in sheet_title or "'" in sheet_title:
+            escaped_title = sheet_title.replace("'", "''")
+            if column:
+                range_name = f"'{escaped_title}'!{column}:{column}"
+            else:
+                range_name = f"'{escaped_title}'!A:ZZ"
+        else:
+            if column:
+                range_name = f"{sheet_title}!{column}:{column}"
+            else:
+                range_name = f"{sheet_title}!A:ZZ"
+
+        # Get all values from the worksheet (or specific column)
+        result = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueRenderOption="FORMATTED_VALUE"
+            ).execute
+        )
+
+        values = result.get('values', [])
+
+        if not values:
+            return 0
+
+        if column:
+            # For single column, scan from bottom to top to find last non-empty cell
+            for row_idx in range(len(values) - 1, -1, -1):
+                row = values[row_idx]
+                # Check if this cell is non-empty
+                if row and str(row[0]).strip():
+                    return row_idx + 1  # Convert to 1-based
+        else:
+            # For all columns, scan from bottom to top to find last non-empty row
+            for row_idx in range(len(values) - 1, -1, -1):
+                row = values[row_idx]
+                # Check if row has any non-empty cell
+                if any(str(cell).strip() for cell in row):
+                    return row_idx + 1  # Convert to 1-based
+
+        return 0  # All rows are empty
+
+    except Exception as e:
+        logger.error(f"Error getting last row: {e}")
+        raise
+
+
+async def get_used_range_info(
+    service,
+    spreadsheet_id: str,
+    sheet_title: str
+) -> tuple[str, int, int, str, str]:
+    """
+    Auto-detect the minimal rectangular range containing all non-empty cells.
+
+    Returns range boundary information only (no actual cell data).
+
+    Args:
+        service: Authenticated Google Sheets API service object
+        spreadsheet_id: The spreadsheet ID
+        sheet_title: The worksheet title/name
+
+    Returns:
+        Tuple of (used_range, row_count, column_count, start_cell, end_cell):
+            - used_range: A1 notation like "A1:C10"
+            - row_count: Number of rows in used range
+            - column_count: Number of columns in used range
+            - start_cell: Top-left cell (always "A1")
+            - end_cell: Bottom-right cell like "C10"
+
+    Example:
+        >>> range_str, rows, cols, start, end = await get_used_range_info(service, "ABC123", "Sheet1")
+        >>> print(f"Used range: {range_str}, {rows}x{cols}")
+        Used range: A1:C10, 10x3
+    """
+    try:
+        # Escape sheet title for range notation
+        if ' ' in sheet_title or '!' in sheet_title or "'" in sheet_title:
+            escaped_title = sheet_title.replace("'", "''")
+            range_name = f"'{escaped_title}'!A:ZZ"
+        else:
+            range_name = f"{sheet_title}!A:ZZ"
+
+        # Get all values from the worksheet
+        result = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueRenderOption="FORMATTED_VALUE"
+            ).execute
+        )
+
+        values = result.get('values', [])
+
+        if not values:
+            return "A1:A1", 0, 0, "A1", "A1"
+
+        # Find last row and column with data
+        last_row = 0
+        last_col = 0
+
+        for row_idx, row in enumerate(values):
+            for col_idx, cell in enumerate(row):
+                if str(cell).strip():
+                    last_row = max(last_row, row_idx + 1)
+                    last_col = max(last_col, col_idx + 1)
+
+        if last_row == 0 or last_col == 0:
+            return "A1:A1", 0, 0, "A1", "A1"
+
+        # Convert column index to letter
+        end_col_letter = column_index_to_letter(last_col - 1)
+
+        used_range = f"A1:{end_col_letter}{last_row}"
+        start_cell = "A1"
+        end_cell = f"{end_col_letter}{last_row}"
+
+        return used_range, last_row, last_col, start_cell, end_cell
+
+    except Exception as e:
+        logger.error(f"Error getting used range: {e}")
+        raise
+
+
+async def get_last_column_with_data(
+    service,
+    spreadsheet_id: str,
+    sheet_title: str
+) -> tuple[str, int]:
+    """
+    Find the rightmost column containing any non-empty data in a worksheet.
+
+    Scans the entire worksheet to find the last column with at least one
+    non-empty cell.
+
+    Args:
+        service: Authenticated Google Sheets API service object
+        spreadsheet_id: The spreadsheet ID
+        sheet_title: The worksheet title/name
+
+    Returns:
+        Tuple of (column_letter, column_index):
+            - column_letter: Letter like "A", "Z", "AA"
+            - column_index: 0-based column index
+
+    Example:
+        >>> col_letter, col_idx = await get_last_column_with_data(service, "ABC123", "Sheet1")
+        >>> print(f"Last column: {col_letter} (index {col_idx})")
+        Last column: Z (index 25)
+    """
+    try:
+        # Escape sheet title for range notation
+        if ' ' in sheet_title or '!' in sheet_title or "'" in sheet_title:
+            escaped_title = sheet_title.replace("'", "''")
+            range_name = f"'{escaped_title}'!A:ZZ"
+        else:
+            range_name = f"{sheet_title}!A:ZZ"
+
+        # Get all values from the worksheet
+        result = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueRenderOption="FORMATTED_VALUE"
+            ).execute
+        )
+
+        values = result.get('values', [])
+
+        if not values:
+            return "A", 0
+
+        # Find last column with data
+        last_col_index = 0
+
+        for row in values:
+            for col_idx, cell in enumerate(row):
+                if str(cell).strip():
+                    last_col_index = max(last_col_index, col_idx)
+
+        last_col_letter = column_index_to_letter(last_col_index)
+
+        return last_col_letter, last_col_index
+
+    except Exception as e:
+        logger.error(f"Error getting last column: {e}")
+        raise
