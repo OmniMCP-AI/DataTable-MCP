@@ -254,6 +254,8 @@ starlette==0.48.0
     # via mcp
 strenum==0.4.15
     # via gspread
+structlog==25.5.0
+    # via datatable-mcp
 typing-extensions==4.15.0
     # via aiosignal
     # via anyio

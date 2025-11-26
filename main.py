@@ -1,19 +1,16 @@
 import argparse
-import logging
-import os
 import sys
 from importlib import metadata
 
 # Local imports
 from core.server import mcp
-# cleanup_expired_tables moved to temp/old_code/session_tools.py
-# from datatable_tools.table_manager import cleanup_expired_tables
+from core.logging_config import configure_logging, get_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Configure logging first (must be done before getting logger)
+configure_logging()
+
+# Get logger
+logger = get_logger(__name__)
 
 def main():
     """
@@ -55,18 +52,21 @@ def main():
 
         if args.transport == 'streamable-http':
             print(f"🚀 Starting server on http://0.0.0.0:{args.port}")
+            logger.info("server_starting", transport=args.transport, port=args.port, host="0.0.0.0")
             mcp.run(transport="streamable-http", port=args.port, host="0.0.0.0")
         else:
             print("🚀 Starting server in stdio mode")
+            logger.info("server_starting", transport=args.transport)
             mcp.run()
 
     except KeyboardInterrupt:
         print("\n👋 Server shutdown requested")
+        logger.info("server_shutdown", reason="user_interrupt")
         # cleanup_expired_tables() - removed in Stage 1 refactoring
         sys.exit(0)
     except Exception as e:
         print(f"\n❌ Server error: {e}")
-        logger.error(f"Unexpected error running server: {e}", exc_info=True)
+        logger.error("server_error", error=str(e), exc_info=True)
         sys.exit(1)
 
 if __name__ == "__main__":

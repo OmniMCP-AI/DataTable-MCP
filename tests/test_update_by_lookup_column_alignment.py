@@ -29,9 +29,9 @@ import argparse
 # Test configuration
 TEST_USER_ID = "68501372a3569b6897673a48"
 
-# We'll create a new sheet for each test run to ensure clean state
-# Using gid that doesn't exist will force the API to use Sheet1
-TEST_SHEET_URI_BASE = "https://docs.google.com/spreadsheets/d/1h6waNEyrv_LKbxGSyZCJLf-QmLgFRNIQM4PfTphIeDM/edit"
+# Use existing spreadsheet to avoid creating multiple junk spreadsheets
+# We'll create new worksheets (tabs) in this spreadsheet for each test run
+TEST_SPREADSHEET_URI = "https://docs.google.com/spreadsheets/d/1M4AJamN_xP5w9fiygtnPXjGRkrJ72uZ2FpBPoTCR0H8/edit?gid=0#gid=0"
 
 async def test_column_alignment(url, headers):
     """Test that update_range_by_lookup correctly aligns columns when appending to header-only sheets"""
@@ -44,33 +44,37 @@ async def test_column_alignment(url, headers):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            # Test 0: Create a new worksheet for this test run
-            print(f"\n📝 Test 0: Creating new worksheet for clean test")
+            # Test 0: Create a new worksheet in existing spreadsheet
+            print(f"\n📝 Test 0: Creating new worksheet in existing spreadsheet")
 
-            test_sheet_name = f"ColumnAlignmentTest_{timestamp}"
+            test_worksheet_name = f"ColumnAlignmentTest_{timestamp}"
             headers_only = [["外部单号", "产品名称", "数量", "单价", "总价", "备注"]]
 
-            # Create new sheet with headers only
-            create_res = await session.call_tool("write_new_sheet", {
+            print(f"   Spreadsheet: {TEST_SPREADSHEET_URI}")
+            print(f"   Worksheet name: {test_worksheet_name}")
+
+            # Create new worksheet with headers only
+            create_res = await session.call_tool("write_new_worksheet", {
+                "uri": TEST_SPREADSHEET_URI,
                 "data": headers_only,
-                "sheet_name": test_sheet_name
+                "worksheet_name": test_worksheet_name
             })
 
             if create_res.isError:
-                print(f"   ❌ Failed to create test sheet")
+                print(f"   ❌ Failed to create test worksheet")
                 return
 
             if create_res.content and create_res.content[0].text:
                 result = json.loads(create_res.content[0].text)
                 if result.get('success'):
                     test_sheet_uri = result.get('spreadsheet_url')
-                    print(f"   ✅ Created test sheet: {test_sheet_name}")
+                    print(f"   ✅ Created worksheet: {test_worksheet_name}")
                     print(f"   📄 URI: {test_sheet_uri}")
                 else:
-                    print(f"   ❌ Failed to create sheet")
+                    print(f"   ❌ Failed to create worksheet")
                     return
             else:
-                print(f"   ❌ No response from create_sheet")
+                print(f"   ❌ No response from write_new_worksheet")
                 return
 
             # Test 1: Verify sheet has only headers (no data)
@@ -165,7 +169,6 @@ async def test_column_alignment(url, headers):
                     if len(data) >= 2:
                         # Check first row
                         row1 = data[0]
-                        row2 = data[1]
 
                         print(f"\n   📝 First row values:")
                         for header in headers_found:
