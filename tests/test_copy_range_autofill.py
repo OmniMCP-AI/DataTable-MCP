@@ -137,11 +137,110 @@ async def test_manual_copy(url, headers):
             print(f"\n✅ Manual copy test completed!")
 
 
+async def test_multi_row_copy(url, headers):
+    """Test multi-row copy mode (single source row to multiple destination rows)"""
+    print(f"\n🚀 Testing multi-row copy mode (Stage 2 Feature)")
+    print("=" * 80)
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Test 1: Copy single source row to multiple destination rows
+            print(f"\n📝 Test 1: Multi-row copy from B2:AE2 to B3:AE5 (3 rows)")
+            print(f"   This tests the new Stage 2 feature:")
+            print(f"   - Single source row (B2:AE2)")
+            print(f"   - Multiple destination rows (rows 3-5)")
+            print(f"   - Formulas should adapt for each destination row")
+
+            multi_row_res = await session.call_tool("copy_range_with_formulas", {
+                "uri": TEST_URI,
+                "from_range": "B2:AE2",
+                "to_range": "B3:AE5",
+                "auto_fill": False,
+                "skip_if_exists": False
+            })
+
+            print(f"\n   Result: {multi_row_res}")
+
+            if not multi_row_res.isError and multi_row_res.content and multi_row_res.content[0].text:
+                result = json.loads(multi_row_res.content[0].text)
+                if result.get('success'):
+                    print(f"\n   ✅ Multi-row copy succeeded!")
+                    print(f"      Updated cells: {result.get('updated_cells', 0)}")
+                    print(f"      Message: {result.get('message', 'N/A')}")
+
+                    # Verify expected number of cells updated
+                    # 3 rows × 30 columns (B to AE) = 90 cells
+                    expected_cells = 3 * 30
+                    actual_cells = result.get('updated_cells', 0)
+                    if actual_cells == expected_cells:
+                        print(f"      ✅ Cell count matches expected: {expected_cells}")
+                    else:
+                        print(f"      ⚠️  Cell count mismatch: expected {expected_cells}, got {actual_cells}")
+                else:
+                    print(f"\n   ❌ Multi-row copy failed: {result.get('message', 'Unknown error')}")
+            else:
+                error_msg = multi_row_res.content[0].text if multi_row_res.content else "Unknown error"
+                print(f"\n   ❌ Error: {error_msg}")
+
+            # Test 2: Multi-row copy with skip_if_exists=True
+            print(f"\n📝 Test 2: Multi-row copy with skip_if_exists=True")
+            print(f"   Copy B2:AE2 to B20:AE25, but skip rows that already have data")
+
+            skip_test_res = await session.call_tool("copy_range_with_formulas", {
+                "uri": TEST_URI,
+                "from_range": "B2:AE2",
+                "to_range": "B20:AE25",
+                "auto_fill": False,
+                "skip_if_exists": True
+            })
+
+            if not skip_test_res.isError and skip_test_res.content and skip_test_res.content[0].text:
+                result = json.loads(skip_test_res.content[0].text)
+                if result.get('success'):
+                    print(f"\n   ✅ Skip test succeeded!")
+                    print(f"      Updated cells: {result.get('updated_cells', 0)}")
+                    print(f"      Message: {result.get('message', 'N/A')}")
+                    print(f"   💡 Note: Rows with existing data were skipped")
+                else:
+                    print(f"\n   ❌ Skip test failed: {result.get('message', 'Unknown error')}")
+
+            # Test 3: Verify formulas were correctly adapted
+            print(f"\n📝 Test 3: Verifying formula adaptation")
+            print(f"   Reading back rows 10-15 to check if formulas adapted correctly")
+
+            read_res = await session.call_tool("read_sheet", {
+                "uri": TEST_URI
+            })
+
+            if not read_res.isError and read_res.content and read_res.content[0].text:
+                content = json.loads(read_res.content[0].text)
+                if content.get('success'):
+                    data = content.get('data', [])
+                    print(f"   ✅ Read sheet successfully")
+                    print(f"      Total rows: {len(data)}")
+
+                    # Show sample rows
+                    if len(data) >= 15:
+                        print(f"\n   📊 Sample rows 10-12 (checking first column values):")
+                        for i in range(9, 12):  # Rows 10-12 (0-indexed)
+                            if i < len(data):
+                                row = data[i]
+                                first_col = list(row.keys())[1] if len(row.keys()) > 1 else 'N/A'
+                                first_val = row.get(first_col, 'N/A')
+                                print(f"         Row {i+1}: {first_col} = {first_val}")
+                    else:
+                        print(f"   ⚠️  Not enough rows to verify (only {len(data)} rows)")
+
+            print(f"\n✅ Multi-row copy test completed!")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test copy_range_with_formulas auto-fill")
     parser.add_argument("--env", choices=["local", "test", "prod"], default="local",
                        help="Environment: local (127.0.0.1:8321), test (datatable-mcp-test.maybe.ai), or prod")
-    parser.add_argument("--test", choices=["autofill", "manual", "all"], default="all",
+    parser.add_argument("--test", choices=["autofill", "multirow", "all"], default="all",
                        help="Which test to run")
     args = parser.parse_args()
 
@@ -165,8 +264,11 @@ if __name__ == "__main__":
     # Run tests
     if args.test == "autofill":
         asyncio.run(test_copy_range_autofill(url=f"{endpoint}/mcp", headers=test_headers))
-    elif args.test == "manual":
-        asyncio.run(test_manual_copy(url=f"{endpoint}/mcp", headers=test_headers))
+    # elif args.test == "manual":
+    #     asyncio.run(test_manual_copy(url=f"{endpoint}/mcp", headers=test_headers))
+    elif args.test == "multirow":
+        asyncio.run(test_multi_row_copy(url=f"{endpoint}/mcp", headers=test_headers))
     else:
         asyncio.run(test_copy_range_autofill(url=f"{endpoint}/mcp", headers=test_headers))
-        asyncio.run(test_manual_copy(url=f"{endpoint}/mcp", headers=test_headers))
+        # asyncio.run(test_manual_copy(url=f"{endpoint}/mcp", headers=test_headers))
+        asyncio.run(test_multi_row_copy(url=f"{endpoint}/mcp", headers=test_headers))

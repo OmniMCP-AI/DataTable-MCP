@@ -1784,15 +1784,19 @@ class GoogleSheetDataTable(DataTableInterface):
         """
         Copy a range with formulas, adapting cell references based on position change.
 
-        Supports two modes:
-        1. Manual mode (auto_fill=False): Copy from_range to specific to_range
-        2. Auto-fill mode (auto_fill=True): Automatically copy formulas down to all data rows
+        Supports three modes:
+        1. Manual mode - single range: Copy from_range to specific to_range (e.g., B2:K2 → B3:K3)
+        2. Manual mode - multi-row: Copy single source row to multiple destination rows (e.g., B2:K2 → B3:K10)
+        3. Auto-fill mode: Automatically copy formulas down to all data rows
 
         Args:
             service: Authenticated Google Sheets API service object
             uri: Google Sheets URI
             from_range: Source range in A1 notation (e.g., "B2:K2", "L1:L100")
-            to_range: Destination range in A1 notation (required for manual mode, ignored for auto_fill)
+            to_range: Destination range in A1 notation:
+                     - Single row: "B3:K3" (copies to one row)
+                     - Multi-row: "B3:K10" (copies to rows 3-10, must have single source row)
+                     - Required for manual mode, ignored for auto_fill
             auto_fill: If True, automatically fills down to all rows with data in lookup_column
             lookup_column: Column to check for data when auto_fill=True (default: "A")
             skip_if_exists: If True, skips rows where first destination cell has value (default: True)
@@ -1807,6 +1811,9 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Manual mode - copy row 5 to row 6
             copy_range_with_formulas(service, uri, "B5:Z5", "B6:Z6")
+
+            # Manual mode - copy row 2 to rows 3-10 (multi-row destination)
+            copy_range_with_formulas(service, uri, "B2:Z2", "B3:Z10")
         """
         from datatable_tools.formula_adapter import adapt_formula
 
@@ -1822,6 +1829,10 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Parse from_range
             from_range_parsed = self._parse_simple_range_address(from_range)
+
+            # Calculate source dimensions early for validation
+            from_rows = from_range_parsed['end_row'] - from_range_parsed['start_row'] + 1
+            from_cols = from_range_parsed['end_col_idx'] - from_range_parsed['start_col_idx'] + 1
 
             # Auto-fill mode: determine target ranges
             if auto_fill:
@@ -1843,8 +1854,59 @@ class GoogleSheetDataTable(DataTableInterface):
                         message=f"No rows to auto-fill. All rows in {lookup_column} either empty or already have formulas (skip_if_exists={skip_if_exists})."
                     )
             else:
-                # Manual mode: single target range
-                target_ranges = [to_range]
+                # Manual mode: handle single-row-to-multi-row or single-range-to-single-range
+                to_range_parsed = self._parse_simple_range_address(to_range)
+                to_rows = to_range_parsed['end_row'] - to_range_parsed['start_row'] + 1
+                to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
+
+                # Check if this is a single-source-row to multi-destination-rows scenario
+                if from_rows == 1 and to_rows > 1 and from_cols == to_cols:
+                    # Multi-row destination: generate individual target ranges for each row
+                    logger.info(f"Multi-row copy mode: copying 1 source row to {to_rows} destination rows")
+                    target_ranges = []
+                    start_col = column_index_to_letter(to_range_parsed['start_col_idx'])
+                    end_col = column_index_to_letter(to_range_parsed['end_col_idx'])
+
+                    for dest_row in range(to_range_parsed['start_row'], to_range_parsed['end_row'] + 1):
+                        # Check skip_if_exists for each row if requested
+                        should_skip = False
+                        if skip_if_exists or lookup_column:
+                            # Read the first destination cell to check if it has data
+                            first_dest_cell = f"'{sheet_title}'!{start_col}{dest_row}"
+                            try:
+                                check_result = await asyncio.to_thread(
+                                    service.spreadsheets().values().get(
+                                        spreadsheetId=spreadsheet_id,
+                                        range=first_dest_cell,
+                                        valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+                                    ).execute
+                                )
+                                check_values = check_result.get('values', [])
+                                if check_values and check_values[0] and check_values[0][0]:
+                                    if skip_if_exists:
+                                        should_skip = True
+                                        logger.info(f"Skipping row {dest_row}: destination cell {start_col}{dest_row} already has value")
+                            except Exception as check_error:
+                                logger.warning(f"Could not check destination cell {start_col}{dest_row}: {check_error}")
+
+                        if not should_skip:
+                            target_ranges.append(f"{start_col}{dest_row}:{end_col}{dest_row}")
+
+                    if not target_ranges:
+                        return UpdateResponse(
+                            success=True,
+                            spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_properties['sheetId']}",
+                            spreadsheet_id=spreadsheet_id,
+                            worksheet=sheet_title,
+                            range=to_range,
+                            updated_cells=0,
+                            shape="(0,0)",
+                            error=None,
+                            message=f"No rows to copy. All destination rows already have data (skip_if_exists={skip_if_exists})."
+                        )
+                else:
+                    # Single target range (traditional behavior)
+                    target_ranges = [to_range]
 
             # Process each target range
             total_updated_cells = 0
@@ -1864,9 +1926,7 @@ class GoogleSheetDataTable(DataTableInterface):
             if not source_values:
                 raise ValueError(f"Source range {from_range} is empty")
 
-            # Calculate source dimensions
-            from_rows = from_range_parsed['end_row'] - from_range_parsed['start_row'] + 1
-            from_cols = from_range_parsed['end_col_idx'] - from_range_parsed['start_col_idx'] + 1
+            # Note: from_rows and from_cols already calculated above
 
             for target_range in target_ranges:
                 to_range_parsed = self._parse_simple_range_address(target_range)
@@ -1876,11 +1936,22 @@ class GoogleSheetDataTable(DataTableInterface):
                 to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
 
                 # Validate dimensions match
-                if from_rows != to_rows or from_cols != to_cols:
-                    raise ValueError(
-                        f"Source range dimensions ({from_rows}x{from_cols}) must match "
-                        f"destination range dimensions ({to_rows}x{to_cols})"
-                    )
+                # For single-row source (from_rows=1), we allow any number of destination rows
+                # because we're copying the same row multiple times with formula adaptation
+                if from_rows == 1:
+                    # Single source row: only validate columns match
+                    if from_cols != to_cols:
+                        raise ValueError(
+                            f"Source range columns ({from_cols}) must match "
+                            f"destination range columns ({to_cols})"
+                        )
+                else:
+                    # Multi-row source: both rows and columns must match
+                    if from_rows != to_rows or from_cols != to_cols:
+                        raise ValueError(
+                            f"Source range dimensions ({from_rows}x{from_cols}) must match "
+                            f"destination range dimensions ({to_rows}x{to_cols})"
+                        )
 
                 # Calculate offsets
                 row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
@@ -1988,9 +2059,18 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Build result message
             if auto_fill:
-                message = f"Auto-filled formulas from {from_range} to {len(target_ranges)} row(s). Total {total_updated_cells} cells updated. Ranges: {', '.join(all_updated_ranges)}"
+                message = f"Auto-filled formulas from {from_range} to {len(target_ranges)} row(s). Total {total_updated_cells} cells updated. Ranges: {', '.join(all_updated_ranges[:5])}"
+                if len(all_updated_ranges) > 5:
+                    message += f" ... and {len(all_updated_ranges) - 5} more"
+                result_range = f"{from_range} → {len(target_ranges)} ranges"
+            elif len(target_ranges) > 1:
+                # Multi-row manual mode
+                message = f"Successfully copied range {from_range} to {len(target_ranges)} row(s) with formulas adapted. Total {total_updated_cells} cells updated. Ranges: {', '.join(all_updated_ranges[:5])}"
+                if len(all_updated_ranges) > 5:
+                    message += f" ... and {len(all_updated_ranges) - 5} more"
                 result_range = f"{from_range} → {len(target_ranges)} ranges"
             else:
+                # Single target range (traditional behavior)
                 message = f"Successfully copied range {from_range} to {target_ranges[0]} with formulas adapted. {total_updated_cells} cells updated."
                 result_range = all_updated_ranges[0] if all_updated_ranges else target_ranges[0]
 

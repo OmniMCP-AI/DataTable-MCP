@@ -937,9 +937,10 @@ async def copy_range_with_formulas(
     """
     Copy a range with formulas, automatically adapting cell references based on position change.
 
-    This tool supports two modes:
-    1. Manual mode (auto_fill=False): Copy from_range to specific to_range
-    2. Auto-fill mode (auto_fill=True): Automatically copy formulas down to all data rows
+    This tool supports three modes:
+    1. Manual mode - single range: Copy from_range to specific to_range (e.g., B2:K2 → B3:K3)
+    2. Manual mode - multi-row: Copy single source row to multiple destination rows (e.g., B2:K2 → B3:K10)
+    3. Auto-fill mode: Automatically copy formulas down to all data rows
 
     Formulas are automatically parsed and interpreted (USER_ENTERED mode), respecting
     absolute ($) and relative cell references.
@@ -951,26 +952,32 @@ async def copy_range_with_formulas(
     <use_case>Use when you need to:
     - Auto-fill formulas from a template row down to all data rows (typical: header set, first row has formulas)
     - Copy a row with formulas to another specific row (formulas adapt to new row)
+    - Copy a single source row to multiple destination rows (e.g., B2:Z2 → B3:Z10 fills 8 rows)
     - Copy a column with formulas to another column (formulas adapt to new column)
     - Duplicate formula templates while preserving relative/absolute reference behavior
     - Replicate complex formula patterns without manual editing
     </use_case>
 
     <limitation>
-    - Manual mode: Source and destination ranges must have identical dimensions
+    - Manual mode (single range): Source and destination ranges must have identical dimensions
+    - Manual mode (multi-row): Source must be single row, columns must match
     - Only adapts standard A1 notation references
     - Named ranges and structured references are copied as-is (not adapted)
     - Auto-expands grid if destination exceeds current sheet bounds
     - Auto-fill mode: Stops at first empty cell in lookup_column
     </limitation>
 
-    <failure_cases>Fails if: ranges have different dimensions (manual mode), range addresses are invalid A1 notation,
-    source range is empty, to_range not provided when auto_fill=False, or URI is invalid.</failure_cases>
+    <failure_cases>Fails if: ranges have different dimensions (manual mode), source has >1 row for multi-row copy,
+    range addresses are invalid A1 notation, source range is empty, to_range not provided when auto_fill=False,
+    or URI is invalid.</failure_cases>
 
     Args:
         uri: Google Sheets URI
         from_range: Source range (e.g., "B2:K2" for row 2, columns B-K)
-        to_range: Destination range (e.g., "B3:K3"). Required when auto_fill=False, ignored when auto_fill=True
+        to_range: Destination range:
+                 - Single row: "B3:K3" (copies to one row)
+                 - Multi-row: "B3:K10" (copies to rows 3-10, requires single source row)
+                 - Required when auto_fill=False, ignored when auto_fill=True
         auto_fill: If True, automatically fills down to all rows with data in lookup_column
         lookup_column: Column to check for data when auto_fill=True (default: "A")
         skip_if_exists: If True, skips rows where first destination cell has value (default: True)
@@ -1010,7 +1017,16 @@ async def copy_range_with_formulas(
         )
         # Result: Copies B2:K2 → B3:K3, formulas adapt to row 3
 
-        # Example 3: Copy column with formulas
+        # Example 3: Manual mode - Multi-row copy (NEW in stage 2)
+        copy_range_with_formulas(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
+            from_range="B2:Z2",
+            to_range="B3:Z10"
+        )
+        # Result: Copies B2:Z2 → B3:Z3, B4:Z4, B5:Z5... B10:Z10 (8 rows total)
+
+        # Example 4: Copy column with formulas
         copy_range_with_formulas(
             ctx,
             uri="https://docs.google.com/spreadsheets/d/ABC123/edit?gid=0",
