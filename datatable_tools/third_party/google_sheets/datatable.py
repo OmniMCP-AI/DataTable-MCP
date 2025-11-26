@@ -29,6 +29,39 @@ from datatable_tools.google_sheets_helpers import (
 logger = logging.getLogger(__name__)
 
 
+def align_dict_data_to_headers(data: List[Dict[str, Any]], headers: List[str]) -> List[List[Any]]:
+    """
+    Align dict data to match existing sheet headers.
+
+    This function reorders dict keys to match the header order and fills missing columns with empty strings.
+    Essential for maintaining column alignment when appending data to sheets.
+
+    Args:
+        data: List of dictionaries with data to align
+        headers: List of header names in the order they appear in the sheet
+
+    Returns:
+        List of lists with values aligned to header order
+
+    Example:
+        >>> headers = ["A", "B", "C"]
+        >>> data = [{"C": 3, "A": 1, "B": 2}]  # Different order
+        >>> align_dict_data_to_headers(data, headers)
+        [[1, 2, 3]]  # Aligned to match headers order
+    """
+    aligned_rows = []
+    for row_dict in data:
+        aligned_row = []
+        for header in headers:
+            # Get value from dict, or use empty string if not found
+            value = row_dict.get(header, "")
+            aligned_row.append(value)
+        aligned_rows.append(aligned_row)
+
+    logger.debug(f"Aligned {len(data)} rows to {len(headers)} columns")
+    return aligned_rows
+
+
 class GoogleSheetDataTable(DataTableInterface):
     """
     Google Sheets implementation of the DataTable interface.
@@ -1490,8 +1523,30 @@ class GoogleSheetDataTable(DataTableInterface):
                         f"Col count: {load_response.source_info.get('column_count', 0)}"
                     )
 
-                    # Use append_rows to add all data
-                    response = await self.append_rows(service, uri, data)
+                    # Read headers from first row of sheet to align data
+                    metadata = load_response.source_info
+                    spreadsheet_id = metadata['spreadsheet_id']
+                    sheet_title = metadata['worksheet']
+
+                    # Read first row to get headers
+                    range_name = f"'{sheet_title}'!1:1"
+                    header_result = await asyncio.to_thread(
+                        service.spreadsheets().values().get(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
+                        ).execute
+                    )
+                    header_row = header_result.get('values', [[]])[0] if header_result.get('values') else []
+                    existing_headers = [str(h) if h is not None else "" for h in header_row]
+
+                    logger.info(f"Read {len(existing_headers)} headers from sheet: {existing_headers[:10]}")
+
+                    # Align incoming dict data to match existing headers
+                    aligned_data = align_dict_data_to_headers(data, existing_headers)
+
+                    # Use append_rows to add aligned data
+                    response = await self.append_rows(service, uri, aligned_data)
 
                     # Enhance response message to indicate fallback behavior
                     if response.success:
@@ -1637,7 +1692,11 @@ class GoogleSheetDataTable(DataTableInterface):
             appended_count = 0
             if unmatched_rows:
                 logger.info(f"Appending {len(unmatched_rows)} unmatched rows as new data")
-                append_response = await self.append_rows(service, uri, unmatched_rows)
+
+                # Align unmatched rows to match existing sheet headers
+                aligned_unmatched_rows = align_dict_data_to_headers(unmatched_rows, existing_headers)
+
+                append_response = await self.append_rows(service, uri, aligned_unmatched_rows)
                 if append_response.success:
                     appended_count = len(unmatched_rows)
                     logger.info(f"Successfully appended {appended_count} unmatched rows")
