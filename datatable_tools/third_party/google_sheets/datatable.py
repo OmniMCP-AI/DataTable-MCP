@@ -1197,19 +1197,68 @@ class GoogleSheetDataTable(DataTableInterface):
             # Create full range notation
             full_range = f"'{sheet_title}'!{final_range}"
 
-            # Update the range
-            # Use value_input_option parameter to control how data is interpreted:
-            # - RAW: literal text (default for backwards compatibility)
-            # - USER_ENTERED: parses formulas, numbers, dates, etc.
-            body = {'values': values}
-            await asyncio.to_thread(
-                service.spreadsheets().values().update(
-                    spreadsheetId=spreadsheet_id,
-                    range=full_range,
-                    valueInputOption=value_input_option,
-                    body=body
-                ).execute
-            )
+            # Batch processing for large datasets to avoid API limits
+            # Google Sheets API: 2MB recommended max, 180s timeout per request
+            # For large datasets (>2000 rows), split into batches to stay under limits
+            BATCH_SIZE = 2000  # rows per batch (conservative for safety)
+            total_rows = len(values)
+
+            if total_rows > BATCH_SIZE:
+                logger.info(f"Large dataset detected ({total_rows} rows). Using batch processing with batch size {BATCH_SIZE}")
+
+                # Parse the start cell from final_range
+                match = re.match(r'^([A-Z]+)(\d+)(?::.*)?$', final_range)
+                if not match:
+                    raise ValueError(f"Invalid range format for batch processing: {final_range}")
+
+                start_col = match.group(1)
+                start_row = int(match.group(2))
+
+                # Calculate end column based on data width
+                cols = max(len(row) for row in values) if values else 0
+                start_col_index = column_letter_to_index(start_col)
+                end_col_index = start_col_index + cols - 1
+                end_col = column_index_to_letter(end_col_index)
+
+                # Process in batches
+                for batch_idx in range(0, total_rows, BATCH_SIZE):
+                    batch_end_idx = min(batch_idx + BATCH_SIZE, total_rows)
+                    batch_values = values[batch_idx:batch_end_idx]
+                    batch_rows = len(batch_values)
+
+                    # Calculate batch range
+                    batch_start_row = start_row + batch_idx
+                    batch_end_row = batch_start_row + batch_rows - 1
+                    batch_range = f"'{sheet_title}'!{start_col}{batch_start_row}:{end_col}{batch_end_row}"
+
+                    logger.info(f"Processing batch {batch_idx//BATCH_SIZE + 1}/{(total_rows-1)//BATCH_SIZE + 1}: rows {batch_start_row}-{batch_end_row} ({batch_rows} rows)")
+
+                    # Update batch
+                    body = {'values': batch_values}
+                    await asyncio.to_thread(
+                        service.spreadsheets().values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=batch_range,
+                            valueInputOption=value_input_option,
+                            body=body
+                        ).execute
+                    )
+
+                logger.info(f"Batch processing completed: {total_rows} rows updated in {(total_rows-1)//BATCH_SIZE + 1} batches")
+            else:
+                # Small dataset - single API call
+                # Use value_input_option parameter to control how data is interpreted:
+                # - RAW: literal text (default for backwards compatibility)
+                # - USER_ENTERED: parses formulas, numbers, dates, etc.
+                body = {'values': values}
+                await asyncio.to_thread(
+                    service.spreadsheets().values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=full_range,
+                        valueInputOption=value_input_option,
+                        body=body
+                    ).execute
+                )
 
             spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}"
 
