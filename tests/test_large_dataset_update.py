@@ -21,7 +21,7 @@ from mcp import ClientSession
 import json
 
 # Test configuration
-TEST_SPREADSHEET_URI = "https://docs.google.com/spreadsheets/d/15jns06J6TZqPds2EZFwVtVwPfpHxKb2_um3q2fCvAEE/edit?gid=91360988#gid=91360988"
+TEST_SPREADSHEET_URI = "https://docs.google.com/spreadsheets/d/15jns06J6TZqPds2EZFwVtVwPfpHxKb2_um3q2fCvAEE/edit?gid=1372728242#gid=1372728242"
 
 async def test_large_dataset_update(url, headers):
     """Test updating large dataset with batching"""
@@ -39,7 +39,7 @@ async def test_large_dataset_update(url, headers):
             # Generate test data (simulated large dataset)
             # Using a smaller subset for testing (1000 rows) to speed up test
             # In production, this would be 27,097 rows
-            test_row_count = 1000  # Use 1000 for testing, 27097 in production scenario
+            test_row_count = 57097  # Use 1000 for testing, 27097 in production scenario
             print(f"   Using {test_row_count} rows for test (production scenario: 27,097 rows)")
 
             # Create test data structure
@@ -184,7 +184,7 @@ async def test_batch_threshold(url, headers):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test large dataset update with batching")
-    parser.add_argument("--env", choices=["local", "test", "prod"], default="test",
+    parser.add_argument("--env", choices=["local", "test", "prod"], default="local",
                        help="Environment to use: local (127.0.0.1:8321), test (datatable-mcp-test.maybe.ai), or prod (datatable-mcp.maybe.ai)")
     parser.add_argument("--test", choices=["large", "threshold", "all"], default="large",
                        help="Which test to run: large, threshold, or all")
