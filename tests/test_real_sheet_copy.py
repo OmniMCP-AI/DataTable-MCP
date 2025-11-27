@@ -3,6 +3,7 @@
 
 Usage:
     python tests/test_real_sheet_copy.py --env=local --test=row
+    python tests/test_real_sheet_copy.py --env=test --test=batch
     python tests/test_real_sheet_copy.py --env=test --test=column
     python tests/test_real_sheet_copy.py --env=test --test=all
 """
@@ -89,10 +90,114 @@ async def test_copy_row(session, endpoint):
         return False
 
 
+async def test_batch_optimization(session, endpoint):
+    """Test batch optimization when copying to many rows"""
+    print("\n" + "="*80)
+    print("TEST 2: Batch Optimization (Copy to 50 rows)")
+    print("="*80)
+
+    # Test sheet for batch operations
+    uri = "https://docs.google.com/spreadsheets/d/169z8zmTqbM2496A7IKohB-7kEri8W88RrmCxf3RXLnk/edit?gid=774404782#gid=774404782"
+
+    print(f"\nSheet URI: {uri}")
+    print(f"Testing: Copy 1 source row to 50 destination rows\n")
+
+    # Step 1: Setup source row with formulas
+    print("Step 1: Setting up source row with formulas...")
+    source_data = [
+        ["ID", "Name", "Value", "Double", "Triple"],
+        ["1", "Row2", "100", "=C2*2", "=C2*3"]
+    ]
+
+    setup_res = await session.call_tool("update_range", {
+        "uri": uri,
+        "data": source_data,
+        "range_address": "A1:E2"
+    })
+
+    if not setup_res.isError and setup_res.content and setup_res.content[0].text:
+        result = json.loads(setup_res.content[0].text)
+        if result.get('success'):
+            print(f"✅ Source row created with formulas")
+        else:
+            print(f"❌ Failed to create source row: {result.get('error')}")
+            return False
+
+    # Step 2: Copy to 50 rows with batch optimization
+    import time
+    print(f"\nStep 2: Copying formulas to 50 rows (with batch optimization)...")
+    print(f"   This uses 1 batch API call instead of 50 individual calls")
+
+    start_time = time.time()
+
+    copy_res = await session.call_tool("copy_range_with_formulas", {
+        "uri": uri,
+        "from_range": "A2:E2",
+        "to_range": "A3:E52",  # 50 destination rows
+        "skip_if_exists": True
+    })
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    if not copy_res.isError and copy_res.content and copy_res.content[0].text:
+        result = json.loads(copy_res.content[0].text)
+
+        if result.get('success'):
+            print(f"\n✅ SUCCESS!")
+            print(f"   Updated cells: {result.get('updated_cells')}")
+            print(f"   Shape: {result.get('shape')}")
+            print(f"   Time taken: {elapsed_time:.2f}s")
+
+            if elapsed_time < 10:
+                print(f"   ✅ PERFORMANCE PASS: Completed in {elapsed_time:.2f}s (expected < 10s)")
+                print(f"   💡 Batch optimization is working correctly!")
+            else:
+                print(f"   ⚠️  Performance slower than expected: {elapsed_time:.2f}s")
+
+            # Step 3: Test skip_if_exists with second copy
+            print(f"\nStep 3: Testing skip_if_exists (should skip all rows)...")
+            start_time2 = time.time()
+
+            copy_res2 = await session.call_tool("copy_range_with_formulas", {
+                "uri": uri,
+                "from_range": "A2:E2",
+                "to_range": "A3:E52",  # Same range
+                "skip_if_exists": True
+            })
+
+            end_time2 = time.time()
+            elapsed_time2 = end_time2 - start_time2
+
+            if not copy_res2.isError and copy_res2.content and copy_res2.content[0].text:
+                result2 = json.loads(copy_res2.content[0].text)
+                if result2.get('success') and result2.get('updated_cells') == 0:
+                    print(f"   ✅ Skip works correctly! No cells updated.")
+                    print(f"   Time taken: {elapsed_time2:.2f}s")
+                    print(f"   Message: {result2.get('message')}")
+
+            print(f"\n🔗 View the result: {result.get('spreadsheet_url')}")
+            return True
+        else:
+            print(f"\n❌ FAILED!")
+            print(f"   Error: {result.get('error')}")
+            print(f"   Message: {result.get('message')}")
+            return False
+    else:
+        print(f"\n❌ FAILED! No response from copy operation")
+        if copy_res.isError:
+            print(f"   Error flag: isError = True")
+            if copy_res.content:
+                print(f"   Error content: {copy_res.content}")
+        else:
+            print(f"   Response: {copy_res}")
+        return False
+
+
 async def test_copy_column(session, endpoint):
     """Test copying a column with formulas"""
     print("\n" + "="*80)
-    print("TEST 2: Copy Column with Formulas")
+    print("TEST 3: Copy Column with Formulas")
     print("="*80)
 
     # Test parameters for column copy
@@ -185,8 +290,8 @@ async def main():
     parser = argparse.ArgumentParser(description='Test copy_range_with_formulas via MCP')
     parser.add_argument('--env', choices=['local', 'test'], default='local',
                       help='Environment: local (127.0.0.1:8321) or test (datatable-mcp-test.maybe.ai)')
-    parser.add_argument('--test', choices=['row', 'column', 'all'], default='all',
-                      help='Which test to run: row, column, or all')
+    parser.add_argument('--test', choices=['row', 'batch', 'column', 'all'], default='all',
+                      help='Which test to run: row, batch, column, or all')
     args = parser.parse_args()
 
     # Set endpoint based on environment
@@ -218,6 +323,10 @@ async def main():
             if args.test in ['row', 'all']:
                 result = await test_copy_row(session, endpoint)
                 results.append(('Copy Row', result))
+
+            if args.test in ['batch', 'all']:
+                result = await test_batch_optimization(session, endpoint)
+                results.append(('Batch Optimization (50 rows)', result))
 
             if args.test in ['column', 'all']:
                 result = await test_copy_column(session, endpoint)

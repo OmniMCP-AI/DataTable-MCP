@@ -1975,27 +1975,38 @@ class GoogleSheetDataTable(DataTableInterface):
                     start_col = column_index_to_letter(to_range_parsed['start_col_idx'])
                     end_col = column_index_to_letter(to_range_parsed['end_col_idx'])
 
+                    # Batch read all first cells at once for performance
+                    existing_values = {}
+                    if skip_if_exists or lookup_column:
+                        # Read entire first column of destination range in one API call
+                        batch_check_range = f"'{sheet_title}'!{start_col}{to_range_parsed['start_row']}:{start_col}{to_range_parsed['end_row']}"
+                        try:
+                            check_result = await asyncio.to_thread(
+                                service.spreadsheets().values().get(
+                                    spreadsheetId=spreadsheet_id,
+                                    range=batch_check_range,
+                                    valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
+                                ).execute
+                            )
+                            check_values = check_result.get('values', [])
+                            # Map row numbers to their values
+                            for idx, row_values in enumerate(check_values):
+                                dest_row = to_range_parsed['start_row'] + idx
+                                # Check if first cell has value
+                                has_value = bool(row_values and row_values[0])
+                                existing_values[dest_row] = has_value
+                            logger.info(f"Batch checked {len(existing_values)} destination rows in one API call")
+                        except Exception as check_error:
+                            logger.warning(f"Could not batch check destination cells: {check_error}. Proceeding without skip check.")
+
+                    # Now build target_ranges based on batch results
                     for dest_row in range(to_range_parsed['start_row'], to_range_parsed['end_row'] + 1):
-                        # Check skip_if_exists for each row if requested
                         should_skip = False
-                        if skip_if_exists or lookup_column:
-                            # Read the first destination cell to check if it has data
-                            first_dest_cell = f"'{sheet_title}'!{start_col}{dest_row}"
-                            try:
-                                check_result = await asyncio.to_thread(
-                                    service.spreadsheets().values().get(
-                                        spreadsheetId=spreadsheet_id,
-                                        range=first_dest_cell,
-                                        valueRenderOption=ValueRenderOption.UNFORMATTED_VALUE.value
-                                    ).execute
-                                )
-                                check_values = check_result.get('values', [])
-                                if check_values and check_values[0] and check_values[0][0]:
-                                    if skip_if_exists:
-                                        should_skip = True
-                                        logger.info(f"Skipping row {dest_row}: destination cell {start_col}{dest_row} already has value")
-                            except Exception as check_error:
-                                logger.warning(f"Could not check destination cell {start_col}{dest_row}: {check_error}")
+                        if skip_if_exists:
+                            # Check if this row has existing data from batch read
+                            if existing_values.get(dest_row, False):
+                                should_skip = True
+                                logger.info(f"Skipping row {dest_row}: destination cell {start_col}{dest_row} already has value")
 
                         if not should_skip:
                             target_ranges.append(f"{start_col}{dest_row}:{end_col}{dest_row}")
@@ -2036,6 +2047,11 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Note: from_rows and from_cols already calculated above
 
+            # Collect all adapted values for batch write
+            batch_data = []
+            max_row_needed = 0
+            max_col_needed = 0
+
             for target_range in target_ranges:
                 to_range_parsed = self._parse_simple_range_address(target_range)
 
@@ -2064,8 +2080,6 @@ class GoogleSheetDataTable(DataTableInterface):
                 # Calculate offsets
                 row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
                 col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
-
-                logger.info(f"Copying range with offsets: row_offset={row_offset}, col_offset={col_offset}")
 
                 # Adapt formulas for each cell with error tracking
                 adapted_values = []
@@ -2112,28 +2126,36 @@ class GoogleSheetDataTable(DataTableInterface):
                         error_details += f"; ... and {len(formula_errors) - 5} more errors"
                     raise ValueError(f"Formula adaptation errors in {len(formula_errors)} cell(s): {error_details}")
 
-                # Check if we need to expand grid
-                grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
-                grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
+                # Track max dimensions needed
+                max_row_needed = max(max_row_needed, to_range_parsed['end_row'])
+                max_col_needed = max(max_col_needed, to_range_parsed['end_col_idx'] + 1)
 
-                max_row_needed = to_range_parsed['end_row']
-                max_col_needed = to_range_parsed['end_col_idx'] + 1
+                # Add to batch data
+                full_to_range = f"'{sheet_title}'!{target_range}"
+                batch_data.append({
+                    'range': full_to_range,
+                    'values': adapted_values
+                })
 
-                if max_row_needed > grid_rows or max_col_needed > grid_cols:
-                    # Expand grid
-                    new_rows = max(grid_rows, max_row_needed)
-                    new_cols = max(grid_cols, max_col_needed)
+            # Check if we need to expand grid (only once for all ranges)
+            grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
+            grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
 
-                    logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
+            if max_row_needed > grid_rows or max_col_needed > grid_cols:
+                # Expand grid
+                new_rows = max(grid_rows, max_row_needed)
+                new_cols = max(grid_cols, max_col_needed)
 
-                    await asyncio.to_thread(
-                        service.spreadsheets().batchUpdate(
-                            spreadsheetId=spreadsheet_id,
-                            body={
-                                'requests': [{
-                                    'updateSheetProperties': {
-                                        'properties': {
-                                            'sheetId': sheet_properties['sheetId'],
+                logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
+
+                await asyncio.to_thread(
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={
+                            'requests': [{
+                                'updateSheetProperties': {
+                                    'properties': {
+                                        'sheetId': sheet_properties['sheetId'],
                                             'gridProperties': {
                                                 'rowCount': new_rows,
                                                 'columnCount': new_cols
@@ -2146,24 +2168,26 @@ class GoogleSheetDataTable(DataTableInterface):
                         ).execute
                     )
 
-                # Write adapted values to destination range
-                full_to_range = f"'{sheet_title}'!{target_range}"
-                update_result = await asyncio.to_thread(
-                    service.spreadsheets().values().update(
-                        spreadsheetId=spreadsheet_id,
-                        range=full_to_range,
-                        valueInputOption=value_input_option,
-                        body={'values': adapted_values}
-                    ).execute
-                )
+            # Write all adapted values in a single batch operation
+            logger.info(f"Writing {len(batch_data)} ranges in a single batch API call")
+            batch_update_result = await asyncio.to_thread(
+                service.spreadsheets().values().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={
+                        'valueInputOption': value_input_option,
+                        'data': batch_data
+                    }
+                ).execute
+            )
 
-                updated_cells = update_result.get('updatedCells', 0)
-                updated_range = update_result.get('updatedRange', target_range)
-
+            # Process batch results
+            for response in batch_update_result.get('responses', []):
+                updated_cells = response.get('updatedCells', 0)
+                updated_range = response.get('updatedRange', '')
                 total_updated_cells += updated_cells
                 all_updated_ranges.append(updated_range)
 
-                logger.info(f"Successfully copied range {from_range} to {target_range} with {updated_cells} cells updated")
+            logger.info(f"Batch write completed: {total_updated_cells} cells updated across {len(batch_data)} ranges")
 
             # Build result message
             if auto_fill:
