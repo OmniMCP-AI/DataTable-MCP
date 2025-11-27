@@ -1732,10 +1732,25 @@ class GoogleSheetDataTable(DataTableInterface):
             if matched_count == 0:
                 logger.warning("No matching rows found")
 
+            # Filter out completely empty rows from result_data to avoid gaps
+            # A row is considered empty if all its values are empty strings or None
+            filtered_result_data = []
+            removed_empty_rows = 0
+            for row_list in result_data:
+                is_empty = all(not cell or cell == "" for cell in row_list)
+                if not is_empty:
+                    filtered_result_data.append(row_list)
+                else:
+                    removed_empty_rows += 1
+                    logger.debug(f"Removing empty row from result_data: {row_list}")
+
+            if removed_empty_rows > 0:
+                logger.info(f"Removed {removed_empty_rows} empty row(s) to prevent gaps in output")
+
             # Write updated data rows back to sheet (starting from A2 to preserve header formulas)
             # Note: We only write data rows, not headers, to avoid overwriting formula headers
             range_address = "A2"
-            response = await self.update_range(service, uri, result_data, range_address, value_input_option='USER_ENTERED')
+            response = await self.update_range(service, uri, filtered_result_data, range_address, value_input_option='USER_ENTERED')
 
             # Append unmatched rows as new data if any
             appended_count = 0
