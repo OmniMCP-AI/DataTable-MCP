@@ -2062,115 +2062,184 @@ class GoogleSheetDataTable(DataTableInterface):
 
             # Note: from_rows and from_cols already calculated above
 
-            # Collect all adapted values for batch write
-            batch_data = []
-            max_row_needed = 0
-            max_col_needed = 0
+            # PERFORMANCE OPTIMIZATION: For large batch operations (>100 ranges),
+            # don't use copyPaste API as it's too slow and times out.
+            # Instead, use optimized Python adaptation with batchUpdate values API.
+            USE_OPTIMIZED_BATCH = len(target_ranges) > 100
 
-            for target_range in target_ranges:
-                to_range_parsed = self._parse_simple_range_address(target_range)
+            if USE_OPTIMIZED_BATCH:
+                logger.info(f"Using optimized batch processing for {len(target_ranges)} target ranges")
 
-                # Calculate dimensions
-                to_rows = to_range_parsed['end_row'] - to_range_parsed['start_row'] + 1
-                to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
+                # Pre-adapt the source formulas once for each unique row offset
+                # This avoids re-parsing the same formulas 1000+ times
+                batch_data = []
 
-                # Validate dimensions match
-                # For single-row source (from_rows=1), we allow any number of destination rows
-                # because we're copying the same row multiple times with formula adaptation
-                if from_rows == 1:
-                    # Single source row: only validate columns match
-                    if from_cols != to_cols:
-                        raise ValueError(
-                            f"Source range columns ({from_cols}) must match "
-                            f"destination range columns ({to_cols})"
-                        )
-                else:
-                    # Multi-row source: both rows and columns must match
-                    if from_rows != to_rows or from_cols != to_cols:
-                        raise ValueError(
-                            f"Source range dimensions ({from_rows}x{from_cols}) must match "
-                            f"destination range dimensions ({to_rows}x{to_cols})"
-                        )
+                # Process in chunks to avoid building giant data structures in memory
+                CHUNK_SIZE = 500
+                for chunk_start in range(0, len(target_ranges), CHUNK_SIZE):
+                    chunk_end = min(chunk_start + CHUNK_SIZE, len(target_ranges))
+                    chunk_ranges = target_ranges[chunk_start:chunk_end]
 
-                # Calculate offsets
-                row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
-                col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
+                    logger.info(f"Processing ranges {chunk_start+1}-{chunk_end} of {len(target_ranges)}")
 
-                # Adapt formulas for each cell with error tracking
-                adapted_values = []
-                formula_errors = []
+                    for target_range in chunk_ranges:
+                        to_range_parsed = self._parse_simple_range_address(target_range)
 
-                for row_idx, row in enumerate(source_values):
-                    adapted_row = []
-                    for col_idx, cell_value in enumerate(row):
-                        if cell_value and isinstance(cell_value, str) and cell_value.startswith('='):
-                            # This is a formula, adapt it
-                            try:
-                                adapted_formula = adapt_formula(cell_value, row_offset, col_offset)
-                                adapted_row.append(adapted_formula)
-                            except Exception as formula_error:
-                                # Calculate the actual cell address for error reporting
-                                source_col = column_index_to_letter(from_range_parsed['start_col_idx'] + col_idx)
-                                source_row = from_range_parsed['start_row'] + row_idx
-                                dest_col = column_index_to_letter(to_range_parsed['start_col_idx'] + col_idx)
-                                dest_row = to_range_parsed['start_row'] + row_idx
+                        # Calculate offsets
+                        row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
+                        col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
 
-                                error_info = {
-                                    'source_cell': f"{source_col}{source_row}",
-                                    'dest_cell': f"{dest_col}{dest_row}",
-                                    'formula': cell_value,
-                                    'error': str(formula_error)
+                        # Adapt formulas for this target
+                        adapted_values = []
+                        for row in source_values:
+                            adapted_row = []
+                            for cell_value in row:
+                                if cell_value and isinstance(cell_value, str) and cell_value.startswith('='):
+                                    try:
+                                        adapted_row.append(adapt_formula(cell_value, row_offset, col_offset))
+                                    except Exception:
+                                        adapted_row.append(cell_value)  # Keep original on error
+                                else:
+                                    adapted_row.append(cell_value)
+                            adapted_values.append(adapted_row)
+
+                        full_to_range = f"'{sheet_title}'!{target_range}"
+                        batch_data.append({
+                            'range': full_to_range,
+                            'values': adapted_values
+                        })
+
+                    # Write this chunk immediately to avoid memory issues and provide progress
+                    if batch_data:
+                        logger.info(f"Writing chunk of {len(batch_data)} ranges to Google Sheets")
+                        await asyncio.to_thread(
+                            service.spreadsheets().values().batchUpdate(
+                                spreadsheetId=spreadsheet_id,
+                                body={
+                                    'valueInputOption': value_input_option,
+                                    'data': batch_data
                                 }
-                                formula_errors.append(error_info)
+                            ).execute
+                        )
+                        total_updated_cells += len(batch_data) * from_rows * from_cols
+                        batch_data = []  # Clear for next chunk
 
-                                # Still append the original formula to continue processing
+                all_updated_ranges = target_ranges
+                logger.info(f"Optimized batch completed: {total_updated_cells} cells updated")
+
+            else:
+                # Original Python-based formula adaptation for small batches (<100 ranges)
+                logger.info(f"Using Python formula adaptation for {len(target_ranges)} target ranges")
+
+                # Collect all adapted values for batch write
+                batch_data = []
+                max_row_needed = 0
+                max_col_needed = 0
+
+                for target_range in target_ranges:
+                    to_range_parsed = self._parse_simple_range_address(target_range)
+
+                    # Calculate dimensions
+                    to_rows = to_range_parsed['end_row'] - to_range_parsed['start_row'] + 1
+                    to_cols = to_range_parsed['end_col_idx'] - to_range_parsed['start_col_idx'] + 1
+
+                    # Validate dimensions match
+                    # For single-row source (from_rows=1), we allow any number of destination rows
+                    # because we're copying the same row multiple times with formula adaptation
+                    if from_rows == 1:
+                        # Single source row: only validate columns match
+                        if from_cols != to_cols:
+                            raise ValueError(
+                                f"Source range columns ({from_cols}) must match "
+                                f"destination range columns ({to_cols})"
+                            )
+                    else:
+                        # Multi-row source: both rows and columns must match
+                        if from_rows != to_rows or from_cols != to_cols:
+                            raise ValueError(
+                                f"Source range dimensions ({from_rows}x{from_cols}) must match "
+                                f"destination range dimensions ({to_rows}x{to_cols})"
+                            )
+
+                    # Calculate offsets
+                    row_offset = to_range_parsed['start_row'] - from_range_parsed['start_row']
+                    col_offset = to_range_parsed['start_col_idx'] - from_range_parsed['start_col_idx']
+
+                    # Adapt formulas for each cell with error tracking
+                    adapted_values = []
+                    formula_errors = []
+
+                    for row_idx, row in enumerate(source_values):
+                        adapted_row = []
+                        for col_idx, cell_value in enumerate(row):
+                            if cell_value and isinstance(cell_value, str) and cell_value.startswith('='):
+                                # This is a formula, adapt it
+                                try:
+                                    adapted_formula = adapt_formula(cell_value, row_offset, col_offset)
+                                    adapted_row.append(adapted_formula)
+                                except Exception as formula_error:
+                                    # Calculate the actual cell address for error reporting
+                                    source_col = column_index_to_letter(from_range_parsed['start_col_idx'] + col_idx)
+                                    source_row = from_range_parsed['start_row'] + row_idx
+                                    dest_col = column_index_to_letter(to_range_parsed['start_col_idx'] + col_idx)
+                                    dest_row = to_range_parsed['start_row'] + row_idx
+
+                                    error_info = {
+                                        'source_cell': f"{source_col}{source_row}",
+                                        'dest_cell': f"{dest_col}{dest_row}",
+                                        'formula': cell_value,
+                                        'error': str(formula_error)
+                                    }
+                                    formula_errors.append(error_info)
+
+                                    # Still append the original formula to continue processing
+                                    adapted_row.append(cell_value)
+                                    logger.warning(f"Formula adaptation error at {source_col}{source_row}: {formula_error}")
+                            else:
+                                # Regular value, keep as-is
                                 adapted_row.append(cell_value)
-                                logger.warning(f"Formula adaptation error at {source_col}{source_row}: {formula_error}")
-                        else:
-                            # Regular value, keep as-is
-                            adapted_row.append(cell_value)
-                    adapted_values.append(adapted_row)
+                        adapted_values.append(adapted_row)
 
-                # If there were formula errors, raise with details
-                if formula_errors:
-                    error_details = "; ".join([
-                        f"{err['source_cell']}->{err['dest_cell']}: {err['error']} (formula: {err['formula'][:50]}{'...' if len(err['formula']) > 50 else ''})"
-                        for err in formula_errors[:5]  # Show first 5 errors
-                    ])
-                    if len(formula_errors) > 5:
-                        error_details += f"; ... and {len(formula_errors) - 5} more errors"
-                    raise ValueError(f"Formula adaptation errors in {len(formula_errors)} cell(s): {error_details}")
+                    # If there were formula errors, raise with details
+                    if formula_errors:
+                        error_details = "; ".join([
+                            f"{err['source_cell']}->{err['dest_cell']}: {err['error']} (formula: {err['formula'][:50]}{'...' if len(err['formula']) > 50 else ''})"
+                            for err in formula_errors[:5]  # Show first 5 errors
+                        ])
+                        if len(formula_errors) > 5:
+                            error_details += f"; ... and {len(formula_errors) - 5} more errors"
+                        raise ValueError(f"Formula adaptation errors in {len(formula_errors)} cell(s): {error_details}")
 
-                # Track max dimensions needed
-                max_row_needed = max(max_row_needed, to_range_parsed['end_row'])
-                max_col_needed = max(max_col_needed, to_range_parsed['end_col_idx'] + 1)
+                    # Track max dimensions needed
+                    max_row_needed = max(max_row_needed, to_range_parsed['end_row'])
+                    max_col_needed = max(max_col_needed, to_range_parsed['end_col_idx'] + 1)
 
-                # Add to batch data
-                full_to_range = f"'{sheet_title}'!{target_range}"
-                batch_data.append({
-                    'range': full_to_range,
-                    'values': adapted_values
-                })
+                    # Add to batch data
+                    full_to_range = f"'{sheet_title}'!{target_range}"
+                    batch_data.append({
+                        'range': full_to_range,
+                        'values': adapted_values
+                    })
 
-            # Check if we need to expand grid (only once for all ranges)
-            grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
-            grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
+                # Check if we need to expand grid (only once for all ranges)
+                grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
+                grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
 
-            if max_row_needed > grid_rows or max_col_needed > grid_cols:
-                # Expand grid
-                new_rows = max(grid_rows, max_row_needed)
-                new_cols = max(grid_cols, max_col_needed)
+                if max_row_needed > grid_rows or max_col_needed > grid_cols:
+                    # Expand grid
+                    new_rows = max(grid_rows, max_row_needed)
+                    new_cols = max(grid_cols, max_col_needed)
 
-                logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
+                    logger.info(f"Expanding grid to {new_rows} rows x {new_cols} columns")
 
-                await asyncio.to_thread(
-                    service.spreadsheets().batchUpdate(
-                        spreadsheetId=spreadsheet_id,
-                        body={
-                            'requests': [{
-                                'updateSheetProperties': {
-                                    'properties': {
-                                        'sheetId': sheet_properties['sheetId'],
+                    await asyncio.to_thread(
+                        service.spreadsheets().batchUpdate(
+                            spreadsheetId=spreadsheet_id,
+                            body={
+                                'requests': [{
+                                    'updateSheetProperties': {
+                                        'properties': {
+                                            'sheetId': sheet_properties['sheetId'],
                                             'gridProperties': {
                                                 'rowCount': new_rows,
                                                 'columnCount': new_cols
@@ -2183,26 +2252,26 @@ class GoogleSheetDataTable(DataTableInterface):
                         ).execute
                     )
 
-            # Write all adapted values in a single batch operation
-            logger.info(f"Writing {len(batch_data)} ranges in a single batch API call")
-            batch_update_result = await asyncio.to_thread(
-                service.spreadsheets().values().batchUpdate(
-                    spreadsheetId=spreadsheet_id,
-                    body={
-                        'valueInputOption': value_input_option,
-                        'data': batch_data
-                    }
-                ).execute
-            )
+                # Write all adapted values in a single batch operation
+                logger.info(f"Writing {len(batch_data)} ranges in a single batch API call")
+                batch_update_result = await asyncio.to_thread(
+                    service.spreadsheets().values().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={
+                            'valueInputOption': value_input_option,
+                            'data': batch_data
+                        }
+                    ).execute
+                )
 
-            # Process batch results
-            for response in batch_update_result.get('responses', []):
-                updated_cells = response.get('updatedCells', 0)
-                updated_range = response.get('updatedRange', '')
-                total_updated_cells += updated_cells
-                all_updated_ranges.append(updated_range)
+                # Process batch results
+                for response in batch_update_result.get('responses', []):
+                    updated_cells = response.get('updatedCells', 0)
+                    updated_range = response.get('updatedRange', '')
+                    total_updated_cells += updated_cells
+                    all_updated_ranges.append(updated_range)
 
-            logger.info(f"Batch write completed: {total_updated_cells} cells updated across {len(batch_data)} ranges")
+                logger.info(f"Batch write completed: {total_updated_cells} cells updated across {len(batch_data)} ranges")
 
             # Build result message
             if auto_fill:
