@@ -33,17 +33,24 @@ RUN uv pip install --system --no-cache -r requirements.lock --no-deps || \
     gspread-asyncio>=2.0.0 \
     motor>=3.7.1 \
     pyjwt>=2.10.1 \
-    uvicorn>=0.34.2
+    uvicorn>=0.34.2 \
+    structlog>=24.4.0
 
 # Copy application code
 COPY . .
 
-# Set default environment variables (removed SPREADSHEET_API as it's no longer needed)
-
+# Set default environment variables for production
+ENV ENV=production
+ENV LOG_FOLDER=/app/logs
+ENV LOG_LEVEL=INFO
 
 # Create non-root user for security
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+RUN useradd --create-home --shell /bin/bash app
+
+# Create log directory with proper permissions BEFORE switching to app user
+RUN mkdir -p /app/logs && chown -R app:app /app
+
+# Switch to non-root user
 USER app
 
 # Expose port 8321
