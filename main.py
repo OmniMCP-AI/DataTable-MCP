@@ -7,10 +7,26 @@ from core.server import mcp
 from core.logging_config import configure_logging, get_logger
 
 # Configure logging first (must be done before getting logger)
-configure_logging()
+# Wrap in try-except to ensure app doesn't crash if logging config fails
+try:
+    configure_logging()
+except Exception as e:
+    # If logging configuration fails completely, fall back to basic print
+    print(f"⚠️  Critical: Logging configuration failed: {e}")
+    print(f"⚠️  Server will continue with basic console output only")
+    # Don't re-raise - let the server continue to run
 
-# Get logger
-logger = get_logger(__name__)
+# Get logger (this should work even if configure_logging had issues)
+try:
+    logger = get_logger(__name__)
+except Exception:
+    # If even getting logger fails, create a dummy logger that does nothing
+    import logging
+    logger = logging.getLogger(__name__)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 def main():
     """

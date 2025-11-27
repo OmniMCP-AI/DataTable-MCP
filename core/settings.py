@@ -24,8 +24,36 @@ class Settings:
         self.log_level = os.getenv("LOG_LEVEL", "INFO")
         self.log_folder = os.getenv("LOG_FOLDER", "logs")
 
-        # Ensure log folder exists
-        os.makedirs(self.log_folder, exist_ok=True)
+        # Ensure log folder exists (with error handling)
+        try:
+            os.makedirs(self.log_folder, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            # If we can't create the configured log folder, try a fallback
+            print(f"⚠️  Warning: Cannot create log folder '{self.log_folder}': {e}")
+
+            # Try common fallback locations
+            fallback_folders = [
+                "/tmp/datatable-mcp-logs",  # Unix/Linux/Mac fallback
+                "~/datatable-mcp-logs",  # Home directory fallback
+                "./logs"  # Current directory fallback
+            ]
+
+            folder_created = False
+            for fallback in fallback_folders:
+                try:
+                    expanded_path = os.path.expanduser(fallback)
+                    os.makedirs(expanded_path, exist_ok=True)
+                    self.log_folder = expanded_path
+                    print(f"✅ Using fallback log folder: {self.log_folder}")
+                    folder_created = True
+                    break
+                except (OSError, PermissionError):
+                    continue
+
+            if not folder_created:
+                # If all fallbacks fail, disable file logging by setting to None
+                print(f"⚠️  Warning: All log folder locations failed. File logging will be disabled.")
+                self.log_folder = None
 
     @property
     def is_production(self) -> bool:

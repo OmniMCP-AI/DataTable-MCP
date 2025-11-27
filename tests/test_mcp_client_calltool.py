@@ -1666,6 +1666,10 @@ async def run_single_test(test_name, url, headers):
 if __name__ == "__main__":
     import os
     import argparse
+    from dotenv import load_dotenv
+
+    # Load environment variables from .env file
+    load_dotenv()
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
@@ -1682,18 +1686,27 @@ if __name__ == "__main__":
         endpoint = "https://datatable-mcp.maybe.ai"
     else:
         endpoint = "http://127.0.0.1:8321"
-        
+
 
     print(f"🔗 Using {args.env} environment: {endpoint}")
     print(f"💡 Use --env=local for local development or --env=prod for production")
     print(f"🧪 Running test: {args.test}")
-    
+
     # OAuth headers for testing (you need to provide real ones)
     test_headers = {
         "GOOGLE_OAUTH_REFRESH_TOKEN": os.getenv("TEST_GOOGLE_OAUTH_REFRESH_TOKEN"),
         "GOOGLE_OAUTH_CLIENT_ID": os.getenv("TEST_GOOGLE_OAUTH_CLIENT_ID"),
         "GOOGLE_OAUTH_CLIENT_SECRET": os.getenv("TEST_GOOGLE_OAUTH_CLIENT_SECRET")
     }
+
+    # Validate that all required environment variables are set
+    missing_vars = [k for k, v in test_headers.items() if v is None]
+    if missing_vars:
+        print(f"❌ ERROR: Missing required environment variables: {', '.join(missing_vars)}")
+        print(f"   Please ensure these are set in your .env file:")
+        for var in missing_vars:
+            print(f"   - {var}")
+        exit(1)
 
     # Run the selected test(s)
     if args.test == "all":
