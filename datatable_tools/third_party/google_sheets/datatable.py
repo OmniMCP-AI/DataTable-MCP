@@ -1505,9 +1505,10 @@ class GoogleSheetDataTable(DataTableInterface):
                 if not all(key in row for row in data):
                     raise ValueError(f"Lookup column '{key}' not found in all rows of update data")
 
-            # Load existing sheet data with FORMULA render option to preserve formulas in headers
-            logger.info(f"Loading existing sheet data from {uri} with FORMULA render option")
-            load_response = await self.load_data_table(service, uri, value_render_option='FORMULA')
+            # Load existing sheet data with FORMATTED_VALUE to ensure dates/numbers match user input format
+            # This prevents lookup mismatches where dates appear as serial numbers (45987) vs formatted strings (2025-11-26)
+            logger.info(f"Loading existing sheet data from {uri} with FORMATTED_VALUE render option")
+            load_response = await self.load_data_table(service, uri, value_render_option='FORMATTED_VALUE')
 
             if not load_response.success:
                 raise Exception(f"Failed to load sheet for update by lookup: {load_response.error}")
