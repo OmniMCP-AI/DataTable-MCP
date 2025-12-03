@@ -473,7 +473,7 @@ class GoogleSheetDataTable(DataTableInterface):
                     service.spreadsheets().values().update(
                         spreadsheetId=spreadsheet_id,
                         range=range_name,
-                        valueInputOption='RAW',
+                        valueInputOption='USER_ENTERED',
                         body=body
                     ).execute
                 )
@@ -605,7 +605,7 @@ class GoogleSheetDataTable(DataTableInterface):
                     service.spreadsheets().values().update(
                         spreadsheetId=spreadsheet_id,
                         range=range_name,
-                        valueInputOption='RAW',
+                        valueInputOption='USER_ENTERED',
                         body=body
                     ).execute
                 )
@@ -1505,15 +1505,21 @@ class GoogleSheetDataTable(DataTableInterface):
                 if not all(key in row for row in data):
                     raise ValueError(f"Lookup column '{key}' not found in all rows of update data")
 
-            # Load existing sheet data with FORMATTED_VALUE to ensure dates/numbers match user input format
-            # This prevents lookup mismatches where dates appear as serial numbers (45987) vs formatted strings (2025-11-26)
-            logger.info(f"Loading existing sheet data from {uri} with FORMATTED_VALUE render option")
-            load_response = await self.load_data_table(service, uri, value_render_option='FORMATTED_VALUE')
+            # Read twice: once for formulas (to detect which cells have formulas), once for formatted values (for lookup matching)
+            # This preserves formulas while maintaining proper date/number formatting for lookups
+            logger.info(f"Loading existing sheet data from {uri} - reading twice (FORMULA + FORMATTED_VALUE)")
 
+            # Read 1: Get formulas to detect which cells contain formulas
+            formula_response = await self.load_data_table(service, uri, value_render_option='FORMULA')
+            if not formula_response.success:
+                raise Exception(f"Failed to load sheet formulas for update by lookup: {formula_response.error}")
+            formula_data = formula_response.data  # List of dicts with formulas
+
+            # Read 2: Get formatted values for proper lookup matching (dates, numbers, etc.)
+            load_response = await self.load_data_table(service, uri, value_render_option='FORMATTED_VALUE')
             if not load_response.success:
                 raise Exception(f"Failed to load sheet for update by lookup: {load_response.error}")
-
-            existing_data = load_response.data  # List of dicts
+            existing_data = load_response.data  # List of dicts with formatted values
 
             # Special handling for empty sheet
             if not existing_data:
@@ -1664,6 +1670,19 @@ class GoogleSheetDataTable(DataTableInterface):
 
             logger.info(f"Built lookup index with {len(lookup_index)} unique key combinations")
 
+            # Build formula detection map: {(row_idx, col_name): True if cell contains formula}
+            # This allows us to skip updating cells that contain formulas
+            formula_map = {}
+            formula_count = 0
+            for idx, row in enumerate(formula_data):
+                for col_name, value in row.items():
+                    # Check if value is a formula (starts with '=')
+                    if isinstance(value, str) and value.startswith('='):
+                        formula_map[(idx, col_name)] = True
+                        formula_count += 1
+
+            logger.info(f"Detected {formula_count} formula cells that will be preserved during update")
+
             # Identify columns in update data
             update_columns = set()
             for row in data:
@@ -1682,10 +1701,21 @@ class GoogleSheetDataTable(DataTableInterface):
                 logger.info(f"Adding new columns at the end: {new_columns}")
 
             # Initialize result data with existing data
-            # Convert to list of lists for easier manipulation
+            # Use formula_data for cells with formulas, existing_data (formatted) for regular cells
+            # This preserves formulas while keeping date/number formatting for non-formula cells
             result_data = []
-            for row in existing_data:
-                row_list = [row.get(header, "") for header in final_headers]
+            for idx, row in enumerate(existing_data):
+                row_list = []
+                for header in final_headers:
+                    # Check if this cell contains a formula
+                    if (idx, header) in formula_map:
+                        # Use formula from formula_data
+                        formula_value = formula_data[idx].get(header, "")
+                        row_list.append(formula_value)
+                    else:
+                        # Use formatted value from existing_data
+                        formatted_value = row.get(header, "")
+                        row_list.append(formatted_value)
                 result_data.append(row_list)
 
             # If new columns were added, ensure all existing rows have placeholders
@@ -1729,15 +1759,20 @@ class GoogleSheetDataTable(DataTableInterface):
 
                         col_idx = final_headers.index(matched_header)
 
+                        # Skip updating cells that contain formulas (preserve formulas)
+                        if (row_idx, matched_header) in formula_map:
+                            logger.debug(f"Skipping formula cell at row {row_idx}, column '{matched_header}'")
+                            continue
+
                         # Handle empty/null values based on override flag
                         if new_value is None or new_value == "":
                             if override:
-                                # Clear the cell
+                                # Clear the cell (only if it's not a formula)
                                 result_data[row_idx][col_idx] = ""
                                 updated_cells += 1
                             # else: preserve existing value (do nothing)
                         else:
-                            # Update with new value
+                            # Update with new value (only if it's not a formula)
                             result_data[row_idx][col_idx] = new_value
                             updated_cells += 1
 
