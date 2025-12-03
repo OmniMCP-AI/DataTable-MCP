@@ -35,6 +35,7 @@ def align_dict_data_to_headers(data: List[Dict[str, Any]], headers: List[str]) -
 
     This function reorders dict keys to match the header order and fills missing columns with empty strings.
     Essential for maintaining column alignment when appending data to sheets.
+    Uses case-insensitive matching for header names.
 
     Args:
         data: List of dictionaries with data to align
@@ -52,9 +53,11 @@ def align_dict_data_to_headers(data: List[Dict[str, Any]], headers: List[str]) -
     aligned_rows = []
     for row_dict in data:
         aligned_row = []
+        # Build case-insensitive lookup for this row's keys
+        row_dict_lower = {k.lower(): v for k, v in row_dict.items()}
         for header in headers:
-            # Get value from dict, or use empty string if not found
-            value = row_dict.get(header, "")
+            # Case-insensitive lookup
+            value = row_dict_lower.get(header.lower(), "")
             aligned_row.append(value)
         aligned_rows.append(aligned_row)
 
@@ -1630,12 +1633,18 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_title = metadata['worksheet']
             sheet_id = metadata.get('worksheet_url', '').split('gid=')[-1] if 'worksheet_url' in metadata else '0'
 
-            # Validate all lookup columns exist in sheet
-            missing_keys = [key for key in lookup_keys if key not in existing_headers]
+            # Build case-insensitive header lookup: lowercase -> original case
+            headers_lower_map = {h.lower(): h for h in existing_headers}
+
+            # Validate all lookup columns exist in sheet (case-insensitive)
+            missing_keys = [key for key in lookup_keys if key.lower() not in headers_lower_map]
             if missing_keys:
                 raise ValueError(
                     f"Lookup column(s) {missing_keys} not found in sheet. Available columns: {existing_headers}"
                 )
+
+            # Normalize lookup_keys to match existing header case
+            lookup_keys = [headers_lower_map.get(key.lower(), key) for key in lookup_keys]
 
             # Build case-insensitive lookup index for composite keys
             # Format: {(key1_value.lower(), key2_value.lower(), ...): [row_indices]}
@@ -1659,13 +1668,16 @@ class GoogleSheetDataTable(DataTableInterface):
             for row in data:
                 update_columns.update(row.keys())
 
-            # Identify new columns (columns in data but not in sheet)
-            new_columns = [col for col in update_columns if col not in existing_headers]
+            # Identify new columns (columns in data but not in sheet) - case-insensitive
+            new_columns = [col for col in update_columns if col.lower() not in headers_lower_map]
 
             # Determine final headers - automatically add new columns at the end
             final_headers = existing_headers.copy()
             if new_columns:
                 final_headers.extend(new_columns)
+                # Update headers_lower_map with new columns
+                for col in new_columns:
+                    headers_lower_map[col.lower()] = col
                 logger.info(f"Adding new columns at the end: {new_columns}")
 
             # Initialize result data with existing data
@@ -1708,11 +1720,13 @@ class GoogleSheetDataTable(DataTableInterface):
                 for row_idx in row_indices:
                     # Update columns in this row
                     for col_name, new_value in update_row.items():
-                        if col_name not in final_headers:
+                        # Case-insensitive column lookup
+                        matched_header = headers_lower_map.get(col_name.lower())
+                        if matched_header is None or matched_header not in final_headers:
                             # Column not in final headers (should not happen as we add all columns)
                             continue
 
-                        col_idx = final_headers.index(col_name)
+                        col_idx = final_headers.index(matched_header)
 
                         # Handle empty/null values based on override flag
                         if new_value is None or new_value == "":
