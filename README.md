@@ -1,4 +1,4 @@
-# DataTable MCP Server
+# Google Sheets MCP Server
 
 A comprehensive Model Context Protocol (MCP) server for in-memory tabular data manipulation with external source integration. Built following the requirements specification for optimized LLM-driven data operations.
 
@@ -271,3 +271,4 @@ MIT License - see LICENSE file for details.
 For issues and questions:
 - GitHub Issues: [Repository Issues](link-to-issues)
 - Documentation: This README and inline code documentation
+for writing new test , using @tests/test_mcp_client_calltool.py  same pattern 
