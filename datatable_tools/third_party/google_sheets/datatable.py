@@ -2107,103 +2107,153 @@ class GoogleSheetDataTable(DataTableInterface):
             # Generate new title with "copy-of-" prefix
             new_title = f"copy-of-{original_title}"
 
-            # Step 2: Read data from first worksheet
-            first_worksheet = worksheets[0]
-            first_worksheet_uri = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={first_worksheet.sheet_id}"
+            # ========================================================================
+            # COMPREHENSIVE THREE-PHASE APPROACH TO PREVENT CROSS-WORKSHEET FORMULA ERRORS
+            # ========================================================================
+            # Phase 1: Read ALL worksheet data into memory (including first worksheet)
+            # Phase 2: Create new spreadsheet and ALL worksheets as empty (so all sheet names exist)
+            # Phase 3: Populate ALL worksheets with data (formulas can now resolve all sheet references)
+            # ========================================================================
 
-            logger.info(f"Reading first worksheet: {first_worksheet.title} (gid={first_worksheet.sheet_id})")
+            logger.info("Phase 1: Reading ALL worksheet data into memory...")
+            all_worksheets_data = []  # List of tuples: (worksheet, data)
 
-            # Read with FORMULA to preserve formulas
-            first_data_response = await self.load_data_table(
-                service,
-                first_worksheet_uri,
-                value_render_option='FORMULA'  # Preserve formulas
-            )
+            for worksheet in worksheets:
+                worksheet_uri = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={worksheet.sheet_id}"
 
-            if not first_data_response.success:
-                raise Exception(f"Failed to read first worksheet: {first_data_response.error}")
+                logger.info(f"Reading worksheet: {worksheet.title} (gid={worksheet.sheet_id})")
 
-            first_data = first_data_response.data  # List of dicts
+                # Read data from worksheet with FORMULA to preserve formulas
+                data_response = await self.load_data_table(
+                    service,
+                    worksheet_uri,
+                    value_render_option='FORMULA'  # Preserve formulas
+                )
 
-            logger.info(f"Read {len(first_data)} rows from first worksheet")
+                if not data_response.success:
+                    logger.warning(f"Failed to read worksheet {worksheet.title}: {data_response.error}, skipping")
+                    continue
 
-            # Step 3: Create new spreadsheet with first worksheet's data
-            logger.info(f"Creating new spreadsheet with name: {new_title}")
+                worksheet_data = data_response.data
 
-            new_sheet_response = await self.write_new_sheet(service, first_data, new_title)
+                logger.info(f"Read {len(worksheet_data)} rows from worksheet {worksheet.title}")
+                all_worksheets_data.append((worksheet, worksheet_data))
 
-            if not new_sheet_response.success:
-                raise Exception(f"Failed to create new spreadsheet: {new_sheet_response.error}")
+            if not all_worksheets_data:
+                raise Exception("Failed to read any worksheets from source spreadsheet")
 
-            new_spreadsheet_url = new_sheet_response.spreadsheet_url
+            # Phase 2: Create new spreadsheet with ALL worksheets (all empty with correct names)
+            logger.info("Phase 2: Creating new spreadsheet with all empty worksheets...")
 
-            # Extract spreadsheet ID from URL
-            new_spreadsheet_id, _ = parse_google_sheets_uri(new_spreadsheet_url)
+            # Get first worksheet info
+            first_worksheet = all_worksheets_data[0][0]
 
-            logger.info(f"Created new spreadsheet: {new_spreadsheet_id}")
+            # Create new spreadsheet using Google Sheets API directly
+            logger.info(f"Creating new spreadsheet '{new_title}' with first worksheet '{first_worksheet.title}'")
 
-            # Rename the default first worksheet to match the original worksheet name
-            logger.info(f"Renaming first worksheet to: {first_worksheet.title}")
-            rename_request = {
-                "requests": [{
-                    "updateSheetProperties": {
-                        "properties": {
-                            "sheetId": 0,  # Default first sheet ID
-                            "title": first_worksheet.title  # Use original worksheet name
-                        },
-                        "fields": "title"
+            spreadsheet_body = {
+                'properties': {
+                    'title': new_title
+                },
+                'sheets': [
+                    {
+                        'properties': {
+                            'title': first_worksheet.title,
+                            'gridProperties': {
+                                'rowCount': 1000,
+                                'columnCount': 26
+                            }
+                        }
                     }
-                }]
+                ]
             }
 
-            await asyncio.to_thread(
-                service.spreadsheets().batchUpdate(
-                    spreadsheetId=new_spreadsheet_id,
-                    body=rename_request
-                ).execute
+            # Create the spreadsheet
+            spreadsheet = await asyncio.to_thread(
+                service.spreadsheets().create(body=spreadsheet_body).execute
             )
 
-            logger.info(f"Successfully renamed first worksheet to: {first_worksheet.title}")
+            new_spreadsheet_id = spreadsheet['spreadsheetId']
+            new_spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{new_spreadsheet_id}/edit#gid=0"
 
-            # Step 4: Copy remaining worksheets (if any)
-            if len(worksheets) > 1:
-                logger.info(f"Copying {len(worksheets) - 1} additional worksheets")
+            logger.info(f"Created new spreadsheet: {new_spreadsheet_id} with first worksheet '{first_worksheet.title}'")
 
-                for worksheet in worksheets[1:]:
-                    worksheet_uri = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={worksheet.sheet_id}"
+            # Create all other worksheets as empty in batch
+            if len(all_worksheets_data) > 1:
+                batch_requests = []
+                for worksheet, _ in all_worksheets_data[1:]:
+                    batch_requests.append({
+                        "addSheet": {
+                            "properties": {
+                                "title": worksheet.title,
+                                "gridProperties": {
+                                    "rowCount": 1000,
+                                    "columnCount": 26
+                                }
+                            }
+                        }
+                    })
 
-                    logger.info(f"Reading worksheet: {worksheet.title} (gid={worksheet.sheet_id})")
+                # Execute batch creation
+                logger.info(f"Creating {len(all_worksheets_data)-1} additional worksheets in batch...")
+                batch_result = await asyncio.to_thread(
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=new_spreadsheet_id,
+                        body={"requests": batch_requests}
+                    ).execute
+                )
 
-                    # Read data from worksheet with FORMULA to preserve formulas
-                    data_response = await self.load_data_table(
-                        service,
-                        worksheet_uri,
-                        value_render_option='FORMULA'  # Preserve formulas
+                logger.info(f"Successfully created all {len(all_worksheets_data)} worksheets with correct names")
+
+            # Phase 3: Populate ALL worksheets with data (formulas can now resolve all sheet references)
+            logger.info(f"Phase 3: Populating ALL {len(all_worksheets_data)} worksheets with data...")
+
+            for worksheet, worksheet_data in all_worksheets_data:
+                logger.info(f"Populating worksheet '{worksheet.title}' with data")
+
+                # Process input data (handles both 2D array and list of dicts)
+                from datatable_tools.google_sheets_helpers import process_data_input, auto_detect_headers, serialize_row
+
+                extracted_headers, data_rows = process_data_input(worksheet_data)
+
+                # If data was list of dicts, use extracted headers
+                if extracted_headers:
+                    final_headers = extracted_headers
+                    final_data = data_rows
+                else:
+                    # Auto-detect headers if data_rows is 2D array
+                    detected_headers, processed_rows = auto_detect_headers(data_rows)
+
+                    # Use detected headers
+                    final_headers = detected_headers
+                    final_data = processed_rows if detected_headers else data_rows
+
+                # Prepare data for Google Sheets API
+                values = [serialize_row(row) for row in final_data]
+
+                # Convert to strings after serialization
+                values = [[str(cell) if cell is not None else "" for cell in row] for row in values]
+
+                # Prepare write data with headers
+                write_data = []
+                if final_headers:
+                    write_data.append([str(h) for h in final_headers])
+                write_data.extend(values)
+
+                # Write data to the worksheet using USER_ENTERED to interpret formulas
+                if write_data:
+                    range_name = f"'{worksheet.title}'!A1"
+                    body = {'values': write_data}
+                    await asyncio.to_thread(
+                        service.spreadsheets().values().update(
+                            spreadsheetId=new_spreadsheet_id,
+                            range=range_name,
+                            valueInputOption='USER_ENTERED',  # Interpret formulas
+                            body=body
+                        ).execute
                     )
 
-                    if not data_response.success:
-                        logger.warning(f"Failed to read worksheet {worksheet.title}: {data_response.error}, skipping")
-                        continue
-
-                    worksheet_data = data_response.data
-
-                    logger.info(f"Read {len(worksheet_data)} rows from worksheet {worksheet.title}")
-
-                    # Write to new spreadsheet as new worksheet
-                    logger.info(f"Creating worksheet '{worksheet.title}' in new spreadsheet")
-
-                    write_response = await self.write_new_worksheet(
-                        service,
-                        new_spreadsheet_url,
-                        worksheet_data,
-                        worksheet.title
-                    )
-
-                    if not write_response.success:
-                        logger.warning(f"Failed to create worksheet {worksheet.title}: {write_response.error}, skipping")
-                        continue
-
-                    logger.info(f"Successfully created worksheet: {worksheet.title}")
+                    logger.info(f"Successfully populated worksheet '{worksheet.title}' with {len(values)} data rows")
 
             # Build URLs
             original_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
