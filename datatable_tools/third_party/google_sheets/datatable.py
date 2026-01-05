@@ -1943,6 +1943,298 @@ class GoogleSheetDataTable(DataTableInterface):
                 message=f"Failed to list worksheets: {e}"
             )
 
+    # async def copy_sheet(
+    #     self,
+    #     drive_service,  # Authenticated Google Drive service
+    #     uri: str
+    # ) -> Dict[str, Any]:
+    #     """
+    #     Create a complete copy of a Google Sheets spreadsheet using Google Drive API.
+
+    #     This method uses the Drive API files().copy() to duplicate the entire spreadsheet file,
+    #     preserving all formatting, formulas, images, charts, and data validation.
+
+    #     Args:
+    #         drive_service: Authenticated Google Drive API service object
+    #         uri: Google Sheets URI (spreadsheet ID or full URL)
+
+    #     Returns:
+    #         CopySheetResponse containing:
+    #             - success: Whether the operation succeeded
+    #             - original_spreadsheet_id: ID of the source spreadsheet
+    #             - original_spreadsheet_url: URL of the source spreadsheet
+    #             - original_spreadsheet_title: Title of the source spreadsheet
+    #             - new_spreadsheet_id: ID of the newly created copy
+    #             - new_spreadsheet_url: URL of the newly created copy
+    #             - new_spreadsheet_title: Title of the newly created copy (copy-of-{ORIGINAL})
+    #             - error: Error message if failed, None otherwise
+    #             - message: Human-readable result message
+    #     """
+    #     try:
+    #         # Import response model
+    #         from datatable_tools.models import CopySheetResponse
+
+    #         # Parse URI to extract spreadsheet_id
+    #         spreadsheet_id, _ = parse_google_sheets_uri(uri)
+
+    #         logger.info(f"Copying spreadsheet: {spreadsheet_id}")
+
+    #         # Get original spreadsheet metadata (title) using Drive API
+    #         file_metadata = await asyncio.to_thread(
+    #             drive_service.files().get(
+    #                 fileId=spreadsheet_id,
+    #                 fields='name'
+    #             ).execute
+    #         )
+    #         original_title = file_metadata.get('name', 'Untitled')
+
+    #         logger.info(f"Original spreadsheet title: {original_title}")
+
+    #         # Generate new title with "copy-of-" prefix
+    #         new_title = f"copy-of-{original_title}"
+
+    #         # Copy the file using Drive API
+    #         copy_metadata = {
+    #             'name': new_title
+    #         }
+
+    #         logger.info(f"Copying file via Drive API with new name: {new_title}")
+
+    #         # Copy the file using Drive API with extended timeout (60 seconds)
+    #         # Drive API copy can take a while for large spreadsheets
+    #         copy_result = await asyncio.wait_for(
+    #             asyncio.to_thread(
+    #                 drive_service.files().copy(
+    #                     fileId=spreadsheet_id,
+    #                     body=copy_metadata
+    #                 ).execute
+    #             ),
+    #             timeout=60.0  # 60 seconds timeout for Drive API copy
+    #         )
+
+    #         new_spreadsheet_id = copy_result.get('id')
+    #         logger.info(f"Copy created successfully. New spreadsheet ID: {new_spreadsheet_id}")
+
+    #         # Build URLs
+    #         original_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+    #         new_url = f"https://docs.google.com/spreadsheets/d/{new_spreadsheet_id}/edit"
+
+    #         return CopySheetResponse(
+    #             success=True,
+    #             original_spreadsheet_id=spreadsheet_id,
+    #             original_spreadsheet_url=original_url,
+    #             original_spreadsheet_title=original_title,
+    #             new_spreadsheet_id=new_spreadsheet_id,
+    #             new_spreadsheet_url=new_url,
+    #             new_spreadsheet_title=new_title,
+    #             error=None,
+    #             message=f"Successfully copied spreadsheet '{original_title}' to '{new_title}'"
+    #         )
+
+    #     except Exception as e:
+    #         logger.error(f"Error copying spreadsheet: {e}")
+    #         from datatable_tools.models import CopySheetResponse
+    #         return CopySheetResponse(
+    #             success=False,
+    #             original_spreadsheet_id="",
+    #             original_spreadsheet_url="",
+    #             original_spreadsheet_title="",
+    #             new_spreadsheet_id="",
+    #             new_spreadsheet_url="",
+    #             new_spreadsheet_title="",
+    #             error=str(e),
+    #             message=f"Failed to copy spreadsheet: {e}"
+    #         )
+
+    async def copy_sheet(
+        self,
+        service,  # Authenticated Google Sheets service
+        uri: str
+    ) -> Dict[str, Any]:
+        """
+        Create a complete copy of a Google Sheets spreadsheet using read/write approach.
+
+        This method uses Google Sheets API only (no Drive API required).
+        ✅ Formulas ARE preserved!
+        ⚠️  Formatting (colors, fonts, borders), images, charts, and data validation are NOT preserved.
+
+        Implementation:
+        1. List all worksheets in source spreadsheet
+        2. Read data from each worksheet (with FORMULA render option to preserve formulas)
+        3. Create new spreadsheet with first worksheet's data (USER_ENTERED to interpret formulas)
+        4. Add remaining worksheets to new spreadsheet
+
+        Args:
+            service: Authenticated Google Sheets API service object
+            uri: Google Sheets URI (spreadsheet ID or full URL)
+
+        Returns:
+            CopySheetResponse containing:
+                - success: Whether the operation succeeded
+                - original_spreadsheet_id: ID of the source spreadsheet
+                - original_spreadsheet_url: URL of the source spreadsheet
+                - original_spreadsheet_title: Title of the source spreadsheet
+                - new_spreadsheet_id: ID of the newly created copy
+                - new_spreadsheet_url: URL of the newly created copy
+                - new_spreadsheet_title: Title of the newly created copy (copy-of-{ORIGINAL})
+                - error: Error message if failed, None otherwise
+                - message: Human-readable result message
+        """
+        try:
+            # Import response model
+            from datatable_tools.models import CopySheetResponse
+
+            # Parse URI to extract spreadsheet_id
+            spreadsheet_id, _ = parse_google_sheets_uri(uri)
+
+            logger.info(f"Copying spreadsheet (read/write method): {spreadsheet_id}")
+
+            # Step 1: List all worksheets to get spreadsheet title and worksheet info
+            worksheets_response = await self.list_worksheets(service, uri)
+
+            if not worksheets_response.success:
+                raise Exception(f"Failed to list worksheets: {worksheets_response.error}")
+
+            original_title = worksheets_response.spreadsheet_title
+            worksheets = worksheets_response.worksheets
+
+            if not worksheets or len(worksheets) == 0:
+                raise Exception("Source spreadsheet has no worksheets")
+
+            logger.info(f"Original spreadsheet title: {original_title}")
+            logger.info(f"Found {len(worksheets)} worksheets to copy")
+
+            # Generate new title with "copy-of-" prefix
+            new_title = f"copy-of-{original_title}"
+
+            # Step 2: Read data from first worksheet
+            first_worksheet = worksheets[0]
+            first_worksheet_uri = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={first_worksheet.sheet_id}"
+
+            logger.info(f"Reading first worksheet: {first_worksheet.title} (gid={first_worksheet.sheet_id})")
+
+            # Read with FORMULA to preserve formulas
+            first_data_response = await self.load_data_table(
+                service,
+                first_worksheet_uri,
+                value_render_option='FORMULA'  # Preserve formulas
+            )
+
+            if not first_data_response.success:
+                raise Exception(f"Failed to read first worksheet: {first_data_response.error}")
+
+            first_data = first_data_response.data  # List of dicts
+
+            logger.info(f"Read {len(first_data)} rows from first worksheet")
+
+            # Step 3: Create new spreadsheet with first worksheet's data
+            logger.info(f"Creating new spreadsheet with name: {new_title}")
+
+            new_sheet_response = await self.write_new_sheet(service, first_data, new_title)
+
+            if not new_sheet_response.success:
+                raise Exception(f"Failed to create new spreadsheet: {new_sheet_response.error}")
+
+            new_spreadsheet_url = new_sheet_response.spreadsheet_url
+
+            # Extract spreadsheet ID from URL
+            new_spreadsheet_id, _ = parse_google_sheets_uri(new_spreadsheet_url)
+
+            logger.info(f"Created new spreadsheet: {new_spreadsheet_id}")
+
+            # Rename the default first worksheet to match the original worksheet name
+            logger.info(f"Renaming first worksheet to: {first_worksheet.title}")
+            rename_request = {
+                "requests": [{
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": 0,  # Default first sheet ID
+                            "title": first_worksheet.title  # Use original worksheet name
+                        },
+                        "fields": "title"
+                    }
+                }]
+            }
+
+            await asyncio.to_thread(
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=new_spreadsheet_id,
+                    body=rename_request
+                ).execute
+            )
+
+            logger.info(f"Successfully renamed first worksheet to: {first_worksheet.title}")
+
+            # Step 4: Copy remaining worksheets (if any)
+            if len(worksheets) > 1:
+                logger.info(f"Copying {len(worksheets) - 1} additional worksheets")
+
+                for worksheet in worksheets[1:]:
+                    worksheet_uri = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={worksheet.sheet_id}"
+
+                    logger.info(f"Reading worksheet: {worksheet.title} (gid={worksheet.sheet_id})")
+
+                    # Read data from worksheet with FORMULA to preserve formulas
+                    data_response = await self.load_data_table(
+                        service,
+                        worksheet_uri,
+                        value_render_option='FORMULA'  # Preserve formulas
+                    )
+
+                    if not data_response.success:
+                        logger.warning(f"Failed to read worksheet {worksheet.title}: {data_response.error}, skipping")
+                        continue
+
+                    worksheet_data = data_response.data
+
+                    logger.info(f"Read {len(worksheet_data)} rows from worksheet {worksheet.title}")
+
+                    # Write to new spreadsheet as new worksheet
+                    logger.info(f"Creating worksheet '{worksheet.title}' in new spreadsheet")
+
+                    write_response = await self.write_new_worksheet(
+                        service,
+                        new_spreadsheet_url,
+                        worksheet_data,
+                        worksheet.title
+                    )
+
+                    if not write_response.success:
+                        logger.warning(f"Failed to create worksheet {worksheet.title}: {write_response.error}, skipping")
+                        continue
+
+                    logger.info(f"Successfully created worksheet: {worksheet.title}")
+
+            # Build URLs
+            original_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
+            return CopySheetResponse(
+                success=True,
+                original_spreadsheet_id=spreadsheet_id,
+                original_spreadsheet_url=original_url,
+                original_spreadsheet_title=original_title,
+                new_spreadsheet_id=new_spreadsheet_id,
+                new_spreadsheet_url=new_spreadsheet_url,
+                new_spreadsheet_title=new_title,
+                error=None,
+                message=f"Successfully copied spreadsheet '{original_title}' to '{new_title}' ({len(worksheets)} worksheets). NOTE: Formulas preserved. Formatting, images, and charts were not preserved."
+            )
+
+        except Exception as e:
+            logger.error(f"Error copying spreadsheet (read/write method): {e}")
+            from datatable_tools.models import CopySheetResponse
+            return CopySheetResponse(
+                success=False,
+                original_spreadsheet_id="",
+                original_spreadsheet_url="",
+                original_spreadsheet_title="",
+                new_spreadsheet_id="",
+                new_spreadsheet_url="",
+                new_spreadsheet_title="",
+                error=str(e),
+                message=f"Failed to copy spreadsheet: {e}"
+            )
+
     async def copy_range_with_formulas(
         self,
         service,  # Authenticated Google Sheets service

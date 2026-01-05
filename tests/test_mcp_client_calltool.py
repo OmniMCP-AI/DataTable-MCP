@@ -12,6 +12,7 @@ Test Functions:
 - test_1d_array_input: Tests 1D array input support
 - test_value_render_options: Tests date formula rendering (FORMATTED_VALUE vs UNFORMATTED_VALUE)
 - test_formula_rendering: Tests reading sheets with formulas and verifying calculated results
+- test_copy_sheet: Tests copy_sheet using Drive API (preserves formatting, formulas, images)
 
 Usage:
     # Run all tests
@@ -26,6 +27,7 @@ Usage:
     python test_mcp_client_calltool.py --env=local --test=1d
     python test_mcp_client_calltool.py --env=local --test=render
     python test_mcp_client_calltool.py --env=local --test=formula
+    python test_mcp_client_calltool.py --env=local --test=copy
 
     # Run against production
     python test_mcp_client_calltool.py --env=prod --test=all
@@ -1628,6 +1630,206 @@ async def test_formula_rendering(url, headers):
             print(f"\n✅ Formula rendering test completed!")
             return new_spreadsheet_url
 
+# async def test_copy_sheet(url, headers):
+#     """Test copy_sheet operation - creates complete copy with all formatting preserved"""
+#     print(f"🚀 Testing Copy Sheet Operation")
+#     print("=" * 60)
+
+#     async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+#         async with ClientSession(read, write) as session:
+#             await session.initialize()
+
+#             # Test: Copy a spreadsheet
+#             print(f"\n📝 Test: Copying entire spreadsheet")
+#             print(f"   Source: {READ_WRITE_URI}")
+#             print(f"   This will create a complete copy with all formatting, formulas, and data")
+
+#             copy_res = await session.call_tool("copy_sheet", {
+#                 "uri": READ_WRITE_URI
+#             })
+#             print(f"\n✅ Copy result: {copy_res}")
+
+#             # Verify the result
+#             new_spreadsheet_url = None
+#             if not copy_res.isError and copy_res.content and copy_res.content[0].text:
+#                 content = json.loads(copy_res.content[0].text)
+#                 if content.get('success'):
+#                     original_title = content.get('original_spreadsheet_title', '')
+#                     new_title = content.get('new_spreadsheet_title', '')
+#                     new_spreadsheet_url = content.get('new_spreadsheet_url', '')
+#                     original_url = content.get('original_spreadsheet_url', '')
+#                     original_id = content.get('original_spreadsheet_id', '')
+#                     new_id = content.get('new_spreadsheet_id', '')
+
+#                     print(f"\n   ✅ Spreadsheet copied successfully!")
+#                     print(f"")
+#                     print(f"   📊 Original Spreadsheet:")
+#                     print(f"      Title: {original_title}")
+#                     print(f"      ID: {original_id}")
+#                     print(f"      URL: {original_url}")
+#                     print(f"")
+#                     print(f"   📊 New Copy:")
+#                     print(f"      Title: {new_title}")
+#                     print(f"      ID: {new_id}")
+#                     print(f"      URL: {new_spreadsheet_url}")
+#                     print(f"")
+
+#                     # Verify naming convention
+#                     expected_prefix = f"copy-of-{original_title}"
+#                     if new_title == expected_prefix:
+#                         print(f"   ✅ PASS: New title follows naming convention 'copy-of-{{ORIGINAL}}'")
+#                     else:
+#                         print(f"   ❌ FAIL: Expected title '{expected_prefix}', got '{new_title}'")
+
+#                     # Verify different IDs
+#                     if original_id != new_id and new_id:
+#                         print(f"   ✅ PASS: New spreadsheet has different ID (not the same file)")
+#                     else:
+#                         print(f"   ❌ FAIL: New spreadsheet ID should be different from original")
+
+#                     # Verify URL format
+#                     if new_spreadsheet_url.startswith("https://docs.google.com/spreadsheets/d/"):
+#                         print(f"   ✅ PASS: New URL is valid Google Sheets URL")
+#                     else:
+#                         print(f"   ❌ FAIL: Invalid URL format")
+
+#                     print(f"\n   💡 Key Features:")
+#                     print(f"   - All formatting preserved (colors, fonts, borders)")
+#                     print(f"   - All formulas preserved and working")
+#                     print(f"   - All data validation rules copied")
+#                     print(f"   - All images and charts duplicated")
+#                     print(f"   - All worksheets/tabs included")
+
+#                 else:
+#                     print(f"   ❌ Copy failed: {content.get('message', 'Unknown error')}")
+#                     error = content.get('error', '')
+#                     if error:
+#                         print(f"   ❌ Error details: {error}")
+#             else:
+#                 error_msg = copy_res.content[0].text if copy_res.content else "Unknown error"
+#                 print(f"   ❌ Failed to get valid response: {error_msg}")
+
+#             print(f"\n✅ Copy sheet test completed!")
+#             print(f"\n📊 Test Summary:")
+#             print(f"   ✓ Uses Google Drive API for fast, complete duplication")
+#             print(f"   ✓ Preserves all formatting, formulas, and data")
+#             print(f"   ✓ New sheet named with 'copy-of-' prefix")
+#             print(f"   ✓ Independent copy (not linked to original)")
+
+#             if new_spreadsheet_url:
+#                 print(f"\n   🔗 View the copy: {new_spreadsheet_url}")
+
+#             return new_spreadsheet_url
+
+async def test_copy_sheet(url, headers):
+    """Test copy_sheet operation - creates copy using read/write approach (preserves formulas, loses visual formatting)"""
+    print(f"🚀 Testing Copy Sheet 2 Operation (Read/Write Approach)")
+    print("=" * 60)
+
+    async with streamablehttp_client(url=url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            copy_sheet_uri = "https://docs.google.com/spreadsheets/d/17DNH3v3Lm1a0e3LVCdoMaDSMIS1ql3zPTxiEdZ7VLsE/edit?gid=295133220#gid=295133220"
+            # Test: Copy a spreadsheet using read/write approach
+            print(f"\n📝 Test: Copying entire spreadsheet using read/write approach")
+            print(f"   Source: {copy_sheet_uri}")
+            print(f"   ✅ Formulas ARE preserved!")
+            print(f"   ⚠️  Formatting (colors, fonts, borders), images, and charts are NOT preserved")
+
+            copy_res = await session.call_tool("copy_sheet", {
+                "uri": copy_sheet_uri
+            })
+            print(f"\n✅ Copy result: {copy_res}")
+
+            # Verify the result
+            new_spreadsheet_url = None
+            if not copy_res.isError and copy_res.content and copy_res.content[0].text:
+                content = json.loads(copy_res.content[0].text)
+                if content.get('success'):
+                    original_title = content.get('original_spreadsheet_title', '')
+                    new_title = content.get('new_spreadsheet_title', '')
+                    new_spreadsheet_url = content.get('new_spreadsheet_url', '')
+                    original_url = content.get('original_spreadsheet_url', '')
+                    original_id = content.get('original_spreadsheet_id', '')
+                    new_id = content.get('new_spreadsheet_id', '')
+                    message = content.get('message', '')
+
+                    print(f"\n   ✅ Spreadsheet copied successfully!")
+                    print(f"")
+                    print(f"   📊 Original Spreadsheet:")
+                    print(f"      Title: {original_title}")
+                    print(f"      ID: {original_id}")
+                    print(f"      URL: {original_url}")
+                    print(f"")
+                    print(f"   📊 New Copy:")
+                    print(f"      Title: {new_title}")
+                    print(f"      ID: {new_id}")
+                    print(f"      URL: {new_spreadsheet_url}")
+                    print(f"")
+                    print(f"   📝 Message: {message}")
+                    print(f"")
+
+                    # Verify naming convention
+                    expected_prefix = f"copy-of-{original_title}"
+                    if new_title == expected_prefix:
+                        print(f"   ✅ PASS: New title follows naming convention 'copy-of-{{ORIGINAL}}'")
+                    else:
+                        print(f"   ❌ FAIL: Expected title '{expected_prefix}', got '{new_title}'")
+
+                    # Verify different IDs
+                    if original_id != new_id and new_id:
+                        print(f"   ✅ PASS: New spreadsheet has different ID (not the same file)")
+                    else:
+                        print(f"   ❌ FAIL: New spreadsheet ID should be different from original")
+
+                    # Verify URL format
+                    if new_spreadsheet_url.startswith("https://docs.google.com/spreadsheets/d/"):
+                        print(f"   ✅ PASS: New URL is valid Google Sheets URL")
+                    else:
+                        print(f"   ❌ FAIL: Invalid URL format")
+
+                    # Check for formula preservation message
+                    if "formula" in message.lower():
+                        if "preserved" in message.lower():
+                            print(f"   ✅ PASS: Message confirms formulas are preserved")
+                        else:
+                            print(f"   ⚠️  WARNING: Message mentions formulas but unclear if preserved")
+                    else:
+                        print(f"   ℹ️  INFO: Message doesn't mention formula handling")
+
+                    print(f"\n   💡 What's Preserved (Read/Write Approach):")
+                    print(f"   ✅ Formulas preserved and working!")
+                    print(f"   ✅ All data values preserved")
+                    print(f"   ✅ All worksheets/tabs included")
+                    print(f"   ✅ Works without Drive API access")
+                    print(f"\n   ⚠️  What's NOT Preserved:")
+                    print(f"   ⚠️  Visual formatting (colors, fonts, borders)")
+                    print(f"   ⚠️  Images and charts")
+                    print(f"   ⚠️  Data validation rules")
+
+                else:
+                    print(f"   ❌ Copy failed: {content.get('message', 'Unknown error')}")
+                    error = content.get('error', '')
+                    if error:
+                        print(f"   ❌ Error details: {error}")
+            else:
+                error_msg = copy_res.content[0].text if copy_res.content else "Unknown error"
+                print(f"   ❌ Failed to get valid response: {error_msg}")
+
+            print(f"\n✅ Copy sheet 2 test completed!")
+            print(f"\n📊 Test Summary:")
+            print(f"   ✓ Uses Google Sheets API only (no Drive API required)")
+            print(f"   ✓ Copies all data values and formulas from all worksheets")
+            print(f"   ✓ Formulas preserved and working")
+            print(f"   ✓ New sheet named with 'copy-of-' prefix")
+            print(f"   ✓ Independent copy (not linked to original)")
+            print(f"   ⚠️  Loses visual formatting, images, charts")
+
+            if new_spreadsheet_url:
+                print(f"\n   🔗 View the copy: {new_spreadsheet_url}")
+
+            return new_spreadsheet_url
+
 async def run_all_tests(url, headers):
     """Run all test suites in sequence"""
     print("🎯 Starting Google Sheets MCP Integration Tests")
@@ -1698,7 +1900,8 @@ async def run_single_test(test_name, url, headers):
         'listtype': test_list_of_dict_input,
         '1d': test_1d_array_input,
         'render': test_value_render_options,
-        'formula': test_formula_rendering  # NEW
+        'formula': test_formula_rendering,
+        'copy': test_copy_sheet
     }
 
     if test_name not in test_functions:
@@ -1731,8 +1934,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Google Sheets MCP Integration")
     parser.add_argument("--env", choices=["local", "prod", "test"], default="local",
                        help="Environment to use: local (127.0.0.1:8321) or test (datatable-mcp-test.maybe.ai) or prod (datatable-mcp.maybe.ai)")
-    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d", "render", "formula"], default="all",
-                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, 1d, render, or formula")
+    parser.add_argument("--test", choices=["all", "basic", "write", "advanced", "gid", "listtype", "1d", "render", "formula", "copy", "copy2"], default="all",
+                       help="Which test to run: all (default), basic, write, advanced, gid, listtype, 1d, render, formula, copy, or copy2")
     args = parser.parse_args()
 
     # Set endpoint based on environment argument

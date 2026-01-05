@@ -205,3 +205,16 @@ class GetLastColumnResponse(BaseModel):
     message: str
     error: Optional[str] = None
 
+
+class CopySheetResponse(BaseModel):
+    """Response type for copy_sheet operation"""
+    success: bool
+    original_spreadsheet_id: str
+    original_spreadsheet_url: str
+    original_spreadsheet_title: str
+    new_spreadsheet_id: str
+    new_spreadsheet_url: str
+    new_spreadsheet_title: str
+    error: Optional[str] = None
+    message: str
+

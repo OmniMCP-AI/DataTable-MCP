@@ -13,6 +13,7 @@ Contains all core MCP tools:
 - append_columns: Append columns to existing sheet
 - update_range: Update specific cell range
 - update_range_by_lookup: Update rows by lookup key
+- copy_sheet: Create complete copy of spreadsheet (preserves all formatting)
 """
 
 from typing import Optional, List, Any, Dict, Union
@@ -24,7 +25,7 @@ from datatable_tools.third_party.google_sheets.datatable import GoogleSheetDataT
 from datatable_tools.auth.service_decorator import require_google_service
 from datatable_tools.models import (
     TableResponse, SpreadsheetResponse, UpdateResponse, TableData, WorksheetsListResponse,
-    GetLastRowResponse, GetUsedRangeResponse, GetLastColumnResponse
+    GetLastRowResponse, GetUsedRangeResponse, GetLastColumnResponse, CopySheetResponse
 )
 from datatable_tools.google_sheets_helpers import (
     process_data_input, parse_google_sheets_uri, get_sheet_by_gid,
@@ -1348,5 +1349,135 @@ async def get_last_column(
             message=f"Failed to get last column",
             error=str(e)
         )
+
+
+# @mcp.tool
+# @require_google_service("drive", "drive_file")
+# async def copy_sheet(
+#     service,  # Injected by @require_google_service (Drive service)
+#     ctx: Context,
+#     uri: str = Field(
+#         description="Google Sheets URI to copy. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}) or spreadsheet ID"
+#     )
+# ) -> CopySheetResponse:
+#     """
+#     Create a complete copy of a Google Sheets spreadsheet using Google Drive API.
+
+#     <description>Creates a full copy of a spreadsheet with all formatting, formulas, images, charts, and data validation preserved. The new spreadsheet is named "copy-of-{ORIGINAL_NAME}".</description>
+
+#     <use_case>Use when you need to duplicate an entire spreadsheet while preserving all formatting, formulas, conditional formatting, data validation, charts, and images. Much faster and more reliable than reading and writing data manually.</use_case>
+
+#     <limitation>Requires Google Drive API access. The copy operation preserves structure and formatting but creates a new independent spreadsheet (not linked to the original). Sharing permissions are inherited if the user has appropriate Drive permissions.</limitation>
+
+#     <failure_cases>Fails if the user lacks Drive API access, spreadsheet doesn't exist, URI is invalid, or user lacks read permissions on the original spreadsheet. Also fails if Drive quota is exceeded.</failure_cases>
+
+#     Args:
+#         uri: Google Sheets URI or spreadsheet ID. Supports:
+#              - Full URL: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
+#              - Spreadsheet ID: {spreadsheetID}
+
+#     Returns:
+#         CopySheetResponse containing:
+#             - success: Whether the operation succeeded
+#             - original_spreadsheet_id: ID of the source spreadsheet
+#             - original_spreadsheet_url: URL of the source spreadsheet
+#             - original_spreadsheet_title: Title of the source spreadsheet
+#             - new_spreadsheet_id: ID of the newly created copy
+#             - new_spreadsheet_url: URL of the newly created copy
+#             - new_spreadsheet_title: Title of the newly created copy (copy-of-{ORIGINAL})
+#             - error: Error message if failed, None otherwise
+#             - message: Human-readable result message
+
+#     Examples:
+#         # Copy a spreadsheet using full URL
+#         result = copy_sheet(
+#             ctx,
+#             uri="https://docs.google.com/spreadsheets/d/1DpaI7L4yfYptsv6X2TL0InhVbeFfe2TpZPPoY98llR0/edit?gid=1411021775#gid=1411021775"
+#         )
+
+#         # Copy using spreadsheet ID
+#         result = copy_sheet(
+#             ctx,
+#             uri="1DpaI7L4yfYptsv6X2TL0InhVbeFfe2TpZPPoY98llR0"
+#         )
+
+#         # Access the result
+#         if result.success:
+#             print(f"Original: {result.original_spreadsheet_title}")
+#             print(f"Copy: {result.new_spreadsheet_title}")
+#             print(f"New URL: {result.new_spreadsheet_url}")
+#     """
+#     google_sheet = GoogleSheetDataTable()
+#     return await google_sheet.copy_sheet(service, uri)
+
+
+@mcp.tool
+@require_google_service("sheets", "sheets_write")
+async def copy_sheet(
+    service,  # Injected by @require_google_service (Sheets service)
+    ctx: Context,
+    uri: str = Field(
+        description="Google Sheets URI to copy. Supports full URL pattern (https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}) or spreadsheet ID"
+    )
+) -> CopySheetResponse:
+    """
+    Create a copy of a Google Sheets spreadsheet using read/write approach (Sheets API only).
+
+    <description>Creates a copy of a spreadsheet by reading all data (including formulas) and writing to a new spreadsheet.
+    ✅ Formulas ARE preserved!
+    ⚠️  Formatting (colors, fonts, borders), images, charts, and data validation are NOT preserved.
+    This uses Sheets API only - no Drive API required.</description>
+
+    <use_case>Use when you need to duplicate spreadsheet data and formulas without Drive API access.
+    Perfect for creating functional copies that preserve calculations while removing visual formatting.</use_case>
+
+    <limitation>IMPORTANT: While formulas are preserved, this method removes all visual formatting (colors,
+    fonts, borders), images and charts, and data validation rules. Only data values, formulas, and
+    structure (rows/columns) are preserved. Slower than Drive API for large spreadsheets.</limitation>
+
+    <failure_cases>Fails if the user lacks Sheets API read/write access, spreadsheet doesn't exist, URI
+    is invalid, or user lacks read permissions on the original spreadsheet. Also fails if any worksheet
+    is empty or has no data.</failure_cases>
+
+    Args:
+        uri: Google Sheets URI or spreadsheet ID. Supports:
+             - Full URL: https://docs.google.com/spreadsheets/d/{spreadsheetID}/edit?gid={gid}
+             - Spreadsheet ID: {spreadsheetID}
+
+    Returns:
+        CopySheetResponse containing:
+            - success: Whether the operation succeeded
+            - original_spreadsheet_id: ID of the source spreadsheet
+            - original_spreadsheet_url: URL of the source spreadsheet
+            - original_spreadsheet_title: Title of the source spreadsheet
+            - new_spreadsheet_id: ID of the newly created copy
+            - new_spreadsheet_url: URL of the newly created copy
+            - new_spreadsheet_title: Title of the newly created copy (copy-of-{ORIGINAL})
+            - error: Error message if failed, None otherwise
+            - message: Human-readable result message (includes warning about lost formatting)
+
+    Examples:
+        # Copy a spreadsheet using full URL
+        result = copy_sheet(
+            ctx,
+            uri="https://docs.google.com/spreadsheets/d/1DpaI7L4yfYptsv6X2TL0InhVbeFfe2TpZPPoY98llR0/edit?gid=1411021775#gid=1411021775"
+        )
+
+        # Copy using spreadsheet ID
+        result = copy_sheet(
+            ctx,
+            uri="1DpaI7L4yfYptsv6X2TL0InhVbeFfe2TpZPPoY98llR0"
+        )
+
+        # Access the result
+        if result.success:
+            print(f"Original: {result.original_spreadsheet_title}")
+            print(f"Copy: {result.new_spreadsheet_title}")
+            print(f"New URL: {result.new_spreadsheet_url}")
+            print(f"Warning: {result.message}")  # Will mention formatting loss
+    """
+    google_sheet = GoogleSheetDataTable()
+    return await google_sheet.copy_sheet(service, uri)
+
 
 
