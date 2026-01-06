@@ -29,6 +29,105 @@ from datatable_tools.google_sheets_helpers import (
 logger = logging.getLogger(__name__)
 
 
+def extract_starting_column(range_string: str) -> str:
+    """
+    Extract starting column letter from a range string.
+
+    Examples:
+        "Sheet!C1:AC100" → "C"
+        "Sheet!A1:Z10" → "A"
+        "'My Sheet'!AA1:AC50" → "AA"
+
+    Args:
+        range_string: Range string from Google Sheets API (e.g., "Sheet!C1:AC100")
+
+    Returns:
+        Starting column letter (e.g., "C", "AA")
+    """
+    # Parse range: "SheetName!C1:AC100" or "'Sheet Name'!C1:AC100"
+    if "!" not in range_string:
+        return "A"
+
+    cell_range = range_string.split("!")[-1]  # Get "C1:AC100"
+    if ":" in cell_range:
+        cell_range = cell_range.split(":")[0]  # Get "C1"
+
+    # Extract column letters (A, AA, AB, etc.)
+    match = re.match(r"([A-Z]+)", cell_range)
+    if match:
+        return match.group(1)
+    return "A"
+
+
+def extract_starting_column_index(starting_column: str) -> int:
+    """
+    Extract starting column index (0-based) from a column letter or range string.
+
+    Examples:
+        "A" → 0 (column A)
+        "C" → 2 (column C)
+        "AA" → 26 (column AA)
+        "AB" → 27 (column AB)
+        "Sheet!A1:Z10" → 0 (column A)
+        "Sheet!C1:AC100" → 2 (column C)
+
+    Args:
+        starting_column: Column letter (e.g., "C", "AA") or range string
+
+    Returns:
+        0-based column index (A=0, B=1, C=2, ... AA=26, etc.)
+    """
+    # If it's a range string, extract the column letter first
+    if "!" in starting_column:
+        starting_column = extract_starting_column(starting_column)
+
+    # Convert column letters to index (A=0, B=1, ..., Z=25, AA=26, AB=27, etc.)
+    col_index = 0
+    for i, char in enumerate(reversed(starting_column)):
+        col_index += (ord(char) - ord('A') + 1) * (26 ** i)
+
+    return col_index - 1
+
+
+def pad_data_to_column(data: List[List[Any]], starting_column: str) -> List[List[Any]]:
+    """
+    Pad data with empty columns on the left to match starting column position.
+
+    CRITICAL FIX: If data starts at column C but we want to write from A,
+    we need to add 2 empty columns to the beginning so positions are preserved.
+
+    Example:
+        Input: data = [["C_val", "D_val", ...]], starting_column = "C"
+        Output: [["", "", "C_val", "D_val", ...]]  (A and B padded with empty strings)
+
+    Args:
+        data: 2D array of cell values
+        starting_column: Column where data actually starts (e.g., "C", "AA")
+
+    Returns:
+        Padded 2D array with empty columns prepended
+    """
+    col_index = extract_starting_column_index(starting_column)
+
+    if col_index == 0:
+        # Data already starts at column A, no padding needed
+        return data
+
+    # Pad each row with empty strings at the beginning
+    padded_data = []
+    for row in data:
+        if isinstance(row, list):
+            # Add col_index empty strings to the beginning
+            padded_row = [""] * col_index + row
+            padded_data.append(padded_row)
+        else:
+            # Single value
+            padded_data.append([""] * col_index + [row])
+
+    logger.info(f"Padded data: Added {col_index} empty column(s) to the left")
+    return padded_data
+
+
 def align_dict_data_to_headers(data: List[Dict[str, Any]], headers: List[str]) -> List[List[Any]]:
     """
     Align dict data to match existing sheet headers.
@@ -551,7 +650,7 @@ class GoogleSheetDataTable(DataTableInterface):
                                 "title": worksheet_name,
                                 "gridProperties": {
                                     "rowCount": 1000,
-                                    "columnCount": 26
+                                    "columnCount": 100  # Increased for sheets with many columns (AA, AB, AC, etc.)
                                 }
                             }
                         }
@@ -671,7 +770,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 if sheet.get('properties', {}).get('sheetId') == sheet_id:
                     grid_props = sheet.get('properties', {}).get('gridProperties', {})
                     current_grid_row_count = grid_props.get('rowCount', 1000)
-                    current_grid_col_count = grid_props.get('columnCount', 26)
+                    current_grid_col_count = grid_props.get('columnCount', 100)
                     logger.info(f"Current grid dimensions: {current_grid_row_count} rows x {current_grid_col_count} columns")
                     break
 
@@ -2046,6 +2145,75 @@ class GoogleSheetDataTable(DataTableInterface):
     #             message=f"Failed to copy spreadsheet: {e}"
     #         )
 
+    async def _read_raw_worksheet_data(
+        self,
+        service,
+        spreadsheet_id: str,
+        worksheet_title: str,
+        value_render_option: str = 'FORMULA'
+    ) -> tuple[List[List[Any]], str]:
+        """
+        Read raw worksheet data directly from API WITHOUT header detection.
+
+        CRITICAL: Preserves exact column positions, including empty leading columns.
+        Returns both data AND the actual range to know column positions.
+
+        Args:
+            service: Authenticated Google Sheets API service
+            spreadsheet_id: Spreadsheet ID
+            worksheet_title: Worksheet title
+            value_render_option: 'FORMULA' (default) or 'FORMATTED_VALUE'
+
+        Returns:
+            Tuple of (2D array of raw cell values, actual_range from API)
+            Example: ([...data...], "Sheet!C1:AC100")
+        """
+        # CRITICAL FIX: Read with explicit A1:ZZ1000 to force full range
+        # This ensures we get ALL columns even if they're empty
+        # Without this, API returns sparse data and formulas shift
+        range_name = f"'{worksheet_title}'!A1:ZZ1000"
+
+        logger.info(f"Reading raw data from worksheet '{worksheet_title}' (range: {range_name})")
+
+        result = await asyncio.to_thread(
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueRenderOption=value_render_option,
+                majorDimension='ROWS'
+            ).execute
+        )
+
+        raw_data = result.get('values', [])
+        actual_range = result.get('range', range_name)  # e.g., "Sheet!A1:AB100"
+
+        logger.info(f"Read {len(raw_data)} rows from worksheet '{worksheet_title}'")
+        logger.info(f"Actual data range from API: {actual_range}")
+
+        # Ensure all rows have the same number of columns by padding
+        # Find max column count
+        max_cols = 0
+        for row in raw_data:
+            if len(row) > max_cols:
+                max_cols = len(row)
+
+        # Pad all rows to have the same number of columns
+        if max_cols > 0:
+            padded_data = []
+            for row in raw_data:
+                if isinstance(row, list):
+                    # Pad with empty strings to reach max_cols
+                    padded_row = row + [''] * (max_cols - len(row))
+                    padded_data.append(padded_row)
+                else:
+                    # Single value or empty row
+                    padded_row = [row if row else ''] + [''] * (max_cols - 1)
+                    padded_data.append(padded_row)
+            raw_data = padded_data
+            logger.info(f"Padded all rows to {max_cols} columns for consistency")
+
+        return raw_data, actual_range
+
     async def copy_sheet(
         self,
         service,  # Authenticated Google Sheets service
@@ -2116,28 +2284,33 @@ class GoogleSheetDataTable(DataTableInterface):
             # ========================================================================
 
             logger.info("Phase 1: Reading ALL worksheet data into memory...")
-            all_worksheets_data = []  # List of tuples: (worksheet, data)
+            all_worksheets_data = []  # List of tuples: (worksheet, data, actual_range)
 
             for worksheet in worksheets:
-                worksheet_uri = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={worksheet.sheet_id}"
-
                 logger.info(f"Reading worksheet: {worksheet.title} (gid={worksheet.sheet_id})")
 
-                # Read data from worksheet with FORMULA to preserve formulas
-                data_response = await self.load_data_table(
-                    service,
-                    worksheet_uri,
-                    value_render_option='FORMULA'  # Preserve formulas
-                )
+                # Read raw data directly from API WITHOUT header detection
+                # CRITICAL: This preserves exact column positions, including empty leading columns
+                # to avoid formula reference shifts (e.g., =sheet!AA2 -> =sheet!AC2)
+                try:
+                    raw_data, actual_range = await self._read_raw_worksheet_data(
+                        service,
+                        spreadsheet_id,
+                        worksheet.title,
+                        value_render_option='FORMULA'  # Preserve formulas
+                    )
 
-                if not data_response.success:
-                    logger.warning(f"Failed to read worksheet {worksheet.title}: {data_response.error}, skipping")
+                    if not raw_data:
+                        logger.warning(f"No data in worksheet {worksheet.title}, skipping")
+                        continue
+
+                    starting_column = extract_starting_column(actual_range)
+                    logger.info(f"Read {len(raw_data)} rows from worksheet {worksheet.title}")
+                    logger.info(f"Data starts at column {starting_column} (actual_range: {actual_range})")
+                    all_worksheets_data.append((worksheet, raw_data, actual_range, starting_column))
+                except Exception as e:
+                    logger.warning(f"Failed to read worksheet {worksheet.title}: {e}, skipping")
                     continue
-
-                worksheet_data = data_response.data
-
-                logger.info(f"Read {len(worksheet_data)} rows from worksheet {worksheet.title}")
-                all_worksheets_data.append((worksheet, worksheet_data))
 
             if not all_worksheets_data:
                 raise Exception("Failed to read any worksheets from source spreadsheet")
@@ -2161,7 +2334,7 @@ class GoogleSheetDataTable(DataTableInterface):
                             'title': first_worksheet.title,
                             'gridProperties': {
                                 'rowCount': 1000,
-                                'columnCount': 26
+                                'columnCount': 100  # Increased for sheets with many columns (AA, AB, AC, etc.)
                             }
                         }
                     }
@@ -2181,14 +2354,14 @@ class GoogleSheetDataTable(DataTableInterface):
             # Create all other worksheets as empty in batch
             if len(all_worksheets_data) > 1:
                 batch_requests = []
-                for worksheet, _ in all_worksheets_data[1:]:
+                for worksheet, _, _, _ in all_worksheets_data[1:]:
                     batch_requests.append({
                         "addSheet": {
                             "properties": {
                                 "title": worksheet.title,
                                 "gridProperties": {
                                     "rowCount": 1000,
-                                    "columnCount": 26
+                                    "columnCount": 100  # Increased for sheets with many columns (AA, AB, AC, etc.)
                                 }
                             }
                         }
@@ -2208,52 +2381,43 @@ class GoogleSheetDataTable(DataTableInterface):
             # Phase 3: Populate ALL worksheets with data (formulas can now resolve all sheet references)
             logger.info(f"Phase 3: Populating ALL {len(all_worksheets_data)} worksheets with data...")
 
-            for worksheet, worksheet_data in all_worksheets_data:
-                logger.info(f"Populating worksheet '{worksheet.title}' with data")
+            for worksheet, worksheet_data, actual_range, starting_column in all_worksheets_data:
+                logger.info(f"Populating worksheet '{worksheet.title}' with {len(worksheet_data)} rows")
+                logger.info(f"Actual range was: {actual_range}")
 
-                # Process input data (handles both 2D array and list of dicts)
-                from datatable_tools.google_sheets_helpers import process_data_input, auto_detect_headers, serialize_row
+                # worksheet_data is already a raw 2D array from API with consistent column count
+                # All rows are padded to the same width, preserving column positions
 
-                extracted_headers, data_rows = process_data_input(worksheet_data)
-
-                # If data was list of dicts, use extracted headers
-                if extracted_headers:
-                    final_headers = extracted_headers
-                    final_data = data_rows
-                else:
-                    # Auto-detect headers if data_rows is 2D array
-                    detected_headers, processed_rows = auto_detect_headers(data_rows)
-
-                    # Use detected headers
-                    final_headers = detected_headers
-                    final_data = processed_rows if detected_headers else data_rows
-
-                # Prepare data for Google Sheets API
-                values = [serialize_row(row) for row in final_data]
-
-                # Convert to strings after serialization
-                values = [[str(cell) if cell is not None else "" for cell in row] for row in values]
-
-                # Prepare write data with headers
+                # Convert all values to strings for Google Sheets API
                 write_data = []
-                if final_headers:
-                    write_data.append([str(h) for h in final_headers])
-                write_data.extend(values)
+                for row in worksheet_data:
+                    # Ensure row is a list and convert all cells to strings
+                    if isinstance(row, list):
+                        write_data.append([str(cell) if cell is not None else "" for cell in row])
+                    else:
+                        # Single cell or scalar
+                        write_data.append([str(row)])
 
                 # Write data to the worksheet using USER_ENTERED to interpret formulas
                 if write_data:
+                    # Always write to A1 - data already has correct column positions
+                    # Since we read A1:ZZ1000 and padded, columns are preserved
                     range_name = f"'{worksheet.title}'!A1"
+
+                    logger.info(f"Writing {len(write_data)} rows x {len(write_data[0]) if write_data else 0} cols to A1")
+
                     body = {'values': write_data}
                     await asyncio.to_thread(
                         service.spreadsheets().values().update(
                             spreadsheetId=new_spreadsheet_id,
                             range=range_name,
-                            valueInputOption='USER_ENTERED',  # Interpret formulas
+                            valueInputOption='USER_ENTERED',  # Interpret formulas (critical!)
                             body=body
                         ).execute
                     )
 
-                    logger.info(f"Successfully populated worksheet '{worksheet.title}' with {len(values)} data rows")
+                    logger.info(f"Successfully populated worksheet '{worksheet.title}' - formulas preserved with exact column positions")
+
 
             # Build URLs
             original_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
@@ -2615,7 +2779,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
                 # Check if we need to expand grid (only once for all ranges)
                 grid_rows = sheet_properties.get('gridProperties', {}).get('rowCount', 1000)
-                grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 26)
+                grid_cols = sheet_properties.get('gridProperties', {}).get('columnCount', 100)
 
                 if max_row_needed > grid_rows or max_col_needed > grid_cols:
                     # Expand grid
