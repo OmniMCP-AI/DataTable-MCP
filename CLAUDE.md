@@ -37,6 +37,13 @@ export http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897 all_pr
 
 ### Testing
 
+### VPN/network issue
+
+you might need to run the test file via setting up the proxy 
+
+```bash
+export http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897 all_proxy=socks5://127.0.0.1:7897"
+```
 **Test Pattern**: All tests follow the pattern in `tests/test_mcp_client_calltool.py` using real MCP client connections.
 
 #### major test case with category
