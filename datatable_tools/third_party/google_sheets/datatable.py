@@ -2042,108 +2042,109 @@ class GoogleSheetDataTable(DataTableInterface):
                 message=f"Failed to list worksheets: {e}"
             )
 
-    # async def copy_sheet(
-    #     self,
-    #     drive_service,  # Authenticated Google Drive service
-    #     uri: str
-    # ) -> Dict[str, Any]:
-    #     """
-    #     Create a complete copy of a Google Sheets spreadsheet using Google Drive API.
+    async def copy_sheet(
+        self,
+        drive_service,  # Authenticated Google Drive service
+        uri: str
+    ) -> Dict[str, Any]:
+        """
+        Create a complete copy of a Google Sheets spreadsheet using Google Drive API.
 
-    #     This method uses the Drive API files().copy() to duplicate the entire spreadsheet file,
-    #     preserving all formatting, formulas, images, charts, and data validation.
+        This method uses the Drive API files().copy() to duplicate the entire spreadsheet file,
+        preserving all formatting, formulas, images, charts, and data validation.
 
-    #     Args:
-    #         drive_service: Authenticated Google Drive API service object
-    #         uri: Google Sheets URI (spreadsheet ID or full URL)
+        Args:
+            drive_service: Authenticated Google Drive API service object
+            uri: Google Sheets URI (spreadsheet ID or full URL)
 
-    #     Returns:
-    #         CopySheetResponse containing:
-    #             - success: Whether the operation succeeded
-    #             - original_spreadsheet_id: ID of the source spreadsheet
-    #             - original_spreadsheet_url: URL of the source spreadsheet
-    #             - original_spreadsheet_title: Title of the source spreadsheet
-    #             - new_spreadsheet_id: ID of the newly created copy
-    #             - new_spreadsheet_url: URL of the newly created copy
-    #             - new_spreadsheet_title: Title of the newly created copy (copy-of-{ORIGINAL})
-    #             - error: Error message if failed, None otherwise
-    #             - message: Human-readable result message
-    #     """
-    #     try:
-    #         # Import response model
-    #         from datatable_tools.models import CopySheetResponse
+        Returns:
+            CopySheetResponse containing:
+                - success: Whether the operation succeeded
+                - original_spreadsheet_id: ID of the source spreadsheet
+                - original_spreadsheet_url: URL of the source spreadsheet
+                - original_spreadsheet_title: Title of the source spreadsheet
+                - new_spreadsheet_id: ID of the newly created copy
+                - new_spreadsheet_url: URL of the newly created copy
+                - new_spreadsheet_title: Title of the newly created copy (copy-of-{ORIGINAL})
+                - error: Error message if failed, None otherwise
+                - message: Human-readable result message
+        """
+        try:
+            # Import response model
+            from datatable_tools.models import CopySheetResponse
 
-    #         # Parse URI to extract spreadsheet_id
-    #         spreadsheet_id, _ = parse_google_sheets_uri(uri)
+            # Parse URI to extract spreadsheet_id
+            spreadsheet_id, _ = parse_google_sheets_uri(uri)
 
-    #         logger.info(f"Copying spreadsheet: {spreadsheet_id}")
+            logger.info(f"Copying spreadsheet: {spreadsheet_id}")
 
-    #         # Get original spreadsheet metadata (title) using Drive API
-    #         file_metadata = await asyncio.to_thread(
-    #             drive_service.files().get(
-    #                 fileId=spreadsheet_id,
-    #                 fields='name'
-    #             ).execute
-    #         )
-    #         original_title = file_metadata.get('name', 'Untitled')
+            # Get original spreadsheet metadata (title) using Drive API
+            file_metadata = await asyncio.to_thread(
+                drive_service.files().get(
+                    fileId=spreadsheet_id,
+                    fields='name'
+                ).execute
+            )
+            original_title = file_metadata.get('name', 'Untitled')
 
-    #         logger.info(f"Original spreadsheet title: {original_title}")
+            logger.info(f"Original spreadsheet title: {original_title}")
 
-    #         # Generate new title with "copy-of-" prefix
-    #         new_title = f"copy-of-{original_title}"
+            # Generate new title with "copy-of-" prefix
+            new_title = f"copy-of-{original_title}"
 
-    #         # Copy the file using Drive API
-    #         copy_metadata = {
-    #             'name': new_title
-    #         }
+            # Copy the file using Drive API
+            copy_metadata = {
+                'name': new_title
+            }
 
-    #         logger.info(f"Copying file via Drive API with new name: {new_title}")
+            logger.info(f"Copying file via Drive API with new name: {new_title}")
 
-    #         # Copy the file using Drive API with extended timeout (60 seconds)
-    #         # Drive API copy can take a while for large spreadsheets
-    #         copy_result = await asyncio.wait_for(
-    #             asyncio.to_thread(
-    #                 drive_service.files().copy(
-    #                     fileId=spreadsheet_id,
-    #                     body=copy_metadata
-    #                 ).execute
-    #             ),
-    #             timeout=60.0  # 60 seconds timeout for Drive API copy
-    #         )
+            # Copy the file using Drive API with extended timeout (60 seconds)
+            # Drive API copy can take a while for large spreadsheets
+            copy_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    drive_service.files().copy(
+                        fileId=spreadsheet_id,
+                        body=copy_metadata
+                    ).execute
+                ),
+                timeout=60.0  # 60 seconds timeout for Drive API copy
+            )
 
-    #         new_spreadsheet_id = copy_result.get('id')
-    #         logger.info(f"Copy created successfully. New spreadsheet ID: {new_spreadsheet_id}")
+            new_spreadsheet_id = copy_result.get('id')
+            logger.info(f"Copy created successfully. New spreadsheet ID: {new_spreadsheet_id}")
 
-    #         # Build URLs
-    #         original_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
-    #         new_url = f"https://docs.google.com/spreadsheets/d/{new_spreadsheet_id}/edit"
+            # Build URLs
+            original_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+            new_url = f"https://docs.google.com/spreadsheets/d/{new_spreadsheet_id}/edit"
 
-    #         return CopySheetResponse(
-    #             success=True,
-    #             original_spreadsheet_id=spreadsheet_id,
-    #             original_spreadsheet_url=original_url,
-    #             original_spreadsheet_title=original_title,
-    #             new_spreadsheet_id=new_spreadsheet_id,
-    #             new_spreadsheet_url=new_url,
-    #             new_spreadsheet_title=new_title,
-    #             error=None,
-    #             message=f"Successfully copied spreadsheet '{original_title}' to '{new_title}'"
-    #         )
+            return CopySheetResponse(
+                success=True,
+                original_spreadsheet_id=spreadsheet_id,
+                original_spreadsheet_url=original_url,
+                original_spreadsheet_title=original_title,
+                new_spreadsheet_id=new_spreadsheet_id,
+                new_spreadsheet_url=new_url,
+                new_spreadsheet_title=new_title,
+                error=None,
+                message=f"Successfully copied spreadsheet '{original_title}' to '{new_title}'"
+            )
 
-    #     except Exception as e:
-    #         logger.error(f"Error copying spreadsheet: {e}")
-    #         from datatable_tools.models import CopySheetResponse
-    #         return CopySheetResponse(
-    #             success=False,
-    #             original_spreadsheet_id="",
-    #             original_spreadsheet_url="",
-    #             original_spreadsheet_title="",
-    #             new_spreadsheet_id="",
-    #             new_spreadsheet_url="",
-    #             new_spreadsheet_title="",
-    #             error=str(e),
-    #             message=f"Failed to copy spreadsheet: {e}"
-    #         )
+        except Exception as e:
+            logger.error(f"Error copying spreadsheet: {e}")
+            from datatable_tools.models import CopySheetResponse
+            return CopySheetResponse(
+                success=False,
+                original_spreadsheet_id="",
+                original_spreadsheet_url="",
+                original_spreadsheet_title="",
+                new_spreadsheet_id="",
+                new_spreadsheet_url="",
+                new_spreadsheet_title="",
+                error=str(e),
+                message=f"Failed to copy spreadsheet: {e}"
+            )
+
 
     async def _read_raw_worksheet_data(
         self,
@@ -2214,13 +2215,13 @@ class GoogleSheetDataTable(DataTableInterface):
 
         return raw_data, actual_range
 
-    async def copy_sheet(
+    async def copy_sheet_readwrite(
         self,
         service,  # Authenticated Google Sheets service
         uri: str
     ) -> Dict[str, Any]:
         """
-        Create a complete copy of a Google Sheets spreadsheet using read/write approach.
+        Create a complete copy of a Google Sheets spreadsheet using read/write approach (BACKUP).
 
         This method uses Google Sheets API only (no Drive API required).
         ✅ Formulas ARE preserved!
