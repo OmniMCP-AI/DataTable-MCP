@@ -1115,16 +1115,17 @@ class GoogleSheetDataTable(DataTableInterface):
         uri: str,
         data: List[List[Any]],
         range_address: Optional[str] = None,
-        value_input_option: str = 'USER_ENTERED'
+        value_input_option: str = 'USER_ENTERED',
+        include_header: bool = True
     ) -> Dict[str, Any]:
         """
         Writes cell values to a Google Sheets range, replacing existing content.
 
         Implementation of DataTableInterface.update_range() for Google Sheets.
 
-        Automatically detects if the original URI data has headers and handles updates accordingly:
-        - If original data has headers and new data has headers: skips header and updates only data rows
-        - If original data has no headers: updates all data including first row
+        Header behavior controlled by include_header parameter:
+        - If include_header=True (default): Always includes headers in the output
+        - If include_header=False: Auto-detects and skips headers when both original and new data have headers
 
         Args:
             service: Authenticated Google Sheets API service object
@@ -1134,7 +1135,8 @@ class GoogleSheetDataTable(DataTableInterface):
             value_input_option: How input data should be interpreted:
                 - 'RAW': Values are stored as-is (literal text, no parsing)
                 - 'USER_ENTERED': Values are parsed as if typed by user (formulas, numbers, dates parsed)
-                Default is 'RAW' for backwards compatibility.
+                Default is 'USER_ENTERED'.
+            include_header: If True (default), always includes headers. If False, uses auto-detection to skip headers.
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
@@ -1146,15 +1148,46 @@ class GoogleSheetDataTable(DataTableInterface):
             sheet_id = sheet_props['sheetId']
 
             # Load original data to detect if it has headers
-            range_name = f"'{sheet_title}'!A:ZZ"
+            # Read from the specific range being updated (or entire sheet if no range specified)
+            if range_address:
+                # Extract column range from range_address for header detection
+                # Examples: "I1:K10" -> "I:K", "A1" -> "A:ZZ", "2:10" -> "A:ZZ"
+                import re
+                if ':' in range_address:
+                    # Parse range like "I1:K10" or "I:K"
+                    start_part, end_part = range_address.split(':', 1)
+                    # Extract column letters
+                    start_col_match = re.match(r'^([A-Z]+)', start_part)
+                    end_col_match = re.match(r'^([A-Z]+)', end_part)
+
+                    if start_col_match and end_col_match:
+                        # Column range detected (e.g., "I1:K10" or "I:K")
+                        start_col = start_col_match.group(1)
+                        end_col = end_col_match.group(1)
+                        detection_range = f"'{sheet_title}'!{start_col}:{end_col}"
+                    else:
+                        # Row range like "2:10" - use entire sheet
+                        detection_range = f"'{sheet_title}'!A:ZZ"
+                else:
+                    # Single cell like "A1" - extract column and read that column
+                    col_match = re.match(r'^([A-Z]+)', range_address)
+                    if col_match:
+                        col = col_match.group(1)
+                        detection_range = f"'{sheet_title}'!{col}:{col}"
+                    else:
+                        detection_range = f"'{sheet_title}'!A:ZZ"
+            else:
+                detection_range = f"'{sheet_title}'!A:ZZ"
+
             result = await asyncio.to_thread(
                 service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=range_name,
+                    range=detection_range,
                     valueRenderOption=ValueRenderOption.FORMATTED_VALUE.value
                 ).execute
             )
             original_data = result.get('values', [])
+            logger.info(f"Header detection reading from range: {detection_range}")
 
             # Detect if original data has headers
             original_has_headers = False
@@ -1182,38 +1215,46 @@ class GoogleSheetDataTable(DataTableInterface):
             # (list of dicts format implies DataFrame-like structure with headers)
             if extracted_headers:
                 # Determine if we should skip headers:
-                # Skip headers if original data has headers AND new data has headers
-                skip_header_for_update = original_has_headers and extracted_headers
+                # - If include_header=True: Always include headers (skip_header_for_update = False)
+                # - If include_header=False: Use auto-detection (skip if both original and new data have headers)
+                skip_header_for_update = (not include_header) and original_has_headers and extracted_headers
 
                 if skip_header_for_update:
                     # Skip headers - only write data rows
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]
-                    logger.info(f"[Auto-detected] Original data has headers. Skipping extracted headers from list of dicts: {extracted_headers}")
-                    logger.info(f"[Auto-detected] Writing {len(data_rows)} data rows only (no header row)")
+                    logger.info(f"[include_header=False] Skipping extracted headers from list of dicts: {extracted_headers}")
+                    logger.info(f"[include_header=False] Writing {len(data_rows)} data rows only (no header row)")
                 else:
                     # Include headers
                     values = [[str(h) for h in extracted_headers]]
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in data_rows])
-                    logger.info(f"[Auto-detected] Original data has no headers. Including extracted headers from list of dicts: {extracted_headers}")
-                    logger.info(f"[Auto-detected] Writing {len(data_rows)} data rows + 1 header row = {len(values)} total rows")
+                    if include_header:
+                        logger.info(f"[include_header=True] Including extracted headers from list of dicts: {extracted_headers}")
+                    else:
+                        logger.info(f"[include_header=False, no auto-skip] Including extracted headers from list of dicts: {extracted_headers}")
+                    logger.info(f"Writing {len(data_rows)} data rows + 1 header row = {len(values)} total rows")
             else:
                 # Auto-detect headers in data_rows (already processed)
                 detected_headers, processed_rows = auto_detect_headers(data_rows)
 
                 # Determine if we should skip headers:
-                # Skip headers if original data has headers AND new data has detected headers
-                skip_header_for_update = original_has_headers and detected_headers
+                # - If include_header=True: Always include headers (skip_header_for_update = False)
+                # - If include_header=False: Use auto-detection (skip if both original and new data have headers)
+                skip_header_for_update = (not include_header) and original_has_headers and detected_headers
 
                 # If headers were detected in new data, decide whether to include them
                 if detected_headers and not skip_header_for_update:
-                    # Original has NO headers, so include detected headers
+                    # Include detected headers
                     values = [[str(h) for h in detected_headers]]
                     values.extend([[str(cell) if cell is not None else "" for cell in row] for row in processed_rows])
-                    logger.info(f"[Auto-detected] Original data has no headers. Including detected headers in output: {detected_headers}")
+                    if include_header:
+                        logger.info(f"[include_header=True] Including detected headers in output: {detected_headers}")
+                    else:
+                        logger.info(f"[include_header=False, no auto-skip] Including detected headers in output: {detected_headers}")
                 elif detected_headers and skip_header_for_update:
-                    # Original has headers, new data has headers - skip header row
+                    # Skip header row (include_header=False and both original & new data have headers)
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in processed_rows]
-                    logger.info(f"[Auto-detected] Original data has headers. Skipping detected headers in new data: {detected_headers}")
+                    logger.info(f"[include_header=False] Skipping detected headers in new data: {detected_headers}")
                 else:
                     # No headers detected in new data - use all data rows as-is
                     values = [[str(cell) if cell is not None else "" for cell in row] for row in data_rows]

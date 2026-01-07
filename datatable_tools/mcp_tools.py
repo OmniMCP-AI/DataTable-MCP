@@ -482,14 +482,18 @@ async def update_range(
     ),
     range_address: str = Field(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
+    ),
+    include_header: bool = Field(
+        default=True,
+        description="Whether to include header row in the update. If True (default), always writes headers. If False, uses auto-detection logic to skip headers when both original and new data have headers."
     )
 ) -> UpdateResponse:
     """
     Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
 
-    Automatically detects if the original URI data has headers and handles updates accordingly:
-    - If original data has headers and new data has headers: skips header and updates only data rows
-    - If original data has no headers: updates all data including first row
+    Header behavior controlled by include_header parameter:
+    - If include_header=True (default): Always includes headers in the output
+    - If include_header=False: Auto-detects headers and skips them if both original and new data have headers
 
     Values are automatically parsed as if typed by user (USER_ENTERED mode):
     - Formulas (=IMAGE, =SUM, etc.) are interpreted as formulas
@@ -510,6 +514,7 @@ async def update_range(
               CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
+        include_header: If True (default), always includes headers. If False, uses auto-detection to skip headers.
 
     Returns:
         UpdateResponse containing:
@@ -533,12 +538,18 @@ async def update_range(
         # Write table from A1 with auto-expansion
         update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1")
 
+        # Write table with headers explicitly included (default behavior)
+        update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1", include_header=True)
+
+        # Write table without headers (skip if both original and new data have headers)
+        update_range(ctx, uri, data=[["Col1", "Col2"], [1, 2], [3, 4]], range_address="A1", include_header=False)
+
         # Insert image formula (formulas are automatically interpreted)
         update_range(ctx, uri, data=[['=IMAGE("https://example.com/image.jpg", 1)']],
                     range_address="A1")
     """
     google_sheet = GoogleSheetDataTable()
-    return await google_sheet.update_range(service, uri, data, range_address)
+    return await google_sheet.update_range(service, uri, data, range_address, include_header=include_header)
 
 
 @mcp.tool
