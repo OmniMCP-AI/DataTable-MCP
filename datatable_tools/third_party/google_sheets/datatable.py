@@ -2030,17 +2030,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error listing worksheets: {e}")
-            from datatable_tools.models import WorksheetsListResponse
-            return WorksheetsListResponse(
-                success=False,
-                spreadsheet_id="",
-                spreadsheet_url="",
-                spreadsheet_title="",
-                worksheets=[],
-                total_worksheets=0,
-                error=str(e),
-                message=f"Failed to list worksheets: {e}"
-            )
+            raise Exception(f"Failed to list worksheets: {e}") from e
 
     async def copy_sheet(
         self,
@@ -2132,18 +2122,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error copying spreadsheet: {e}")
-            from datatable_tools.models import CopySheetResponse
-            return CopySheetResponse(
-                success=False,
-                original_spreadsheet_id="",
-                original_spreadsheet_url="",
-                original_spreadsheet_title="",
-                new_spreadsheet_id="",
-                new_spreadsheet_url="",
-                new_spreadsheet_title="",
-                error=str(e),
-                message=f"Failed to copy spreadsheet: {e}"
-            )
+            raise Exception(f"Failed to copy spreadsheet: {e}") from e
 
 
     async def _read_raw_worksheet_data(
@@ -2437,18 +2416,7 @@ class GoogleSheetDataTable(DataTableInterface):
 
         except Exception as e:
             logger.error(f"Error copying spreadsheet (read/write method): {e}")
-            from datatable_tools.models import CopySheetResponse
-            return CopySheetResponse(
-                success=False,
-                original_spreadsheet_id="",
-                original_spreadsheet_url="",
-                original_spreadsheet_title="",
-                new_spreadsheet_id="",
-                new_spreadsheet_url="",
-                new_spreadsheet_title="",
-                error=str(e),
-                message=f"Failed to copy spreadsheet: {e}"
-            )
+            raise Exception(f"Failed to copy spreadsheet: {e}") from e
 
     async def copy_range_with_formulas(
         self,
