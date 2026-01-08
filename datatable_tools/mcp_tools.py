@@ -484,8 +484,8 @@ async def update_range(
         description="Range in A1 notation. Examples: single cell 'B5', row range 'A1:E1', column range 'B:B' or 'B1:B10', 2D range 'A1:C3'. Range auto-expands if data dimensions exceed specified range."
     ),
     include_header: bool = Field(
-        default=True,
-        description="Whether to include header row in the update. If True (default), always writes headers. If False, uses auto-detection logic to skip headers when both original and new data have headers."
+        default=False,
+        description="Whether to include header row in the update. If False (default), uses auto-detection logic to skip headers when both original and new data have headers."
     )
 ) -> UpdateResponse:
     """
