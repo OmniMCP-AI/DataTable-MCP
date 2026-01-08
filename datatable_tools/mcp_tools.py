@@ -492,8 +492,8 @@ async def update_range(
     Writes cell values to a Google Sheets range, replacing existing content. Auto-expands range if data exceeds specified bounds.
 
     Header behavior controlled by include_header parameter:
-    - If include_header=True (default): Always includes headers in the output
-    - If include_header=False: Auto-detects headers and skips them if both original and new data have headers
+    - If include_header=True: Always includes headers in the output
+    - If include_header=False (default): Auto-detects headers and skips them if both original and new data have headers
 
     Values are automatically parsed as if typed by user (USER_ENTERED mode):
     - Formulas (=IMAGE, =SUM, etc.) are interpreted as formulas
@@ -514,7 +514,7 @@ async def update_range(
               CRITICAL: Must be nested list structure or list of dicts, NOT a string.
               Values: int, str, float, bool, or None.
         range_address: A1 notation (e.g., "B5", "A1:E1", "B:B", "A1:C3"). Auto-expands to fit data.
-        include_header: If True (default), always includes headers. If False, uses auto-detection to skip headers.
+        include_header: If False (default), uses auto-detection to skip headers. If True, always includes headers.
 
     Returns:
         UpdateResponse containing:

@@ -116,9 +116,9 @@ async def read_and_verify_first_row(session, uri: str, expected_values: Dict[str
 # ============================================================================
 
 async def test_scenario_a_include_header_true(url, headers):
-    """Scenario A: Write with include_header=True (default) - Fresh Write"""
+    """Scenario A: Write with include_header=True - Fresh Write"""
     print("\n" + "="*80)
-    print("SCENARIO A: include_header=True (default) - Fresh Write")
+    print("SCENARIO A: include_header=True - Fresh Write")
     print("="*80)
 
     async with streamablehttp_client(url=url, headers=headers) as (read, write, _):

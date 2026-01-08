@@ -1124,8 +1124,8 @@ class GoogleSheetDataTable(DataTableInterface):
         Implementation of DataTableInterface.update_range() for Google Sheets.
 
         Header behavior controlled by include_header parameter:
-        - If include_header=True (default): Always includes headers in the output
-        - If include_header=False: Auto-detects and skips headers when both original and new data have headers
+        - If include_header=True: Always includes headers in the output
+        - If include_header=False (default): Auto-detects and skips headers when both original and new data have headers
 
         Args:
             service: Authenticated Google Sheets API service object
@@ -1136,7 +1136,7 @@ class GoogleSheetDataTable(DataTableInterface):
                 - 'RAW': Values are stored as-is (literal text, no parsing)
                 - 'USER_ENTERED': Values are parsed as if typed by user (formulas, numbers, dates parsed)
                 Default is 'USER_ENTERED'.
-            include_header: If True (default), always includes headers. If False, uses auto-detection to skip headers.
+            include_header: If False (default), uses auto-detection to skip headers. If True, always includes headers.
         """
         try:
             # Parse URI to extract spreadsheet_id and gid
